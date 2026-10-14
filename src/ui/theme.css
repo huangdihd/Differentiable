@@ -112,6 +112,8 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 .brand {
+  all: unset;
+  cursor: pointer;
   display: flex;
   align-items: center;
   gap: var(--s2);
@@ -312,6 +314,9 @@ textarea {
   font-family: var(--mono);
   font-size: 13px;
 }
+.field::placeholder {
+  color: var(--faint);
+}
 .field:focus {
   outline: none;
   border-color: var(--accent);
@@ -375,6 +380,11 @@ input[type='range'] {
 .palette-item {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  touch-action: none;
   gap: 2px;
   padding: var(--s2) 10px;
   cursor: grab;
@@ -466,7 +476,6 @@ input[type='range'] {
 .node-body {
   display: grid;
   place-items: center;
-  padding: var(--s2) 18px;
 }
 .node-sym {
   font-family: var(--mono);
@@ -576,4 +585,356 @@ input[type='range'] {
   background: var(--panel-2);
   border: 1px solid var(--line-strong);
   font-size: 13px;
+}
+
+/* ================= editor & home additions ================= */
+
+.lang-select {
+  width: auto;
+  padding: 3px 6px;
+  font-size: var(--fs-sm);
+}
+.banner {
+  margin: 0;
+  border-left: 0;
+  border-right: 0;
+}
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.6;
+  margin: var(--s2) 0 0;
+}
+.help {
+  white-space: pre-line;
+  border-top: 1px dashed var(--line);
+  padding-top: var(--s3);
+}
+.level-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.palette-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.palette-item.is-locked .sym {
+  color: var(--muted);
+}
+.palette-ghost {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px 12px;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.palette-ghost .sym {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* nodes */
+.node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.node-delete {
+  opacity: 0;
+  font-size: 15px;
+}
+.node:hover .node-delete,
+.node.is-selected .node-delete {
+  opacity: 1;
+}
+.node-delete:hover {
+  color: var(--bad);
+}
+.node-sym.is-long {
+  font-size: 15px;
+}
+.node.is-composite .node-sym {
+  color: var(--accent);
+}
+.node-foot.is-ok {
+  color: var(--text);
+}
+.node-foot.is-bad {
+  color: var(--bad);
+}
+.port-label.is-in {
+  left: 10px;
+}
+.port-label.is-out {
+  right: 10px;
+}
+.node.is-shaking {
+  animation: node-shake 0.32s;
+}
+@keyframes node-shake {
+  25% {
+    translate: -5px 0;
+  }
+  75% {
+    translate: 5px 0;
+  }
+}
+
+/* canvas overlays */
+.canvas-toolbar {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+}
+.tool-btn {
+  all: unset;
+  cursor: pointer;
+  min-width: 30px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--text);
+}
+.tool-btn:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--accent);
+}
+.tool-btn:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.tool-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tool-wide {
+  padding: 0 10px;
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+}
+.tool-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line-strong);
+}
+.tool-zoom {
+  min-width: 44px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.canvas-crumb {
+  padding: 4px 4px 4px 4px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.canvas-crumb span {
+  padding-right: var(--s2);
+}
+.canvas-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+  white-space: pre-line;
+  border: 1px dashed var(--line-strong);
+  padding: var(--s3) var(--s4);
+  background: rgba(15, 47, 89, 0.6);
+}
+
+/* right panel */
+.probe-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+  font-style: italic;
+}
+.probe-out .mono {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.table td,
+.table th {
+  font-variant-numeric: tabular-nums;
+}
+.table td:last-child,
+.table th:last-child {
+  text-align: center;
+  width: 24px;
+}
+.table td:first-child,
+.table th:first-child {
+  text-align: left;
+  color: var(--muted);
+}
+.results .table td {
+  white-space: nowrap;
+}
+.train-stats dd {
+  font-variant-numeric: tabular-nums;
+}
+.loss-chart {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  margin-bottom: var(--s2);
+}
+
+/* win modal */
+.unlock {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  padding: 10px var(--s3);
+  margin: var(--s3) 0;
+  border: 1px dashed var(--accent);
+}
+.unlock .hint {
+  margin: 2px 0 0;
+}
+.unlock-sym {
+  width: 40px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 24px;
+  color: var(--accent);
+}
+.score-table {
+  margin-top: var(--s3);
+}
+.score-table td:first-child,
+.score-table th:first-child {
+  text-align: left;
+  width: auto;
+  font-family: var(--font);
+}
+.score-table td:last-child,
+.score-table th:last-child {
+  width: auto;
+  text-align: right;
+}
+
+/* home */
+.hero h1 {
+  font-size: 44px;
+  line-height: 1.12;
+  margin: 0 0 var(--s3);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.hero-accent {
+  color: var(--accent);
+}
+.hero p {
+  max-width: 62ch;
+  font-size: 15px;
+  margin: 0;
+}
+.road-chapter {
+  border-top: 2px solid var(--line-strong);
+  position: relative;
+}
+.road-chapter::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  background: var(--bg);
+  border: 2px solid var(--line-strong);
+}
+.road-chapter.has-levels {
+  border-top-color: var(--accent);
+}
+.road-chapter.has-levels::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.road-chapter.is-goal::before {
+  width: 16px;
+  height: 16px;
+  top: -9px;
+  background: var(--bad);
+  border-color: var(--bad);
+}
+.road-n {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.road-name {
+  font-weight: 600;
+}
+.road-desc {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.5;
+}
+.road-soon {
+  font-size: var(--fs-sm);
+  color: var(--faint);
+  border: 1px dashed var(--line);
+  padding: var(--s2) 10px;
+}
+.level-card {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+}
+.level-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.level-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.level-card:disabled {
+  cursor: default;
+  opacity: 0.5;
+  border-style: dashed;
+}
+.level-card.is-passed {
+  border-color: var(--good);
+}
+.level-card-title {
+  font-weight: 600;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.level-card {
+  min-width: 0;
+}
+.level-state {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.level-card.is-passed .level-state {
+  color: var(--good);
+}
+.level-card-best {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node.is-shaking {
+    animation: none;
+  }
 }

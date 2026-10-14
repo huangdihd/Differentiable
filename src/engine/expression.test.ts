@@ -16,6 +16,17 @@ function input(graph: ExpressionGraph, node: string, port: string) {
 }
 
 describe('parseExpression', () => {
+  it('lowers 1 / x to a single recip instead of mul(1, recip(x))', () => {
+    const graph = parseExpression('1 / x', { variables: { x: { node: 'in', port: 'out' } } });
+    expect(graph.nodes.map((node) => node.component)).toEqual(['recip']);
+    expect(input(graph, graph.output.node, 'x')).toEqual({ node: 'in', port: 'out' });
+    expect(
+      parseExpression('2 / x', { variables: { x: { node: 'in', port: 'out' } } }).nodes.map(
+        (node) => node.component,
+      ),
+    ).toEqual(['const', 'recip', 'mul']);
+  });
+
   it('emits scalar constants with exponent and decimal syntax', () => {
     for (const [source, value] of [
       ['1e-3', 0.001],

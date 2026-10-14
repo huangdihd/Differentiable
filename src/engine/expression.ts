@@ -295,6 +295,20 @@ export function parseExpression(source: string, options: ExpressionOptions = {})
       if (rule === null)
         throw new ExpressionError('unsupported_operator', { operator }, token.position);
       const right = expression(precedence + 1);
+      // `1 / x` is just recip(x): drop the literal 1 instead of emitting mul(1, recip(x)).
+      const literal = graph.nodes.find((n) => n.id === left.node);
+      if (
+        operator === '/' &&
+        override === undefined &&
+        literal &&
+        literal.component === (options.constant?.component ?? 'const') &&
+        literal.attrs?.value === 1 &&
+        !graph.edges.some((e) => e.from.node === literal.id)
+      ) {
+        graph.nodes.splice(graph.nodes.indexOf(literal), 1);
+        left = emit('recip', { x: right }, token, undefined, undefined, token.text);
+        continue;
+      }
       left = lower(rule, [left, right], token);
     }
   };
