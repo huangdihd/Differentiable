@@ -31,9 +31,12 @@ export function buildPlayerRegistry(
       const passed =
         progress.passed.includes(level.id) && progress.unlockedComponents.includes(name);
       const solution = passed ? progress.passedSolutions[level.id] : undefined;
-      const source = solution ?? (presets.has(name) ? level.referenceGraph : undefined);
-      if (!source) continue;
       const existing = definitions.get(name);
+      // Keep a self-contained built-in preset until the player has supplied a solution.
+      // Chapter reference graphs may depend on components the player has not earned yet.
+      const source =
+        solution ?? (presets.has(name) && !existing ? level.referenceGraph : undefined);
+      if (!source) continue;
       const output = 'out';
       const subgraph: GraphJSON = structuredClone(source);
       for (const node of subgraph.nodes) {

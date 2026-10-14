@@ -7,7 +7,7 @@ import {
   type GraphJSON,
   type GraphEdge,
 } from './graph';
-import { tensor, exp } from './tensor';
+import { tensor, exp, backward, mul, sum } from './tensor';
 
 const edge = (from: string, to: string, port = 'x', output = 'out'): GraphEdge => ({
   from: { node: from, port: output },
@@ -46,6 +46,7 @@ describe('graph compiler', () => {
         'sum',
         'reduce_max',
         'reshape',
+        'unsqueeze',
         'transpose',
         'gather',
         'arange',
@@ -371,4 +372,147 @@ describe('graph safety and execution ownership', () => {
     plan.dispose();
     x.dispose();
   });
+});
+
+describe('standard graph native equivalence', () => {
+  it.each([
+    ['matmul', { a: [2, 3], b: [3, 4] }],
+    ['matmul', { a: [2, 1, 2, 3], b: [1, 3, 3, 4] }],
+    ['matmul', { a: [2, 3], b: [2, 3, 4] }],
+    ['softmax', { x: [2, 3, 4] }],
+    ['layernorm', { x: [2, 3, 4] }],
+    ['layernorm', { x: [2, 1] }],
+  ] as [string, Record<string, number[]>][])(
+    '%s matches values and weighted gradients for %j',
+    async (component, shapes) => {
+      const graph: GraphJSON = {
+        version: 1,
+        nodes: [
+          ...Object.keys(shapes).map((name) => ({ id: name, component: 'input', attrs: { name } })),
+          { id: 'op', component, attrs: { eps: 0.03 } },
+          { id: 'out', component: 'output', attrs: { name: 'out' } },
+        ],
+        edges: [...Object.keys(shapes).map((name) => edge(name, 'op', name)), edge('op', 'out')],
+      };
+      const inputs = Object.fromEntries(
+        Object.entries(shapes).map(([name, shape]) => [
+          name,
+          tensor(
+            Array.from({ length: shape.reduce((a, b) => a * b, 1) }, (_, i) => Math.sin(i + 1)),
+            shape,
+          ),
+        ]),
+      );
+      const results: number[][][] = [];
+      for (const preferNative of [true, false]) {
+        const plan = compileGraph(graph, { inputShapes: shapes, preferNative });
+        const outputs = plan.execute(inputs);
+        const weights = tensor(
+          Array.from({ length: outputs.out.shape.reduce((a, b) => a * b, 1) }, (_, i) =>
+            Math.cos(i),
+          ),
+          outputs.out.shape,
+        );
+        const weighted = mul(outputs.out, weights);
+        const loss = sum(
+          weighted,
+          outputs.out.shape.map((_, i) => i),
+        );
+        const gradients = await backward(loss, Object.values(inputs));
+        results.push(
+          await Promise.all(
+            [outputs.out, ...gradients].map(async (x) => Array.from(await x.read())),
+          ),
+        );
+        gradients.forEach((x) => x.dispose());
+        loss.dispose();
+        weighted.dispose();
+        weights.dispose();
+        plan.releaseExecution(outputs);
+        plan.dispose();
+      }
+      results[0].forEach((values, i) =>
+        values.forEach((value, j) => expect(results[1][i][j]).toBeCloseTo(value, 4)),
+      );
+      Object.values(inputs).forEach((x) => x.dispose());
+    },
+  );
+});
+
+describe('unsqueeze primitive', () => {
+  const graph = (axis: unknown, shape: number[]): GraphJSON => ({
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x', shape } },
+      { id: 'u', component: 'unsqueeze', attrs: { axis } },
+      { id: 'o', component: 'output', attrs: { name: 'out' } },
+    ],
+    edges: [edge('x', 'u'), edge('u', 'o')],
+  });
+  it.each([
+    [0, [1, 2, 3]],
+    [1, [2, 1, 3]],
+    [2, [2, 3, 1]],
+    [-3, [1, 2, 3]],
+    [-2, [2, 1, 3]],
+    [-1, [2, 3, 1]],
+  ] as [number, number[]][])(
+    'inserts axis %s and preserves values and gradients',
+    async (axis, shape) => {
+      const plan = compileGraph(graph(axis, [2, 3]));
+      expect(plan.outputShapes.out).toEqual(shape);
+      const x = tensor([1, 2, 3, 4, 5, 6], [2, 3]);
+      const outputs = plan.execute({ x });
+      expect(Array.from(await outputs.out.read())).toEqual([1, 2, 3, 4, 5, 6]);
+      const weighted = mul(outputs.out, outputs.out);
+      const loss = sum(weighted, [0, 1, 2]);
+      const [gradient] = await backward(loss, [x]);
+      expect(gradient.shape).toEqual([2, 3]);
+      expect(Array.from(await gradient.read())).toEqual([2, 4, 6, 8, 10, 12]);
+      gradient.dispose();
+      loss.dispose();
+      weighted.dispose();
+      plan.releaseExecution(outputs);
+      plan.dispose();
+      x.dispose();
+    },
+  );
+  it.each([0, -1])('supports scalar axis %s', (axis) => {
+    const plan = compileGraph(graph(axis, []));
+    expect(plan.outputShapes.out).toEqual([1]);
+    plan.dispose();
+  });
+  it.each([undefined, null, '0', 0.5, NaN, Infinity, -4, 3])(
+    'rejects invalid axis %s with node context',
+    (axis) => {
+      expect(safeCompileGraph(graph(axis, [2, 3]))).toMatchObject({
+        ok: false,
+        errors: [{ key: 'invalid_axes', node: 'u' }],
+      });
+    },
+  );
+  it('preserves zero-sized dimensions', () => {
+    const plan = compileGraph(graph(-1, [0, 3]));
+    expect(plan.outputShapes.out).toEqual([0, 3, 1]);
+    plan.dispose();
+  });
+});
+
+describe('shape-independent standard answers', () => {
+  it.each(['matmul', 'softmax', 'layernorm'])(
+    '%s can be serialized once and reused across shapes',
+    (name) => {
+      const definition = createDefaultRegistry().get(name)!;
+      if (typeof definition.subgraph !== 'function') throw new Error('expected answer factory');
+      const answer = definition.subgraph({});
+      const shapes: Record<string, number[]> =
+        name === 'matmul' ? { a: [2, 1, 3, 4], b: [1, 5, 4, 6] } : { x: [2, 3, 7] };
+      expect(definition.subgraph({}, shapes)).toEqual(answer);
+      const plan = compileGraph(JSON.parse(JSON.stringify(answer)) as GraphJSON, {
+        inputShapes: shapes,
+      });
+      expect(plan.outputShapes.out).toEqual(name === 'matmul' ? [2, 5, 3, 6] : [2, 3, 7]);
+      plan.dispose();
+    },
+  );
 });

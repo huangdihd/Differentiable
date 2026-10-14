@@ -325,7 +325,9 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               : n.component === 'const'
                 ? Array.isArray(n.attrs?.value)
                   ? `[${(n.attrs!.value as number[]).length}]`
-                  : String(n.attrs?.value ?? '')
+                  : typeof n.attrs?.value === 'number'
+                    ? String(Number(n.attrs.value.toPrecision(4)))
+                    : String(n.attrs?.value ?? '')
                 : name;
           const classes = [
             'node',

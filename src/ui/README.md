@@ -1,6 +1,6 @@
 # Functional editor shell
 
-`App.tsx` connects the formal chapter 0/1 catalog and XOR preview to the Worker. Interactive tensor execution happens in the Worker; one-time legacy save migration validates old circuits asynchronously before the editor becomes available. `Canvas.tsx` only edits/displays JSON graphs. `Properties.tsx` handles node attributes; loss rendering reads `--accent` from the existing theme. `layout.css` contains layout rules only; `theme.css` is owned by the visual designer.
+`App.tsx` connects the formal chapter 0/1/2 catalog and XOR preview to the Worker. Interactive tensor execution happens in the Worker; one-time legacy save migration validates old circuits asynchronously before the editor becomes available. `Canvas.tsx` only edits/displays JSON graphs. `Properties.tsx` handles node attributes; loss rendering reads `--accent` from the existing theme. `layout.css` contains layout rules only; `theme.css` is owned by the visual designer.
 
 ## Controls
 
@@ -11,6 +11,9 @@
 - Delete, Ctrl/Cmd+C/V, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z. Clipboard is local to the editor, not the system clipboard.
 - Expressions insert a laid-out fragment below existing nodes and connect it to the level output. Double-click a subgraph component to inspect its implementation read-only; Back returns.
 - Tests/probes and training run in a module Worker. Training edits are locked until stopped or completed; pause retains optimizer state.
+- Live values keeps scalar inputs editable and displays tensor fixtures read-only with previous/next case controls. Tensor nodes show shape, a short preview, and complete values in a tooltip. Shape-variant failures name the tested input shapes in the results table.
+- Sum and reduce-max start with axis −1 and Keep dimensions enabled. Unsqueeze starts at axis −1; its axis editor accepts negative integers (valid range is checked against the input rank during compilation).
+- Loading an existing v2 save refreshes unlocks from already-passed lessons, so newly added catalog successors become available without replaying those lessons.
 
 ## State and persistence
 

@@ -131,7 +131,21 @@ export async function loadProgressWithMigration(
     if (!raw) return createInitialProgress();
     const envelope: unknown = JSON.parse(raw);
     if (!record(envelope)) return createInitialProgress();
-    if (envelope.version === STORAGE_VERSION) return loadProgress(source);
+    if (envelope.version === STORAGE_VERSION) {
+      const progress = loadProgress(source);
+      // New catalog successors must also unlock for players who already passed a lesson.
+      const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
+      return {
+        ...progress,
+        unlocked: [...new Set([...progress.unlocked, ...passedLevels.flatMap((l) => l.unlock)])],
+        unlockedComponents: [
+          ...new Set([
+            ...progress.unlockedComponents,
+            ...passedLevels.flatMap((l) => l.unlockComponents ?? []),
+          ]),
+        ],
+      };
+    }
     if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
     const candidate = { ...envelope.progress, passedSolutions: {} };
     if (!isProgress(candidate)) return createInitialProgress();

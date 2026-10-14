@@ -35,7 +35,7 @@ export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index
       hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
       available: [...scalarPrimitives, 'max'],
       interface: { inputs: { x: [] }, output: 'y', outputShape: [] },
-      unlock: [index === 6 ? 'xor' : `1-${index + 2}`],
+      unlock: [index === 6 ? '2-1' : `1-${index + 2}`],
       unlockFeatures: index === 6 ? ['levels.features.autodiff', 'levels.features.expression'] : [],
       derivativeInput: 'x',
       referenceGraph: formulaGraph(definition.formula),

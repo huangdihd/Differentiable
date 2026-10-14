@@ -3,7 +3,19 @@ import { defaults, validateProperties } from './Properties';
 
 describe('property field validation', () => {
   it('preserves component defaults', () => {
+    expect(defaults('sum')).toEqual({ axes: [-1], keepdims: true });
+    expect(defaults('reduce_max')).toEqual({ axes: [-1], keepdims: true });
+    expect(defaults('unsqueeze')).toEqual({ axis: -1 });
     expect(defaults('param')).toEqual({ shape: [2, 2], init: 'normal', scale: 1 });
+  });
+  it('accepts negative integer unsqueeze axes but rejects incomplete or fractional axes', () => {
+    for (const axis of ['-1', '-3', '0', '2']) {
+      const result = validateProperties('unsqueeze', { axis });
+      expect(result.errors).toEqual({});
+      expect(result.attrs.axis).toBe(Number(axis));
+    }
+    for (const axis of ['', '-', '1.5', 'null', '1e999', '9007199254740992'])
+      expect(validateProperties('unsqueeze', { axis }).errors.axis).toBe('ui.invalidNumber');
   });
   it('supports scalar, vector and broadcast constants', () => {
     expect(validateProperties('const', { value: '2' }).errors).toEqual({});

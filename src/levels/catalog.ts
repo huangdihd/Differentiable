@@ -2,6 +2,7 @@ import type { Level } from '../engine/levels';
 import { graphMetrics } from '../engine/levels';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
+import { chapter2Levels } from './chapter2';
 import { xorLevel, xorSolution } from './examples';
 import { referenceRegistry } from './level-helpers';
 
@@ -18,6 +19,7 @@ export interface CatalogEntry {
 export const gameLevels: Level[] = [
   ...chapter0Levels,
   ...chapter1Levels,
+  ...chapter2Levels,
   {
     ...xorLevel,
     available: [
@@ -36,7 +38,10 @@ export const gameLevels: Level[] = [
     presets: ['matmul', 'softmax'],
     hintsKeys: ['levels.xor.hint1', 'levels.xor.hint2'],
     referenceGraph: xorSolution,
-    par: graphMetrics(xorSolution, referenceRegistry(chapter0Levels)).expandedPrimitives,
+    par: graphMetrics(
+      xorSolution,
+      referenceRegistry([...chapter0Levels, ...chapter1Levels, ...chapter2Levels]),
+    ).expandedPrimitives,
   },
 ];
 

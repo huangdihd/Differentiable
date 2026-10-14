@@ -37,14 +37,17 @@ export interface LevelCase {
   id: string;
   inputs: Record<string, number[]>;
 }
-export interface ForwardLevel extends LevelMetadata {
-  kind: 'forward' | 'derivative';
+export interface LevelCases {
   fixed: readonly LevelCase[];
   generated?: {
     seed: number;
     count: number;
     generate: (random: Random, index: number) => LevelCase;
   };
+}
+export interface ForwardLevel extends LevelMetadata, LevelCases {
+  kind: 'forward' | 'derivative';
+  shapeVariants?: readonly (LevelCases & { inputs: ShapePorts })[];
   reference: (inputs: Record<string, T.Tensor>) => T.Tensor;
   derivativeInput?: string;
   atol?: number;
@@ -72,6 +75,7 @@ export interface TestResult {
   actual: number[];
   expected: number[];
   errorKey?: string;
+  errorParams?: Record<string, unknown>;
 }
 export interface LevelResult {
   levelId: string;
@@ -183,50 +187,98 @@ export async function evaluateLevel(
         tensors.forEach((x) => x.dispose());
       }
     } else {
-      const cases = [...level.fixed],
-        generator = level.generated;
-      if (generator) {
-        const random = new Random(generator.seed);
-        for (let i = 0; i < generator.count; i++) cases.push(generator.generate(random, i));
-      }
-      for (const test of cases) {
-        const inputs = Object.fromEntries(
-          Object.entries(test.inputs).map(([name, data]) => [
-            name,
-            T.tensor(data, level.interface.inputs[name]),
-          ]),
-        );
-        let execution: Record<string, T.Tensor> | undefined;
-        let outputs: T.Tensor[] = [],
-          reference: T.Tensor | undefined,
-          gradient: T.Tensor | undefined;
+      const groups = [
+        { inputs: level.interface.inputs, fixed: level.fixed, generated: level.generated },
+        ...(level.shapeVariants ?? []),
+      ];
+      for (const [groupIndex, group] of groups.entries()) {
+        const variant = groupIndex > 0;
+        const prefix = variant ? `shape-${groupIndex}/` : '';
+        const errorParams = {
+          shapes: Object.entries(group.inputs)
+            .map(([name, shape]) => `${name} [${shape.join('×')}]`)
+            .join(', '),
+        };
+        let groupPlan = variant ? undefined : plan;
         try {
-          execution = plan.execute(inputs);
-          outputs = Object.values(execution);
-          // Execute once; select named output even when graph exposes other outputs.
-          const names = Object.keys(plan.outputShapes);
-          const actual = Array.from(await outputs[names.indexOf(level.interface.output)].read());
-          reference = level.reference(inputs);
-          if (level.kind === 'derivative') {
-            [gradient] = await T.backward(reference, [inputs[level.derivativeInput ?? 'x']]);
+          if (!groupPlan)
+            groupPlan = compileGraph(graph, {
+              registry: options.registry,
+              availableComponents: level.available,
+              inputShapes: group.inputs,
+              random: new Random(1),
+            });
+          const cases = [...group.fixed];
+          if (group.generated) {
+            const random = new Random(group.generated.seed);
+            for (let i = 0; i < group.generated.count; i++)
+              cases.push(group.generated.generate(random, i));
           }
-          const expected = Array.from(await (gradient ?? reference).read());
-          const passed =
-            actual.length === expected.length &&
-            actual.every(
-              (x, i) =>
-                Number.isFinite(x) &&
-                Number.isFinite(expected[i]) &&
-                Math.abs(x - expected[i]) <=
-                  (level.atol ?? 1e-5) + (level.rtol ?? 1e-4) * Math.abs(expected[i]),
-            );
-          result.tests.push({ id: test.id, passed, actual, expected });
+          for (const test of cases) {
+            const inputs: Record<string, T.Tensor> = {};
+            let execution: Record<string, T.Tensor> | undefined;
+            let outputs: T.Tensor[] = [],
+              reference: T.Tensor | undefined,
+              gradient: T.Tensor | undefined;
+            try {
+              for (const [name, data] of Object.entries(test.inputs))
+                inputs[name] = T.tensor(data, group.inputs[name]);
+              execution = groupPlan.execute(inputs);
+              outputs = Object.values(execution);
+              const output = execution[level.interface.output];
+              const actual = Array.from(await output.read());
+              reference = level.reference(inputs);
+              if (level.kind === 'derivative')
+                [gradient] = await T.backward(reference, [inputs[level.derivativeInput ?? 'x']]);
+              const expectedTensor = gradient ?? reference;
+              const expected = Array.from(await expectedTensor.read());
+              const passed =
+                JSON.stringify(output.shape) === JSON.stringify(expectedTensor.shape) &&
+                actual.length === expected.length &&
+                actual.every(
+                  (x, i) =>
+                    Number.isFinite(x) &&
+                    Number.isFinite(expected[i]) &&
+                    Math.abs(x - expected[i]) <=
+                      (level.atol ?? 1e-5) + (level.rtol ?? 1e-4) * Math.abs(expected[i]),
+                );
+              result.tests.push({
+                id: prefix + test.id,
+                passed,
+                actual,
+                expected,
+                ...(variant && !passed ? { errorKey: 'levels.shape_variant', errorParams } : {}),
+              });
+            } catch (error) {
+              if (!variant) throw error;
+              result.tests.push({
+                id: prefix + test.id,
+                passed: false,
+                actual: [],
+                expected: [],
+                errorKey: 'levels.shape_variant',
+                errorParams,
+              });
+            } finally {
+              disposeExecution(outputs, Object.values(inputs));
+              if (execution) groupPlan.releaseExecution(execution, Object.values(inputs));
+              if (reference) T.disposeGraph([reference], Object.values(inputs));
+              gradient?.dispose();
+              Object.values(inputs).forEach((x) => x.dispose());
+            }
+          }
+        } catch (error) {
+          if (!variant) throw error;
+          result.tests.push({
+            id: prefix + 'compile',
+            passed: false,
+            actual: [],
+            expected: [],
+            errorKey: 'levels.shape_variant',
+            errorParams,
+          });
         } finally {
-          disposeExecution(outputs, Object.values(inputs));
-          if (execution) plan.releaseExecution(execution, Object.values(inputs));
-          if (reference) T.disposeGraph([reference], Object.values(inputs));
-          gradient?.dispose();
-          Object.values(inputs).forEach((x) => x.dispose());
+          if (variant) groupPlan?.dispose();
         }
       }
       result.passed = result.tests.length > 0 && result.tests.every((t) => t.passed);

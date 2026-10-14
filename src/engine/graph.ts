@@ -505,6 +505,19 @@ function axes(a: Attributes, rank: number): number[] {
     throw new GraphError('invalid_axes');
   return result;
 }
+function unsqueezeShape(s: Shape, attrs: Attributes): number[] {
+  const axis = attrs.axis;
+  if (
+    typeof axis !== 'number' ||
+    !Number.isInteger(axis) ||
+    axis < -s.length - 1 ||
+    axis > s.length
+  )
+    throw new GraphError('invalid_axes');
+  const result = [...s];
+  result.splice(axis < 0 ? axis + s.length + 1 : axis, 0, 1);
+  return result;
+}
 function reshapeShape(s: Shape, attrs: Attributes): number[] {
   if (!Array.isArray(attrs.shape)) throw new GraphError('invalid_shape');
   const target = [...attrs.shape] as number[];
@@ -592,6 +605,12 @@ export function createDefaultRegistry(): ComponentRegistry {
     ['x'],
     (i, a) => ({ out: reshapeShape(i.x, a) }),
     (i, a) => ({ out: T.reshape(i.x, reshapeShape(i.x.shape, a)) }),
+  );
+  register(
+    'unsqueeze',
+    ['x'],
+    (i, a) => ({ out: unsqueezeShape(i.x, a) }),
+    (i, a) => ({ out: T.reshape(i.x, unsqueezeShape(i.x.shape, a)) }),
   );
   register(
     'transpose',

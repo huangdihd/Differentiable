@@ -50,6 +50,28 @@ describe('storage', () => {
     expect(loadProgress(source)).toEqual(progress);
     expect(createInitialProgress().savedGraphs).toEqual({});
   });
+  it('refreshes catalog unlocks in old v2 saves without changing passed circuits or edits', async () => {
+    const { source } = memory();
+    const lesson = { ...chapter1Levels.at(-1)!, unlock: ['2-1'] };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['0-1', '1-7', 'xor'],
+      passed: ['1-7'],
+      passedSolutions: { '1-7': graph },
+      savedGraphs: { '1-7': graph },
+    };
+    saveProgress(progress, source);
+    const restored = await loadProgressWithMigration([lesson], source);
+    expect(restored.unlocked).toContain('2-1');
+    expect(restored.unlocked).toContain('xor');
+    expect(restored.passed).toEqual(progress.passed);
+    expect(restored.passedSolutions).toEqual(progress.passedSolutions);
+    expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    saveProgress(restored, source);
+    expect(await loadProgressWithMigration([lesson], source)).toEqual(restored);
+    saveProgress(createInitialProgress(), source);
+    expect((await loadProgressWithMigration([lesson], source)).unlocked).not.toContain('2-1');
+  });
   it('rejects corrupt, wrong-version and deeply invalid stored values', () => {
     const { data, source } = memory();
     for (const raw of [

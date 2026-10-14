@@ -13,6 +13,17 @@ import {
 } from './i18n';
 
 describe('i18n', () => {
+  it('renders shape-variant diagnostics with their input shapes in both locales', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const text = translateDiagnostic(locale, {
+        key: 'levels.shape_variant',
+        params: { shapes: 'a=[3×2], b=[2×5]' },
+      });
+      expect(text).toContain('a=[3×2], b=[2×5]');
+      expect(text).not.toContain('{shapes}');
+      expect(text).not.toBe('levels.shape_variant');
+    }
+  });
   it('derives native language names for every registered locale', () => {
     expect(Object.keys(localeNames)).toEqual(Object.keys(locales));
     for (const locale of Object.keys(locales) as (keyof typeof locales)[]) {

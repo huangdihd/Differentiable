@@ -7,6 +7,7 @@ import {
   derivativeLevel,
   derivativeSolution,
   sigmoidSolution,
+  sigmoidLevel,
   xorLevel,
   xorSolution,
 } from '../levels/examples';
@@ -126,6 +127,38 @@ describe('worker runtime protocol', () => {
       type: 'error',
       error: { key: 'worker.stale_revision' },
     });
+  });
+  it('evaluates shape variants while compile and probe keep the primary interface', async () => {
+    const level = {
+      ...sigmoidLevel,
+      shapeVariants: [
+        { inputs: { x: [3] }, fixed: [{ id: 'fixed-0', inputs: { x: [-1, 0, 1] } }] },
+      ],
+    };
+    const h = harness([level]);
+    await h.send({ type: 'init', backend: 'cpu' });
+    expect(
+      await h.send({ type: 'compile', levelId: level.id, graph: sigmoidSolution }),
+    ).toMatchObject({ data: { outputShapes: { y: [5] } } });
+    expect(
+      await h.send({ type: 'evaluate', levelId: level.id, graph: sigmoidSolution }),
+    ).toMatchObject({
+      data: {
+        passed: true,
+        tests: expect.arrayContaining([
+          expect.objectContaining({ id: 'shape-1/fixed-0', passed: true }),
+        ]),
+      },
+    });
+    expect(
+      await h.send({
+        type: 'probe',
+        levelId: level.id,
+        graph: sigmoidSolution,
+        endpoint: { node: 'neg', port: 'out' },
+        inputs: { x: [-4, -1, 0, 1, 4] },
+      }),
+    ).toMatchObject({ data: { shape: [5] } });
   });
   it('pauses and resumes the same optimizer, emits progress and final LevelResult', async () => {
     const h = harness([{ ...xorLevel, steps: 5 }]);

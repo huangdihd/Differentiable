@@ -5,18 +5,20 @@ import { Random } from '../engine/random';
 import { catalog, gameLevels } from './catalog';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
+import { chapter2Levels } from './chapter2';
 import { formulaGraph, referenceRegistry } from './level-helpers';
 import en from '../locales/en.json';
 import zh from '../locales/zh-CN.json';
 
-const registry = referenceRegistry(chapter0Levels);
+const registry = referenceRegistry([...chapter0Levels, ...chapter1Levels, ...chapter2Levels]);
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 
 describe('formal chapter catalog', () => {
-  it('contains fifteen sequential lessons and the preserved XOR challenge', () => {
+  it('contains twenty-one sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
       ...Array.from({ length: 7 }, (_, i) => `1-${i + 1}`),
+      ...Array.from({ length: 6 }, (_, i) => `2-${i + 1}`),
       'xor',
     ]);
     expect(catalog.map((entry) => entry.level)).toEqual(gameLevels);
@@ -201,11 +203,11 @@ describe('formal chapter catalog', () => {
     });
   }
 
-  it('preserved XOR reference trains with its explicit presets', async () => {
+  it('preserved XOR reference trains with earned tensor components', async () => {
     const level = gameLevels.at(-1)!;
     const available = [
       ...level.available,
-      ...chapter0Levels.flatMap((item) => item.unlockComponents ?? []),
+      ...[...chapter0Levels, ...chapter2Levels].flatMap((item) => item.unlockComponents ?? []),
       ...(level.presets ?? []),
     ];
     const result = await evaluateLevel({ ...level, available }, level.referenceGraph!, {

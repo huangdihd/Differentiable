@@ -8,9 +8,7 @@ import {
 import { infer } from './backend';
 import * as T from './tensor';
 
-/** Canonical primitive-only answers. Concrete input shapes specialize reshape attributes.
- * Without shapes (parameter/recursion inspection), unit shapes preserve graph structure.
- */
+/** Canonical primitive-only answers with shape-independent topology and attributes. */
 function answer(name: string, attrs: Attributes, inputs?: ShapePorts): GraphJSON {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
   const node = (
@@ -34,16 +32,9 @@ function answer(name: string, attrs: Attributes, inputs?: ShapePorts): GraphJSON
     infer('matmul', [a, b]);
     node('a', 'input', {}, { name: 'a' });
     node('b', 'input', {}, { name: 'b' });
-    const perm = b.map((_, i) => i);
-    [perm[perm.length - 2], perm[perm.length - 1]] = [perm.at(-1)!, perm.at(-2)!];
-    const left = unary('left', 'reshape', 'a', {
-      shape: [...a.slice(0, -2), a.at(-2)!, 1, a.at(-1)!],
-    });
-    const transposed = unary('transposed', 'transpose', 'b', { perm });
-    const right = unary('right', 'reshape', transposed, {
-      shape: [...b.slice(0, -2), 1, b.at(-1)!, b.at(-2)!],
-    });
-    result = unary('result', 'sum', binary('products', 'mul', left, right), { axes: [-1] });
+    const left = unary('left', 'unsqueeze', 'a', { axis: -1 });
+    const right = unary('right', 'unsqueeze', 'b', { axis: -3 });
+    result = unary('result', 'sum', binary('products', 'mul', left, right), { axes: [-2] });
   } else {
     const shape = inputs?.x ?? [1];
     infer(name as 'softmax' | 'layernorm', [shape], attrs);
@@ -64,7 +55,14 @@ function answer(name: string, attrs: Attributes, inputs?: ShapePorts): GraphJSON
       );
       result = binary('result', 'mul', weights, inverse);
     } else {
-      const scale = constant('scale', 1 / shape.at(-1)!);
+      const zeros = binary('zeros', 'mul', 'x', constant('zero', 0));
+      const ones = binary('ones', 'add', zeros, constant('one', 1));
+      const count = reduce('count', 'sum', ones);
+      const scale = unary(
+        'scale',
+        'exp',
+        negate('negative_log_count', unary('log_count', 'log', count)),
+      );
       const mean = binary('mean', 'mul', reduce('total', 'sum', 'x'), scale);
       const centered = binary('centered', 'add', 'x', negate('negative_mean', mean));
       const squares = binary('squares', 'mul', centered, centered);

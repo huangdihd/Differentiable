@@ -15,6 +15,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   sum: 'Σ',
   reduce_max: 'max',
   reshape: '⇄',
+  unsqueeze: '…×1',
   transpose: 'ᵀ',
   gather: '[ ]',
   arange: '0‥n',

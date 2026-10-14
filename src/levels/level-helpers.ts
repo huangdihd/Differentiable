@@ -1,5 +1,10 @@
 import { parseExpression } from '../engine/expression';
-import { createDefaultRegistry, type GraphJSON } from '../engine/graph';
+import {
+  ComponentRegistry,
+  createDefaultRegistry,
+  type GraphJSON,
+  type ShapePorts,
+} from '../engine/graph';
 import { graphMetrics, type ForwardLevel } from '../engine/levels';
 
 /** A small authoring helper, not a separate evaluator: answers are ordinary GraphJSON. */
@@ -75,10 +80,15 @@ export function componentAnswer(graph: GraphJSON): GraphJSON {
 
 /** Authoring registry for scoring/reference tests; runtime uses the shared game registry. */
 export function referenceRegistry(levels: readonly ForwardLevel[]) {
-  const registry = createDefaultRegistry();
+  const definitions = new Map(
+    createDefaultRegistry()
+      .list()
+      .map((item) => [item.name, item]),
+  );
   for (const level of levels) {
     for (const name of level.unlockComponents ?? []) {
-      registry.register({
+      definitions.set(name, {
+        ...definitions.get(name),
         name,
         inputs: Object.keys(level.interface.inputs),
         outputs: ['out'],
@@ -86,6 +96,8 @@ export function referenceRegistry(levels: readonly ForwardLevel[]) {
       });
     }
   }
+  const registry = new ComponentRegistry();
+  for (const definition of definitions.values()) registry.register(definition);
   return registry;
 }
 
@@ -130,6 +142,47 @@ export function cases(
           inputs.map((name) => [
             name,
             [positiveInputs.includes(name) ? 0.1 + random.uniform() * 5 : random.uniform() * 6 - 3],
+          ]),
+        ),
+      }),
+    },
+  };
+}
+
+/** Shape-aware deterministic fixtures, including zeros, constants and mixed signs. */
+export function tensorCases(index: number, inputs: ShapePorts) {
+  return {
+    fixed: Array.from({ length: 5 }, (_, k) => ({
+      id: `tensor-${k}`,
+      inputs: Object.fromEntries(
+        Object.entries(inputs).map(([name, shape], port) => [
+          name,
+          Array.from({ length: shape.reduce((n, d) => n * d, 1) }, (_, i) =>
+            k === 0
+              ? 0
+              : k === 1
+                ? 2
+                : k === 2
+                  ? (((i * 3 + port * 2) % 11) - 5) / 2
+                  : k === 3
+                    ? 20 + ((i + port) % 5)
+                    : -20 + ((i * 2 + port) % 7),
+          ),
+        ]),
+      ),
+    })),
+    generated: {
+      seed: 2000 + index,
+      count: 4,
+      generate: (random: import('../engine/random').Random, i: number) => ({
+        id: `seeded-${i}`,
+        inputs: Object.fromEntries(
+          Object.entries(inputs).map(([name, shape]) => [
+            name,
+            Array.from(
+              { length: shape.reduce((n, d) => n * d, 1) },
+              () => random.uniform() * 8 - 4,
+            ),
           ]),
         ),
       }),

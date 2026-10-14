@@ -25,6 +25,8 @@ import Canvas, { position, shapeText, type CanvasHandle, type NodeValue } from '
 import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
+import { caseInputs, fullValues } from './ui/tensor-values';
+import TensorGrid from './ui/TensorGrid';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import {
   loadProgress,
@@ -320,6 +322,12 @@ function Editor({
         : []),
     ];
   }, [level]);
+  const [inputCase, setInputCase] = useState('0');
+  const hasTensorInputs = Object.values(level.interface.inputs).some((shape) => shape.length > 0);
+  const selectInputCase = (index: string) => {
+    setInputCase(index);
+    if (index !== '') setInputs(caseInputs(testCases[Number(index)].inputs));
+  };
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(
       Object.entries(level.interface.inputs).map(([name, shape]) => [
@@ -478,6 +486,7 @@ function Editor({
       return;
     }
     const probeRevision = revision.current;
+    let cancelled = false;
     const timer = setTimeout(
       async () => {
         const c = client.current;
@@ -505,25 +514,28 @@ function Editor({
               source,
               parsedInputs as Record<string, number[]>,
             );
-            if (revision.current !== probeRevision) return;
+            if (cancelled || revision.current !== probeRevision) return;
             const shown =
               r.values.length === 1 ? compact(locale, r.values[0]) : listText(locale, r.values, 2);
             next[node.id] = {
               text: shown,
-              title: `[${r.shape.join('×') || '·'}] ${listText(locale, r.values, 12)}`,
+              title: `[${r.shape.join('×') || '·'}] ${fullValues(r.values)}`,
               ok: r.values.every(Number.isFinite),
               shape: r.shape,
             };
           } catch {
-            if (revision.current !== probeRevision) return;
+            if (cancelled || revision.current !== probeRevision) return;
           }
         }
         setValues(next);
       },
       verify ? 10 : 300,
     );
-    return () => clearTimeout(timer);
-  }, [state.graph, parsedInputs, diagnostics, busy]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [state.graph, parsedInputs, diagnostics, busy, locale]);
 
   const selected = state.graph.nodes.find((n) => n.id === state.selection[0]);
   const display = inside.at(-1)?.graph ?? state.graph;
@@ -581,10 +593,12 @@ function Editor({
         for (let i = 0; i < r.tests.length; i++) {
           setVerify({ index: i, result: r });
           const c = testCases[i];
-          if (c)
+          if (c) {
+            setInputCase(String(i));
             setInputs(
               Object.fromEntries(Object.entries(c.inputs).map(([k, v]) => [k, v.join(', ')])),
             );
+          }
           // Stop on the first failing case and leave its values on the canvas to debug.
           if (!r.tests[i].passed) break;
           if (!skip.current) await new Promise((done) => setTimeout(done, STEP_MS));
@@ -962,20 +976,76 @@ function Editor({
         {probing && (
           <section className="section">
             <h2 className="label">{t('ui.liveValues')}</h2>
+            {testCases.length > 0 && (
+              <div className="case-switch">
+                <span className="label-inline">{t('ui.inputCase')}</span>
+                {hasTensorInputs && (
+                  <button
+                    className="btn case-step"
+                    aria-label={t('ui.previousCase')}
+                    title={t('ui.previousCase')}
+                    disabled={running || busy || Number(inputCase) <= 0}
+                    onClick={() => selectInputCase(String(Number(inputCase) - 1))}
+                  >
+                    ‹
+                  </button>
+                )}
+                <select
+                  className="field"
+                  aria-label={t('ui.inputCase')}
+                  value={inputCase}
+                  disabled={running || busy}
+                  onChange={(e) => selectInputCase(e.target.value)}
+                >
+                  {!hasTensorInputs && <option value="">{t('ui.customInputs')}</option>}
+                  {testCases.map((c, i) => (
+                    <option key={c.id} value={i}>
+                      {t('ui.inputCaseNumber', { n: i + 1 })}
+                    </option>
+                  ))}
+                </select>
+                {hasTensorInputs && (
+                  <button
+                    className="btn case-step"
+                    aria-label={t('ui.nextCase')}
+                    title={t('ui.nextCase')}
+                    disabled={running || busy || Number(inputCase) >= testCases.length - 1}
+                    onClick={() => selectInputCase(String(Number(inputCase) + 1))}
+                  >
+                    ›
+                  </button>
+                )}
+              </div>
+            )}
             {Object.entries(inputs).map(([name, value]) => (
-              <div className="probe-field" key={name}>
+              <div
+                className={`probe-field${level.interface.inputs[name].length > 0 ? ' is-tensor' : ''}`}
+                key={name}
+              >
                 <label htmlFor={`probe-${name}`} className="probe-name">
                   {name} =
                 </label>
-                <input
-                  id={`probe-${name}`}
-                  className="field"
-                  value={value}
-                  aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
-                  spellCheck={false}
-                  disabled={!!verify}
-                  onChange={(e) => setInputs((s) => ({ ...s, [name]: e.target.value }))}
-                />
+                {level.interface.inputs[name].length > 0 ? (
+                  <TensorGrid
+                    label={name}
+                    shape={level.interface.inputs[name]}
+                    values={value.split(',').map(Number)}
+                    format={(n) => compact(locale, n)}
+                  />
+                ) : (
+                  <input
+                    id={`probe-${name}`}
+                    className="field"
+                    value={value}
+                    aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
+                    spellCheck={false}
+                    disabled={!!verify}
+                    onChange={(e) => {
+                      setInputCase('');
+                      setInputs((s) => ({ ...s, [name]: e.target.value }));
+                    }}
+                  />
+                )}
                 {level.interface.inputs[name].length > 0 && (
                   <span className="probe-shape">{shapeText(level.interface.inputs[name], t)}</span>
                 )}
@@ -989,18 +1059,33 @@ function Editor({
                     step={0.05}
                     disabled={!!verify}
                     value={Number(value) || 0}
-                    onChange={(e) => setInputs((s) => ({ ...s, [name]: e.target.value }))}
+                    onChange={(e) => {
+                      setInputCase('');
+                      setInputs((s) => ({ ...s, [name]: e.target.value }));
+                    }}
                   />
                 )}
               </div>
             ))}
-            <div className="probe-out">
+            <div className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}>
               <span className="probe-name">{level.interface.output} =</span>
-              <span className="mono">
-                {outputValue?.title.replace(/^\[[^\]]*\]\s*/, '') ?? '—'}
-              </span>
+              {outputValue?.shape?.length ? (
+                <TensorGrid
+                  label={level.interface.output}
+                  shape={outputValue.shape}
+                  values={outputValue.title
+                    .replace(/^\[[^\]]*\]\s*/, '')
+                    .split(', ')
+                    .map(Number)}
+                  format={(n) => compact(locale, n)}
+                />
+              ) : (
+                <span className="mono">
+                  {outputValue?.title.replace(/^\[[^\]]*\]\s*/, '') ?? '—'}
+                </span>
+              )}
             </div>
-            <p className="hint">{t('ui.probeHelp')}</p>
+            <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
           </section>
         )}
         <section className="section">
@@ -1116,11 +1201,14 @@ function Editor({
                           className={verify && i === verify.index ? 'is-current' : undefined}
                         >
                           <td>{i + 1}</td>
-                          <td title={listText(locale, r.expected, 99)}>
-                            {listText(locale, r.expected, 2)}
-                          </td>
-                          <td title={listText(locale, r.actual, 99)}>
-                            {listText(locale, r.actual, 2)}
+                          <td title={fullValues(r.expected)}>{listText(locale, r.expected, 2)}</td>
+                          <td title={fullValues(r.actual)}>
+                            {r.errorKey
+                              ? translateDiagnostic(locale, {
+                                  key: r.errorKey,
+                                  params: r.errorParams,
+                                })
+                              : listText(locale, r.actual, 2)}
                           </td>
                           <td className={r.passed ? 'ok' : 'err'}>
                             {verify && i === verify.index && r.passed ? '·' : r.passed ? '✓' : '✗'}

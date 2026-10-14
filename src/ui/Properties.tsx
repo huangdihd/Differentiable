@@ -10,7 +10,9 @@ export function defaults(component: string): Attributes {
       return { shape: [2, 2], init: 'normal', scale: 1 };
     case 'sum':
     case 'reduce_max':
-      return { axes: [0], keepdims: false };
+      return { axes: [-1], keepdims: true };
+    case 'unsqueeze':
+      return { axis: -1 };
     case 'reshape':
       return { shape: [-1] };
     case 'transpose':
@@ -28,6 +30,7 @@ const fields: Record<string, string[]> = {
   reduce_max: ['axes', 'keepdims'],
   reshape: ['shape'],
   transpose: ['perm'],
+  unsqueeze: ['axis'],
   arange: ['n'],
 };
 const initializers = ['zeros', 'ones', 'normal', 'uniform', 'constant'];
@@ -92,6 +95,7 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
       } else if (
         !finite(value) ||
         (key === 'n' && (!Number.isSafeInteger(value) || value < 0)) ||
+        (key === 'axis' && !Number.isSafeInteger(value)) ||
         (key === 'scale' && value < 0)
       )
         throw Error();
