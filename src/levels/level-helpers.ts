@@ -86,8 +86,11 @@ export function referenceRegistry(levels: readonly ForwardLevel[]) {
   );
   for (const level of levels) {
     for (const name of level.unlockComponents ?? []) {
+      const existing = definitions.get(name);
+      // Native-only unlocks grant access; they are not implementations of the lesson.
+      if (existing && !existing.subgraph) continue;
       definitions.set(name, {
-        ...definitions.get(name),
+        ...existing,
         name,
         inputs: Object.keys(level.interface.inputs),
         outputs: ['out'],

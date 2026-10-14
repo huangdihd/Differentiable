@@ -57,6 +57,8 @@ export interface ForwardLevel extends LevelMetadata, LevelCases {
 }
 export interface TrainLevel extends LevelMetadata {
   kind: 'train';
+  /** Allows seeded autoregressive text generation from the trained graph. */
+  generates?: boolean;
   seed: number;
   steps: number;
   optimizer: OptimizerOptions;

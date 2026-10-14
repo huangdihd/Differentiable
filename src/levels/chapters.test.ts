@@ -7,6 +7,7 @@ import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
+import { chapter4ForwardLevels } from './chapter4';
 import { formulaGraph, referenceRegistry } from './level-helpers';
 import en from '../locales/en.json';
 import zh from '../locales/zh-CN.json';
@@ -16,17 +17,19 @@ const registry = referenceRegistry([
   ...chapter1Levels,
   ...chapter2Levels,
   ...chapter3ForwardLevels,
+  ...chapter4ForwardLevels,
 ]);
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 
 describe('formal chapter catalog', () => {
-  it('contains thirty-five sequential lessons and the preserved XOR challenge', () => {
+  it('contains forty sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
       ...Array.from({ length: 9 }, (_, i) => `3-${i + 1}`),
       'xor',
+      ...Array.from({ length: 5 }, (_, i) => `4-${i + 1}`),
     ]);
     expect(catalog.map((entry) => entry.level)).toEqual(gameLevels);
     for (const [index, level] of gameLevels.entries()) {
@@ -46,7 +49,7 @@ describe('formal chapter catalog', () => {
         expect(zh).toHaveProperty(key);
       }
     }
-    expect(gameLevels.at(-1)?.presets).toEqual(['matmul', 'softmax']);
+    expect(gameLevels.find((level) => level.id === 'xor')?.presets).toEqual(['matmul', 'softmax']);
     expect(chapter1Levels.at(-1)?.unlockFeatures).toContain('levels.features.autodiff');
   });
 
@@ -230,7 +233,7 @@ describe('formal chapter catalog', () => {
   }
 
   it('preserved XOR reference trains with earned tensor components', async () => {
-    const level = gameLevels.at(-1)!;
+    const level = gameLevels.find((level) => level.id === 'xor')!;
     const available = [
       ...level.available,
       ...[...chapter0Levels, ...chapter2Levels].flatMap((item) => item.unlockComponents ?? []),

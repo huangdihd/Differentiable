@@ -108,6 +108,32 @@ stop evaluation still releases the session and rejects the stop request. Failed
 training emits a nonpassing final result with structured error data. A graph revision change
 silently disposes obsolete training rather than emitting an obsolete result.
 
+## Character generation
+
+`generate` requests carry `{ levelId, graph, prompt, length, seed?, temperature? }`
+and return `{ text }`. The client method is
+`generate(levelId, graph, prompt, length, seed?, temperature?)`.
+Only training lessons marked `generates: true` support this command (currently
+4-3 and 4-5); others return `worker.generation_unavailable`. A continuous training
+session, including a paused one, rejects generation with `worker.training_busy`.
+
+`length` is the number of **new** characters, an integer from 0 to 400.
+Unknown prompt characters are dropped. Short contexts are internally left-padded
+with spaces, but padding is not included in the returned text. The returned text
+is the filtered prompt plus the requested new characters. Temperature defaults
+to 1 and must be finite and positive; seed defaults to the lesson seed. Invalid
+arguments return `worker.invalid_request`. Sampling uses the seedable PRNG and
+normalized probability weights raised to `1 / temperature`.
+
+The latest successful continuous completion/manual stop or single-step update
+wins: generation copies its parameters into an independent inference plan.
+Snapshots apply only to the identical level/graph/revision. Without a matching
+snapshot, generation uses the lesson's seeded initial parameters. `evaluate`
+does not provide generation parameters. Parameters are session-local, not saved
+in browser storage. Revision changes, progress synchronization, `cancel` and
+`trainReset` clear the snapshot. Generation never updates the training optimizer
+or parameters.
+
 `WorkerRuntime.handle` is the Node-testable protocol handler, with optional level, progress, and registry
 injection for tests (registry overrides are replaced by progress synchronization). One runtime owns the engine default backend per worker/global
 context; do not run independent runtimes concurrently in one JS global. The

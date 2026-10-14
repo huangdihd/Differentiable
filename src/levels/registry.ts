@@ -32,6 +32,8 @@ export function buildPlayerRegistry(
         progress.passed.includes(level.id) && progress.unlockedComponents.includes(name);
       const solution = passed ? progress.passedSolutions[level.id] : undefined;
       const existing = definitions.get(name);
+      // Native-only unlocks grant access; they are not implementations of the lesson.
+      if (existing && !existing.subgraph) continue;
       // Keep a self-contained built-in preset until the player has supplied a solution.
       // Chapter reference graphs may depend on components the player has not earned yet.
       const source =

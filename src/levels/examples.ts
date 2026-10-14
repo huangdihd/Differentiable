@@ -141,7 +141,7 @@ export const xorLevel: TrainLevel = {
     'softmax',
   ],
   interface: { inputs: { x: [4, 2] }, output: 'y', outputShape: [4, 2] },
-  unlock: [],
+  unlock: ['4-1'],
   seed: 17,
   steps: 400,
   optimizer: { kind: 'adam', learningRate: 0.05 },

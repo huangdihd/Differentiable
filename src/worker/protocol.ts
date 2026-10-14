@@ -48,6 +48,15 @@ export type Command =
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
     }
+  | {
+      type: 'generate';
+      levelId: string;
+      graph: GraphJSON;
+      prompt: string;
+      length: number;
+      seed?: number;
+      temperature?: number;
+    }
   | { type: 'trainReset' }
   | { type: 'cancel' }
   | { type: 'pause' }
@@ -66,6 +75,7 @@ export interface ReplyData {
   evaluate: LevelResult;
   start: { state: 'running' };
   trainStep: Awaited<ReturnType<TrainingSession['stepTrace']>>;
+  generate: { text: string };
   trainReset: { state: 'reset' };
   cancel: { state: 'stopped' };
   pause: { state: 'paused' };

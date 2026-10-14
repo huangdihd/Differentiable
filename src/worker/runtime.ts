@@ -6,6 +6,7 @@ import {
   compileGraph,
   GraphError,
   type GraphPlan,
+  type GraphJSON,
   type TensorPorts,
   type ComponentRegistry,
 } from '../engine/graph';
@@ -29,6 +30,7 @@ import {
   type TrainingReport,
 } from '../engine/training';
 import { gameLevels } from '../levels/catalog';
+import { VOCAB, encode, decode } from '../levels/corpus';
 import { availableComponents, buildPlayerRegistry } from '../levels/registry';
 import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
 
@@ -46,7 +48,7 @@ export function workerError(error: unknown): WorkerError {
   return { key, params: {} };
 }
 interface Run {
-  request: WorkerRequest;
+  request: Extract<WorkerRequest, { type: 'start' }>;
   level: TrainLevel;
   plan: GraphPlan;
   session: TrainingSession;
@@ -71,6 +73,104 @@ export class WorkerRuntime {
   private queue: Promise<void> = Promise.resolve();
   private run?: Run;
   private stepRun?: StepRun;
+  // A single CPU snapshot: latest successful continuous completion/stop or step wins.
+  // Never borrow tensors owned by a training plan, which release() will dispose.
+  private generationParameters?: {
+    key: string;
+    values: Map<string, { shape: number[]; data: Float32Array }>;
+  };
+  private generationKey(levelId: string, graph: GraphJSON) {
+    return JSON.stringify([this.revision, levelId, graph]);
+  }
+  private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
+    if (!level.generates) return;
+    const values = new Map<string, { shape: number[]; data: Float32Array }>();
+    for (const [id, value] of plan.parameters) {
+      const data = new Float32Array(await value.read());
+      if (!data.every(Number.isFinite)) throw new Error('training.nonfinite');
+      values.set(id, { shape: [...value.shape], data });
+    }
+    this.generationParameters = { key: this.generationKey(level.id, graph), values };
+  }
+  private async generate(request: Extract<WorkerRequest, { type: 'generate' }>, level: TrainLevel) {
+    const temperature = request.temperature === undefined ? 1 : request.temperature;
+    if (
+      typeof request.prompt !== 'string' ||
+      !Number.isInteger(request.length) ||
+      request.length < 0 ||
+      request.length > 400 ||
+      !Number.isFinite(temperature) ||
+      temperature <= 0 ||
+      (request.seed !== undefined && !Number.isSafeInteger(request.seed))
+    )
+      throw new Error('worker.invalid_request');
+    const rank = level.interface.inputs.x?.length;
+    if (rank !== 1 && rank !== 2) throw new Error('worker.generation_unavailable');
+    const context = rank === 1 ? 1 : 2;
+    const tokens = encode([...request.prompt].filter((char) => VOCAB.includes(char)).join(''));
+    const promptLength = tokens.length;
+    const padded = [...tokens];
+    while (padded.length < context) padded.unshift(encode(' ')[0]);
+    const parameters = new Map<string, T.Tensor>();
+    const saved = this.generationParameters;
+    if (saved?.key === this.generationKey(level.id, request.graph))
+      for (const [id, value] of saved.values) parameters.set(id, T.tensor(value.data, value.shape));
+    let plan: GraphPlan | undefined;
+    try {
+      const shape = rank === 1 ? [1] : [1, 2];
+      plan = compileGraph(request.graph, {
+        registry: this.registry,
+        availableComponents: level.available,
+        inputShapes: { x: shape },
+        random: new Random(level.seed),
+        parameters,
+      });
+      const outputShape = plan.outputShapes[level.interface.output];
+      if (!outputShape || outputShape.at(-1) !== VOCAB.length)
+        throw new Error('levels.output_shape');
+      const random = new Random(request.seed ?? level.seed);
+      for (let i = 0; i < request.length; i++) {
+        const x = T.tensor(padded.slice(-context), shape);
+        let outputs: TensorPorts | undefined;
+        try {
+          outputs = plan.execute({ x });
+          const probabilities = (await outputs[level.interface.output].read()).slice(-VOCAB.length);
+          if (
+            probabilities.length !== VOCAB.length ||
+            !probabilities.every((p) => Number.isFinite(p) && p >= 0)
+          )
+            throw new Error('worker.invalid_probabilities');
+          const maximum = Math.max(...probabilities);
+          if (!(maximum > 0)) throw new Error('worker.invalid_probabilities');
+          // Scaling by max before the power is algebraically equivalent after normalization,
+          // but avoids underflow of every weight at small positive temperatures.
+          const weights = Array.from(probabilities, (p) =>
+            p === maximum ? 1 : Math.pow(p / maximum, 1 / temperature),
+          );
+          const total = weights.reduce((sum, p) => sum + p, 0);
+          let draw = random.uniform();
+          let token = weights.length - 1;
+          while (weights[token] === 0) token--;
+          for (let j = 0; j < weights.length; j++) {
+            draw -= weights[j] / total;
+            if (draw < 0) {
+              token = j;
+              break;
+            }
+          }
+          padded.push(token);
+          tokens.push(token);
+        } finally {
+          if (outputs) plan.releaseExecution(outputs);
+          x.dispose();
+        }
+      }
+      this.reply(request, { text: decode(tokens.slice(0, promptLength + request.length)) });
+    } finally {
+      plan?.dispose();
+      parameters.forEach((value) => value.dispose());
+    }
+  }
   private releaseStep() {
     const run = this.stepRun;
     this.stepRun = undefined;
@@ -127,6 +227,7 @@ export class WorkerRuntime {
     this.disposed = true;
     await this.queue;
     this.release();
+    this.generationParameters = undefined;
   }
   private schedule() {
     const run = this.run;
@@ -166,6 +267,7 @@ export class WorkerRuntime {
         });
       checkDiverged(report);
       if (report.step >= run.level.steps) {
+        await this.retainParameters(run.level, run.request.graph, run.plan);
         this.finish(run, report, true);
         this.release();
       } else this.schedule();
@@ -242,6 +344,7 @@ export class WorkerRuntime {
       if (request.revision > this.revision) {
         this.release();
         this.revision = request.revision;
+        this.generationParameters = undefined;
       }
       if (request.type === 'init') {
         if (this.initialized) throw new Error('worker.already_initialized');
@@ -261,6 +364,7 @@ export class WorkerRuntime {
       }
       if (request.type === 'cancel') {
         this.release();
+        this.generationParameters = undefined;
         this.reply(request, { state: 'stopped' });
         return;
       }
@@ -268,16 +372,19 @@ export class WorkerRuntime {
       if (request.type === 'trainReset') {
         if (this.run) throw new Error('worker.training_busy');
         this.releaseStep();
+        this.generationParameters = undefined;
         this.reply(request, { state: 'reset' });
         return;
       }
-      if (request.type === 'trainStep' && this.run) throw new Error('worker.training_busy');
+      if ((request.type === 'trainStep' || request.type === 'generate') && this.run)
+        throw new Error('worker.training_busy');
       if (request.type === 'syncProgress') {
         this.release();
         const progress = structuredClone(request.progress);
         const registry = buildPlayerRegistry(this.levels, progress);
         this.progress = progress;
         this.registry = registry;
+        this.generationParameters = undefined;
         this.reply(request, { state: 'synced' });
         return;
       }
@@ -286,7 +393,9 @@ export class WorkerRuntime {
         if (!run) throw new Error('worker.no_training');
         if (request.type === 'stop') {
           try {
-            this.finish(run, await run.session.evaluate(), false);
+            const report = await run.session.evaluate();
+            await this.retainParameters(run.level, run.request.graph, run.plan);
+            this.finish(run, report, false);
           } finally {
             this.release();
           }
@@ -308,6 +417,12 @@ export class WorkerRuntime {
       const sourceLevel = this.levels.find((l) => l.id === request.levelId);
       if (!sourceLevel) throw new Error('worker.unknown_level');
       const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
+      if (request.type === 'generate') {
+        if (level.kind !== 'train' || level.generates !== true)
+          throw new Error('worker.generation_unavailable');
+        await this.generate(request, level);
+        return;
+      }
       if (request.type === 'evaluate') {
         if (level.kind === 'train' && this.run) throw new Error('worker.training_busy');
         const result = await evaluateLevel(level, request.graph, {
@@ -386,7 +501,9 @@ export class WorkerRuntime {
         }
         this.stepRun.session.optimizer.options.learningRate = learningRate;
         try {
-          this.reply(request, await this.stepRun.session.stepTrace());
+          const trace = await this.stepRun.session.stepTrace();
+          await this.retainParameters(level, request.graph, this.stepRun.plan);
+          this.reply(request, trace);
         } catch (error) {
           this.releaseStep();
           throw error;

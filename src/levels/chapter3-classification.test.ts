@@ -34,7 +34,10 @@ it('classification worker traces retain three steps, accuracy and output loss gr
   let requestId = 0;
   try {
     await runtime.handle({ type: 'init', backend: 'cpu', revision: 0, requestId: ++requestId });
-    for (const level of [...chapter3ClassificationLevels, gameLevels.at(-1)!]) {
+    for (const level of [
+      ...chapter3ClassificationLevels,
+      gameLevels.find((level) => level.id === 'xor')!,
+    ]) {
       let last = Infinity;
       for (let i = 1; i <= 3; i++) {
         await runtime.handle({

@@ -9,6 +9,11 @@ import {
 } from '../engine/levels';
 import { availableComponents, buildPlayerRegistry } from './registry';
 import { tensor } from '../engine/tensor';
+import { referenceRegistry } from './level-helpers';
+import { chapter0Levels } from './chapter0';
+import { chapter1Levels } from './chapter1';
+import { chapter2Levels } from './chapter2';
+import { chapter3Levels } from './chapter3';
 
 const graph: GraphJSON = {
   version: 1,
@@ -168,6 +173,71 @@ describe('player registry', () => {
       expect(() =>
         compileGraph(call('fixture_a'), { registry, inputShapes: level.interface.inputs }),
       ).toThrow('recursive_component');
+    }
+  });
+  it('keeps native gather intact when a lesson also unlocks a saved embedding', async () => {
+    const producer = { ...level, unlockComponents: ['embedding', 'gather'] };
+    const initial = initialProgress([producer.id]);
+    expect(availableComponents(producer, initial)).not.toContain('gather');
+    const progress = applyResult(initial, producer, result, graph);
+    const consumer = { ...level, unlockComponents: [] };
+    expect(availableComponents(consumer, initial)).not.toContain('gather');
+    expect(availableComponents(consumer, progress)).toContain('gather');
+    expect(availableComponents(producer, progress)).not.toContain('gather');
+    const native = createDefaultRegistry().get('gather')!;
+    const player = buildPlayerRegistry([producer], progress);
+    const authoring = referenceRegistry([producer]);
+    for (const registry of [player, authoring]) {
+      const gather = registry.get('gather')!;
+      expect(gather.inputs).toEqual(native.inputs);
+      expect(gather.outputs).toEqual(native.outputs);
+      expect(gather.primitive).toBeDefined();
+      expect(gather.subgraph).toBeUndefined();
+      const embedding = registry.get('embedding')!;
+      expect(embedding.inputs).toEqual(['x']);
+      expect(embedding.subgraph).not.toBe(graph);
+      expect((embedding.subgraph as GraphJSON).nodes[1].attrs?.name).toBe('out');
+      const plan = compileGraph(
+        {
+          version: 1,
+          nodes: [
+            { id: 'table', component: 'input', attrs: { name: 'table' } },
+            { id: 'idx', component: 'input', attrs: { name: 'idx' } },
+            { id: 'gather', component: 'gather' },
+            { id: 'out', component: 'output', attrs: { name: 'y' } },
+          ],
+          edges: [
+            { from: { node: 'table', port: 'out' }, to: { node: 'gather', port: 'table' } },
+            { from: { node: 'idx', port: 'out' }, to: { node: 'gather', port: 'idx' } },
+            { from: { node: 'gather', port: 'out' }, to: { node: 'out', port: 'x' } },
+          ],
+        },
+        { registry, inputShapes: { table: [3, 2], idx: [2] }, preferNative: false },
+      );
+      const table = tensor([1, 2, 3, 4, 5, 6], [3, 2]);
+      const idx = tensor([2, 0], [2]);
+      try {
+        const outputs = plan.execute({ table, idx });
+        try {
+          expect(Array.from(await outputs.y.read())).toEqual([5, 6, 1, 2]);
+        } finally {
+          plan.releaseExecution(outputs, [table, idx]);
+        }
+      } finally {
+        plan.dispose();
+        table.dispose();
+        idx.dispose();
+      }
+    }
+    expect(graph.nodes[1].attrs?.name).toBe('y');
+  });
+  it('does not expose gather anywhere in chapters 0–3', () => {
+    const preceding = [...chapter0Levels, ...chapter1Levels, ...chapter2Levels, ...chapter3Levels];
+    const progress = initialProgress(preceding.map((entry) => entry.id));
+    for (const entry of preceding) {
+      expect(availableComponents(entry, progress), entry.id).not.toContain('gather');
+      expect(entry.unlockComponents ?? [], entry.id).not.toContain('gather');
+      progress.unlockedComponents.push(...(entry.unlockComponents ?? []));
     }
   });
   it('retains native kernels while replacing their inspectable subgraph', () => {

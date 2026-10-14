@@ -34,7 +34,7 @@ describe('gradient descent curriculum', () => {
       ['3-9'],
       ['xor'],
     ]);
-    expect(catalog.at(-1)!.code).toBe('3-10');
+    expect(catalog.find((entry) => entry.level.id === 'xor')!.code).toBe('3-10');
     expect(chapter3Levels.slice(0, 4).map((l) => l.par)).toEqual([7, 6, 11, 13]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);

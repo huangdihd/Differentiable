@@ -166,6 +166,27 @@ export class WorkerClient {
   ) {
     return this.send<'trainStep'>({ type: 'trainStep', levelId, graph, learningRate, optimizer });
   }
+  /** Returns the filtered prompt plus length sampled characters. Padding is context-only.
+   * Uses the latest successful start/stop or trainStep parameters for this graph/revision.
+   */
+  generate(
+    levelId: string,
+    graph: GraphJSON,
+    prompt: string,
+    length: number,
+    seed?: number,
+    temperature?: number,
+  ) {
+    return this.send<'generate'>({
+      type: 'generate',
+      levelId,
+      graph,
+      prompt,
+      length,
+      seed,
+      temperature,
+    });
+  }
   trainReset() {
     return this.send<'trainReset'>({ type: 'trainReset' });
   }

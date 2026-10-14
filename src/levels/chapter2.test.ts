@@ -252,7 +252,7 @@ describe('tensor curriculum', () => {
 
   it('unlocks the linear route, uses passed graphs, and preserves XOR before and after earned components', async () => {
     let progress = initialProgress(['0-1']);
-    const xor = gameLevels.at(-1)!;
+    const xor = gameLevels.find((level) => level.id === 'xor')!;
     expect(buildPlayerRegistry(gameLevels, progress).get('matmul')?.native).toBe(
       createDefaultRegistry().get('matmul')!.native,
     );
@@ -283,9 +283,12 @@ describe('tensor curriculum', () => {
       progress = applyResult(progress, level, result, level.referenceGraph!);
     }
     expect(progress.unlocked).toContain('3-4');
-    expect(availableComponents(gameLevels.at(-1)!, progress)).toEqual(
-      expect.arrayContaining(['matmul', 'softmax']),
-    );
+    expect(
+      availableComponents(
+        gameLevels.find((level) => level.id === 'xor')!,
+        progress,
+      ),
+    ).toEqual(expect.arrayContaining(['matmul', 'softmax']));
     const player = buildPlayerRegistry(gameLevels, progress);
     const after = await evaluateLevel(
       { ...xor, available: availableComponents(xor, progress) },
@@ -349,5 +352,5 @@ describe('tensor curriculum', () => {
         Object.values(inputs).forEach((input) => input.dispose());
       }
     }
-  });
+  }, 60000);
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultRegistry } from './engine/graph';
 import { exampleLevels } from './levels/examples';
+import { gameLevels } from './levels/catalog';
 import {
   createTranslator,
   diagnosticKey,
@@ -83,9 +84,12 @@ describe('i18n', () => {
         for (const port of [...component.inputs, ...component.outputs])
           expect(keys.has(`ports.${port}`)).toBe(true);
       }
-      for (const level of exampleLevels) {
+      for (const level of [...exampleLevels, ...gameLevels]) {
         expect(keys.has(level.titleKey)).toBe(true);
         expect(keys.has(level.descriptionKey)).toBe(true);
+        for (const key of level.hintsKeys ?? []) expect(keys.has(key)).toBe(true);
+        for (const name of level.unlockComponents ?? [])
+          expect(keys.has(`components.${name}`)).toBe(true);
         for (const name of level.available) expect(keys.has(`components.${name}`)).toBe(true);
       }
     }

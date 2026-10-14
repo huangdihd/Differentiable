@@ -72,6 +72,24 @@ describe('storage', () => {
     expect(restored.unlocked).toContain('3-1');
     expect(restored.unlocked).toContain('xor');
   });
+  it('unlocks chapter four for saved XOR graduates without changing their graphs', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['xor'],
+      passed: ['xor'],
+      passedSolutions: { xor: graph },
+      savedGraphs: { xor: graph },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const restored = await loadProgressWithMigration(gameLevels, source);
+    expect(restored.unlocked).toEqual(['xor', '4-1']);
+    expect(restored.passedSolutions).toEqual(progress.passedSolutions);
+    expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    expect(saveProgress(restored, source)).toBe(true);
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+  });
   it('gates expressions for new players, graduates and grandfathered players', () => {
     const fresh = createInitialProgress();
     expect(isExpressionUnlocked(fresh, chapter1Levels)).toBe(false);
