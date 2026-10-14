@@ -23,16 +23,26 @@ const playable = (level: (typeof chapter3Levels)[number]) => ({
 describe('gradient descent curriculum', () => {
   it('has references, two hints, expanded par and the complete route', () => {
     expect(chapter2Levels.at(-1)!.unlock).toEqual(['3-1']);
-    expect(chapter3Levels.map((l) => l.unlock)).toEqual([['3-2'], ['3-3'], ['3-4'], ['xor']]);
-    expect(catalog.at(-1)!.code).toBe('3-5');
-    expect(chapter3Levels.map((l) => l.par)).toEqual([7, 6, 11, 13]);
+    expect(chapter3Levels.map((l) => l.unlock)).toEqual([
+      ['3-2'],
+      ['3-3'],
+      ['3-4'],
+      ['3-5'],
+      ['3-6'],
+      ['3-7'],
+      ['3-8'],
+      ['3-9'],
+      ['xor'],
+    ]);
+    expect(catalog.at(-1)!.code).toBe('3-10');
+    expect(chapter3Levels.slice(0, 4).map((l) => l.par)).toEqual([7, 6, 11, 13]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
     }
   });
 
-  for (const [i, level] of chapter3ForwardLevels.entries()) {
+  for (const [i, level] of chapter3ForwardLevels.slice(0, 3).entries()) {
     it(`${level.id}: reference passes all shapes and rejects the typical mistake`, async () => {
       const result = await evaluateLevel(playable(level), level.referenceGraph!, { registry });
       expect(result.errorKey).toBeUndefined();
@@ -93,7 +103,7 @@ describe('gradient descent curriculum', () => {
 
   it('earns mse as the player subgraph with p/t ports and no native kernel', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of [...preceding, ...chapter3ForwardLevels]) {
+    for (const level of [...preceding, ...chapter3ForwardLevels.slice(0, 3)]) {
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         level.referenceGraph!,

@@ -256,7 +256,8 @@ describe('tensor curriculum', () => {
     expect(buildPlayerRegistry(gameLevels, progress).get('matmul')?.native).toBe(
       createDefaultRegistry().get('matmul')!.native,
     );
-    for (const level of gameLevels.filter((entry) => entry.kind !== 'train')) {
+    // Forward lessons now have training prerequisites between them; exercise the full route.
+    for (const level of gameLevels) {
       if (level.id === '2-1') {
         const before = await evaluateLevel(
           { ...xor, available: availableComponents(xor, progress) },
@@ -272,7 +273,11 @@ describe('tensor curriculum', () => {
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         level.referenceGraph!,
-        { registry: buildPlayerRegistry(gameLevels, progress) },
+        {
+          registry: buildPlayerRegistry(gameLevels, progress),
+          learningRate: level.id === '3-4' || level.id === '3-6' ? 0.1 : undefined,
+          optimizer: level.id === '3-8' ? 'adam' : undefined,
+        },
       );
       expect(result.passed, level.id).toBe(true);
       progress = applyResult(progress, level, result, level.referenceGraph!);

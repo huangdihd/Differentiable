@@ -4,7 +4,7 @@ import * as T from '../engine/tensor';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
-import { scalarPrimitives, tensorCases, withPar } from './level-helpers';
+import { formulaGraph, scalarPrimitives, tensorCases, withPar } from './level-helpers';
 
 const preceding = [...chapter0Levels, ...chapter1Levels, ...chapter2Levels];
 const available = [...scalarPrimitives, 'max', 'sum', 'reduce_max', 'unsqueeze', 'transpose'];
@@ -73,7 +73,7 @@ const metadata = (index: number) => ({
   descriptionKey: `levels.3-${index}.description`,
   hintsKeys: [`levels.3-${index}.hint1`, `levels.3-${index}.hint2`],
   available,
-  unlock: [index === 4 ? 'xor' : `3-${index + 1}`],
+  unlock: [`3-${index + 1}`],
   referenceGraph: answer(index),
 });
 
@@ -160,4 +160,184 @@ export const chapter3TrainLevel = withPar<TrainLevel>(
   [...preceding, ...chapter3ForwardLevels],
 );
 
-export const chapter3Levels = [...chapter3ForwardLevels, chapter3TrainLevel];
+/** Ordinary player circuits; no training-only or loss kernels in the reference graph. */
+function classificationAnswer(hidden = false): GraphJSON {
+  const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
+  const node = (
+    id: string,
+    component: string,
+    args: Record<string, string> = {},
+    attrs?: Attributes,
+  ) => {
+    graph.nodes.push({ id, component, attrs });
+    for (const [port, source] of Object.entries(args))
+      graph.edges.push({ from: { node: source, port: 'out' }, to: { node: id, port } });
+    return id;
+  };
+  node('x', 'input', {}, { name: 'x' });
+  let x = 'x';
+  if (hidden) {
+    node('w1', 'param', {}, { shape: [2, 16], init: 'normal', scale: 1 });
+    node('b1', 'param', {}, { shape: [16], init: 'zeros' });
+    node('hiddenLinear', 'matmul', { a: x, b: 'w1' });
+    node('hiddenBias', 'add', { a: 'hiddenLinear', b: 'b1' });
+    x = node('hidden', 'sigmoid', { x: 'hiddenBias' });
+  }
+  node(
+    'w',
+    'param',
+    {},
+    { shape: [hidden ? 16 : 2, 2], init: hidden ? 'normal' : 'zeros', scale: 0.5 },
+  );
+  node('b', 'param', {}, { shape: [2], init: 'zeros' });
+  node('linear', 'matmul', { a: x, b: 'w' });
+  node('biased', 'add', { a: 'linear', b: 'b' });
+  node('probabilities', 'softmax', { x: 'biased' });
+  node('output', 'output', { x: 'probabilities' }, { name: 'y' });
+  return graph;
+}
+
+function crossEntropyAnswer(): GraphJSON {
+  return {
+    version: 1,
+    nodes: [
+      { id: 'p', component: 'input', attrs: { name: 'p' } },
+      { id: 't', component: 'input', attrs: { name: 't' } },
+      { id: 'log', component: 'log' },
+      { id: 'selected', component: 'mul' },
+      { id: 'rows', component: 'sum', attrs: { axes: [-1] } },
+      { id: 'average', component: 'mean' },
+      { id: 'minus', component: 'const', attrs: { value: -1 } },
+      { id: 'negative', component: 'mul' },
+      { id: 'output', component: 'output', attrs: { name: 'y' } },
+    ],
+    edges: [
+      ['p', 'log', 'x'],
+      ['log', 'selected', 'a'],
+      ['t', 'selected', 'b'],
+      ['selected', 'rows', 'x'],
+      ['rows', 'average', 'x'],
+      ['average', 'negative', 'a'],
+      ['minus', 'negative', 'b'],
+      ['negative', 'output', 'x'],
+    ].map(([from, to, port]) => ({ from: { node: from, port: 'out' }, to: { node: to, port } })),
+  };
+}
+function probabilityCases(rows: number, classes: number) {
+  return {
+    fixed: Array.from({ length: 5 }, (_, k) => {
+      const p: number[] = [],
+        t: number[] = [];
+      for (let i = 0; i < rows; i++) {
+        const weights = Array.from({ length: classes }, (_, j) =>
+          Math.exp(((i * 3 + j * 7 + k) % 11) / 3),
+        );
+        const total = weights.reduce((a, b) => a + b, 0);
+        p.push(...weights.map((w) => w / total));
+        t.push(...weights.map((_, j) => Number(j === (i + k) % classes)));
+      }
+      return { id: `probabilities-${k}`, inputs: { p, t } };
+    }),
+  };
+}
+const crossEntropyLevel = withPar<ForwardLevel>(
+  {
+    ...metadata(5),
+    kind: 'forward',
+    referenceGraph: crossEntropyAnswer(),
+    interface: { inputs: { p: [4, 3], t: [4, 3] }, output: 'y', outputShape: [1] },
+    unlockComponents: ['cross_entropy'],
+    forbidden: ['cross_entropy'],
+    ...probabilityCases(4, 3),
+    shapeVariants: [
+      [2, 5],
+      [6, 2],
+    ].map(([rows, classes]) => ({
+      inputs: { p: [rows, classes], t: [rows, classes] },
+      ...probabilityCases(rows, classes),
+    })),
+    reference: ({ p, t }) =>
+      T.mul(T.sum(T.mul(t, T.log(p)), [-2, -1]), T.tensor([-1 / p.shape[0]], [1], p.backend)),
+  },
+  [...preceding, ...chapter3ForwardLevels],
+);
+
+const momentumLevel = withPar<ForwardLevel>(
+  {
+    ...metadata(7),
+    kind: 'forward',
+    interface: { inputs: { w: [], g: [], m: [] }, output: 'y', outputShape: [] },
+    referenceGraph: formulaGraph('w + (-0.1) * (0.9 * m + g)', ['w', 'g', 'm']),
+    ...tensorCases(307, { w: [], g: [], m: [] }),
+    reference: ({ w, g, m }) =>
+      T.add(w, T.mul(scalar(-0.1, w), T.add(T.mul(scalar(0.9, m), m), g))),
+  },
+  [...preceding, ...chapter3ForwardLevels, crossEntropyLevel],
+);
+chapter3ForwardLevels.push(crossEntropyLevel, momentumLevel);
+
+export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) => {
+  const count = index === 9 ? 64 : 40;
+  return withPar<TrainLevel>(
+    {
+      ...metadata(index),
+      kind: 'train',
+      unlock: [index === 9 ? 'xor' : `3-${index + 1}`],
+      available: [...available, 'param'],
+      referenceGraph: classificationAnswer(index === 9),
+      interface: { inputs: { x: [count, 2] }, output: 'y', outputShape: [count, 2] },
+      seed: 3100 + index,
+      steps: index === 9 ? 300 : index === 8 ? 600 : 80,
+      optimizer: { kind: index === 9 ? 'adam' : 'sgd', learningRate: index === 6 ? 0.001 : 0.05 },
+      tunable: {
+        learningRate: {
+          min: 0.001,
+          max: index === 6 ? 1 : 0.1,
+          default: index === 6 ? 0.001 : 0.05,
+        },
+        ...(index === 6
+          ? {}
+          : {
+              optimizer:
+                index === 9
+                  ? (['adam', 'sgd'] as ('adam' | 'sgd')[])
+                  : (['sgd', 'adam'] as ('adam' | 'sgd')[]),
+            }),
+      },
+      threshold: { loss: 0.15, accuracy: index === 9 ? 0.95 : 1 },
+      dataset: (random) => {
+        const x: number[] = [],
+          targets: number[] = [];
+        for (let i = 0; i < count; i++) {
+          const label = i % 2,
+            sign = label ? 1 : -1;
+          if (index === 9) {
+            const angle =
+              (2 * Math.PI * (Math.floor(i / 2) + random.uniform() * 0.2)) / (count / 2);
+            const radius = (label ? 2 : 0.6) + (random.uniform() - 0.5) * 0.1;
+            x.push(radius * Math.cos(angle), radius * Math.sin(angle));
+          } else if (index === 8) {
+            // The small feature determines the label; the large nuisance feature is balanced.
+            x.push(
+              sign * (0.8 + random.uniform() * 0.4) * 0.05,
+              (Math.floor(i / 2) % 2 ? 1 : -1) * (0.8 + random.uniform() * 0.4) * 20,
+            );
+          } else {
+            x.push(sign * (1 + random.uniform() * 0.5), sign * (1 + random.uniform() * 0.5));
+          }
+          targets.push(1 - label, label);
+        }
+        return { inputs: { x: T.tensor(x, [count, 2]) }, targets: T.tensor(targets, [count, 2]) };
+      },
+    },
+    [...preceding, ...chapter3ForwardLevels],
+  );
+});
+export const chapter3Levels = [
+  ...chapter3ForwardLevels.slice(0, 3),
+  chapter3TrainLevel,
+  crossEntropyLevel,
+  chapter3ClassificationLevels[0],
+  momentumLevel,
+  ...chapter3ClassificationLevels.slice(1),
+];

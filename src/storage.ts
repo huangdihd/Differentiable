@@ -90,7 +90,10 @@ export function isProgress(value: unknown): value is Progress {
             record(settings) &&
             typeof settings.learningRate === 'number' &&
             Number.isFinite(settings.learningRate) &&
-            settings.learningRate > 0,
+            settings.learningRate > 0 &&
+            (settings.optimizer === undefined ||
+              settings.optimizer === 'sgd' ||
+              settings.optimizer === 'adam'),
         ))
     )
       return false;

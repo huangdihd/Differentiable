@@ -12,6 +12,7 @@ import {
 import {
   evaluateLevel,
   trainingLearningRate,
+  trainingOptimizer,
   initialProgress,
   type Progress,
   graphMetrics,
@@ -189,7 +190,15 @@ export class WorkerRuntime {
       completed &&
       report.loss < threshold.loss &&
       (threshold.accuracy === undefined || (report.accuracy ?? -Infinity) >= threshold.accuracy);
-    if (completed && !passed && run.level.tunable) {
+    if (
+      completed &&
+      report.loss < threshold.loss &&
+      threshold.accuracy !== undefined &&
+      (report.accuracy ?? -Infinity) < threshold.accuracy
+    ) {
+      run.result.errorKey = 'levels.train_accuracy';
+      run.result.error = { key: run.result.errorKey, params: { accuracy: report.accuracy } };
+    } else if (completed && !passed && run.level.tunable) {
       // Ending above where it started is also overshooting, just more slowly.
       const key = report.loss > run.initialLoss ? 'levels.train_diverged' : 'levels.train_slow';
       run.result.errorKey = key;
@@ -304,6 +313,7 @@ export class WorkerRuntime {
         const result = await evaluateLevel(level, request.graph, {
           registry: this.registry,
           learningRate: request.learningRate,
+          optimizer: request.optimizer,
         });
         if (result.error)
           result.error = workerError(
@@ -340,7 +350,8 @@ export class WorkerRuntime {
       if (request.type === 'trainStep') {
         if (level.kind !== 'train') throw new Error('worker.not_training_level');
         const learningRate = trainingLearningRate(level, request.learningRate);
-        const key = JSON.stringify([level.id, request.graph]);
+        const kind = trainingOptimizer(level, request.optimizer);
+        const key = JSON.stringify([level.id, request.graph, kind]);
         if (this.stepRun?.key !== key) this.releaseStep();
         if (!this.stepRun) {
           const plan = compileGraph(request.graph, {
@@ -361,7 +372,7 @@ export class WorkerRuntime {
               plan,
               batch,
               crossEntropy,
-              { ...level.optimizer, learningRate },
+              { ...level.optimizer, kind, learningRate },
               level.interface.output,
               { lossOutput: level.lossOutput, accuracy: level.threshold.accuracy !== undefined },
             );
@@ -460,6 +471,7 @@ export class WorkerRuntime {
           if (!Number.isSafeInteger(level.steps) || level.steps < 1)
             throw new Error('training.steps');
           const learningRate = trainingLearningRate(level, request.learningRate);
+          const kind = trainingOptimizer(level, request.optimizer);
           this.release();
           const metrics = graphMetrics(graph, this.registry);
           const batches: TrainingBatch[] = [];
@@ -471,7 +483,7 @@ export class WorkerRuntime {
               plan,
               batches[0],
               crossEntropy,
-              { ...level.optimizer, learningRate },
+              { ...level.optimizer, kind, learningRate },
               level.interface.output,
               {
                 evaluationBatch: batches[1],

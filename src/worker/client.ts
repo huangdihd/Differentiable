@@ -1,3 +1,4 @@
+import type { OptimizerOptions } from '../engine/training';
 import type { Progress } from '../engine/levels';
 import type { GraphEndpoint, GraphJSON } from '../engine/graph';
 import type {
@@ -141,14 +142,29 @@ export class WorkerClient {
   backward(levelId: string, graph: GraphJSON, inputs?: Record<string, number[]>) {
     return this.send<'backward'>({ type: 'backward', levelId, graph, inputs });
   }
-  evaluate(levelId: string, graph: GraphJSON, learningRate?: number) {
-    return this.send<'evaluate'>({ type: 'evaluate', levelId, graph, learningRate });
+  evaluate(
+    levelId: string,
+    graph: GraphJSON,
+    learningRate?: number,
+    optimizer?: OptimizerOptions['kind'],
+  ) {
+    return this.send<'evaluate'>({ type: 'evaluate', levelId, graph, learningRate, optimizer });
   }
-  start(levelId: string, graph: GraphJSON, learningRate?: number) {
-    return this.send<'start'>({ type: 'start', levelId, graph, learningRate });
+  start(
+    levelId: string,
+    graph: GraphJSON,
+    learningRate?: number,
+    optimizer?: OptimizerOptions['kind'],
+  ) {
+    return this.send<'start'>({ type: 'start', levelId, graph, learningRate, optimizer });
   }
-  trainStep(levelId: string, graph: GraphJSON, learningRate?: number) {
-    return this.send<'trainStep'>({ type: 'trainStep', levelId, graph, learningRate });
+  trainStep(
+    levelId: string,
+    graph: GraphJSON,
+    learningRate?: number,
+    optimizer?: OptimizerOptions['kind'],
+  ) {
+    return this.send<'trainStep'>({ type: 'trainStep', levelId, graph, learningRate, optimizer });
   }
   trainReset() {
     return this.send<'trainReset'>({ type: 'trainReset' });

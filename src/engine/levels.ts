@@ -60,7 +60,10 @@ export interface TrainLevel extends LevelMetadata {
   seed: number;
   steps: number;
   optimizer: OptimizerOptions;
-  tunable?: { learningRate: { min: number; max: number; default: number } };
+  tunable?: {
+    learningRate: { min: number; max: number; default: number };
+    optimizer?: readonly OptimizerOptions['kind'][];
+  };
   dataset: (random: Random) => TrainingBatch;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
@@ -122,6 +125,16 @@ export function trainingLearningRate(level: TrainLevel, requested?: number): num
   const value = requested !== undefined && Number.isFinite(requested) ? requested : range.default;
   return Math.min(range.max, Math.max(range.min, value));
 }
+/** Only explicitly allowed optimizer choices override the level configuration. */
+export function trainingOptimizer(
+  level: TrainLevel,
+  requested?: OptimizerOptions['kind'],
+): OptimizerOptions['kind'] {
+  const allowed = level.tunable?.optimizer;
+  return requested !== undefined && allowed?.includes(requested)
+    ? requested
+    : (allowed?.[0] ?? level.optimizer.kind);
+}
 /** Tests compile and execute the actual user graph, never a solution-specific evaluator. */
 export async function evaluateLevel(
   level: Level,
@@ -129,6 +142,7 @@ export async function evaluateLevel(
   options: {
     registry?: ComponentRegistry;
     learningRate?: number;
+    optimizer?: OptimizerOptions['kind'];
     onReport?: (report: TrainingReport) => void;
     signal?: AbortSignal;
   } = {},
@@ -163,6 +177,7 @@ export async function evaluateLevel(
           crossEntropy,
           {
             ...level.optimizer,
+            kind: trainingOptimizer(level, options.optimizer),
             learningRate: trainingLearningRate(level, options.learningRate),
           },
           level.interface.output,
@@ -194,7 +209,14 @@ export async function evaluateLevel(
           result.training.loss < level.threshold.loss &&
           (level.threshold.accuracy === undefined ||
             result.training.accuracy! >= level.threshold.accuracy);
-        if (!result.passed && level.tunable) {
+        if (
+          result.training.loss < level.threshold.loss &&
+          level.threshold.accuracy !== undefined &&
+          (result.training.accuracy ?? -Infinity) < level.threshold.accuracy
+        ) {
+          result.errorKey = 'levels.train_accuracy';
+          result.error = { key: result.errorKey, params: { accuracy: result.training.accuracy } };
+        } else if (!result.passed && level.tunable) {
           result.errorKey = 'levels.train_slow';
           result.error = { key: result.errorKey, params: { loss: result.training.loss } };
         }
@@ -344,7 +366,7 @@ export interface Progress {
   savedGraphs: Record<string, GraphJSON>;
   passedSolutions: Record<string, GraphJSON>;
   bestScores: Record<string, GraphMetrics>;
-  trainingSettings?: Record<string, { learningRate: number }>;
+  trainingSettings?: Record<string, { learningRate: number; optimizer?: 'sgd' | 'adam' }>;
 }
 export const initialProgress = (
   levels: readonly string[],

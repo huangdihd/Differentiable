@@ -31,6 +31,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   softmax: 'soft',
   layernorm: 'LN',
   mse: 'MSE',
+  cross_entropy: 'CE',
 };
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */

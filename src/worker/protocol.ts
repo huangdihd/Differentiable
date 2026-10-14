@@ -1,7 +1,7 @@
 import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
-import type { TrainingReport, TrainingSession } from '../engine/training';
+import type { OptimizerOptions, TrainingReport, TrainingSession } from '../engine/training';
 
 export interface WorkerError {
   key: string;
@@ -27,9 +27,27 @@ export type Command =
       graph: GraphJSON;
       inputs?: Record<string, number[]>;
     }
-  | { type: 'evaluate'; levelId: string; graph: GraphJSON; learningRate?: number }
-  | { type: 'start'; levelId: string; graph: GraphJSON; learningRate?: number }
-  | { type: 'trainStep'; levelId: string; graph: GraphJSON; learningRate?: number }
+  | {
+      type: 'evaluate';
+      levelId: string;
+      graph: GraphJSON;
+      learningRate?: number;
+      optimizer?: OptimizerOptions['kind'];
+    }
+  | {
+      type: 'start';
+      levelId: string;
+      graph: GraphJSON;
+      learningRate?: number;
+      optimizer?: OptimizerOptions['kind'];
+    }
+  | {
+      type: 'trainStep';
+      levelId: string;
+      graph: GraphJSON;
+      learningRate?: number;
+      optimizer?: OptimizerOptions['kind'];
+    }
   | { type: 'trainReset' }
   | { type: 'cancel' }
   | { type: 'pause' }

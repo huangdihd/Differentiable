@@ -27,7 +27,7 @@ client.dispose();
 ```
 
 Use formal `gameLevels` IDs from `levels/catalog` and serializable `GraphJSON`.
-Level callbacks and the player component registry stay inside the worker. Forward/derivative evaluation uses `evaluate`; interactive continuous training uses `start`. `evaluate(levelId, graph, learningRate?)` also supports bounded training evaluation, returning a final result directly (without streaming progress).
+Level callbacks and the player component registry stay inside the worker. Forward/derivative evaluation uses `evaluate`; interactive continuous training uses `start`. `evaluate(levelId, graph, learningRate?, optimizer?)` also supports bounded training evaluation, returning a final result directly (without streaming progress).
 `compile` returns output shapes, graph metrics, and structured diagnostics.
 `probe` returns shape/values from a fresh seeded execution, not live training
 parameters. It adds a collision-free output to a copied graph and releases the
@@ -65,7 +65,7 @@ training even when no compile/evaluate follows. Cancellation is serialized after
 in-flight step, releases paused sessions too, and emits no final result. `dispose` terminates the worker immediately. Errors reject with
 `WorkerClientError.detail` (`key`, `params`, optional node/port), never player prose.
 
-`trainStep(levelId, graph, learningRate?)` maintains an independent seeded session and
+`trainStep(levelId, graph, learningRate?, optimizer?)` maintains an independent seeded session and
 performs exactly one optimizer update. Its reply contains `step`, the pre-update `loss`,
 pre-update `forward` and `gradient` node maps, and `parameters`. Forward/gradient values
 have `{ shape, values, size }`; `values` is limited to 256 elements and `size` records the
@@ -73,7 +73,7 @@ full tensor length. Parameters are `Record<canvasParamId, { before: number[], af
 with full arrays, not snapshots; each `after` equals the next step's `before`.
 Consecutive calls retain parameters and optimizer state. Changing the effective learning
 rate updates the existing optimizer options without resetting the step count or parameters.
-Changing the graph or level rebuilds this session; revision changes,
+Changing the effective optimizer kind, graph or level rebuilds this session; revision changes,
 progress synchronization, cancellation, starting continuous training, and disposal
 release it. `trainReset()` returns `{ state: 'reset' }`, even without a step session;
 the next step starts from the seeded initialization. Step replies never award a pass.
@@ -83,12 +83,18 @@ including while paused. Training evaluation also rejects while that session exis
 The optional numeric `learningRate` on `start`, `evaluate` and `trainStep` follows the
 level's declared tuning bounds: finite values are clamped, missing/nonfinite values
 use the declared default, and non-tunable levels ignore the override. The source level
-and caller graph are never modified.
+and caller graph are never modified. Optional `optimizer?: 'sgd' | 'adam'` is accepted
+by these three requests (the fourth argument on client methods). Only values listed in
+`tunable.optimizer` are accepted; missing or invalid values use its first entry, or the
+fixed optimizer if the list is absent. Both optimizers share the learning-rate range.
+Classification step replies include pre-update `accuracy`; gradients include the output
+node and differentiate the engine cross-entropy loss, not merely the sum of predictions.
 
 For tunable levels, `start` measures the initial loss before any updates. A nonfinite
 training loss or a step loss greater than ten times the initial loss ends training
 with `levels.train_diverged`. Exhausting the level's step budget (60 for `3-4`)
-without meeting its thresholds yields `levels.train_slow`. Structured errors expose
+without meeting its loss threshold yields `levels.train_slow`; insufficient accuracy
+yields `levels.train_accuracy` with `params.accuracy` (fraction from 0 to 1). Structured errors expose
 `params.loss` for interpolation (Infinity when the engine rejects nonfinite computation
 before returning a report). Slow classification does not apply to manual stop or
 non-tunable levels. `evaluate` uses the engine's corresponding classification rules.

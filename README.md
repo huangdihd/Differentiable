@@ -1,6 +1,6 @@
 # Differentiable
 
-A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–2, four gradient-descent lessons and an XOR training preview. `demos/` is untouched reference material, not application source.
+A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–2, nine learning lessons and the chapter-final XOR challenge. `demos/` is untouched reference material, not application source.
 
 ## Development
 
@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and four gradient-descent lessons unlock sequentially, followed by the XOR training preview (3-5, stable ID `xor`). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and nine learning lessons unlock sequentially, followed by the XOR challenge (3-10, stable ID `xor`). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -38,18 +38,47 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 
 ### Gradient-descent lessons and saves
 
-The route after 2-8 is 3-1 → 3-2 → 3-3 → 3-4 → `xor` (displayed as 3-5).
+The route after 2-8 is 3-1 → 3-2 → 3-3 → 3-4 → 3-5 (cross entropy) →
+3-6 (classification) → 3-7 (momentum) → 3-8 (Adam) → 3-9 (hidden layer) →
+`xor` (displayed as 3-10). Cross entropy is a player subgraph with `p`/`t` ports;
+it reduces classes, then averages rows, including at new batch/class sizes.
 MSE is the player's saved subgraph, not a native kernel. Lesson 3-4 predicts
 `w*x+b` from zero-initialized scalar parameters and uses the graph's `loss` output
 (shape `[1]`); batches need no separate targets when `lossOutput` is set.
 `TrainLevel.tunable.learningRate` declares min/max/default; evaluation and worker
 training clamp an explicit rate to that range and otherwise use the default.
 
-Save v3 optionally includes `trainingSettings: Record<levelId, { learningRate: number }>`.
-Rates must be finite and positive. Older saves remain valid; loading unions new
+`tunable.optimizer?: ('sgd' | 'adam')[]` declares allowed optimizers; the first is
+the default. Unlisted/invalid requests are ignored. Both optimizers share the declared
+learning-rate range. Worker `evaluate`, `start`, and `trainStep` requests accept
+`optimizer?`; client methods accept it after the optional learning-rate argument.
+Classification step traces include accuracy and gradients of the external cross-entropy
+loss with respect to node outputs, including `y`.
+
+Save v3 optionally includes `trainingSettings: Record<levelId, { learningRate: number;
+optimizer?: 'sgd' | 'adam' }>`.
+Rates must be finite and positive; optimizer, if present, must be `sgd` or `adam`. Older saves remain valid; loading unions new
 successors with existing unlocks, so completing 2-8 unlocks 3-1 without removing
 an already-unlocked XOR. UI code should persist its chosen rate in this field and
 pass it to worker training requests; no learning-rate UI is added in this step.
+
+### Classification lesson calibration (CPU, seeded reference circuits)
+
+| Level | Data / seed | Steps | Threshold | LR min–max (default) | Optimizer default |
+| --- | --- | --- | --- | --- | --- |
+| 3-6 | 40 points, separated clusters / 3106 | 80 | loss < 0.15, accuracy 100% | 0.001–1 (0.001) | SGD |
+| 3-8 | 40 points; label feature ×0.05, nuisance feature ×20 / 3108 | 600 | loss < 0.15, accuracy 100% | 0.001–0.1 (0.05) | SGD; Adam selectable |
+| 3-9 | 64 points, radii near 0.6 and 2 / 3109 | 300 | loss < 0.15, accuracy ≥95% | 0.001–0.1 (0.05) | Adam; SGD selectable |
+
+3-6: default loss 0.583232 / accuracy 100% fails; SGD 0.1 gives 0.021978 / 100%.
+3-8: SGD rates 0.001, 0.005, 0.01, 0.05, 0.1 give losses 0.692122,
+0.689022, 0.710369, 4.099624, 8.059049 (all 50%, all fail). Adam at the
+default rate gives 0.119819 / 100%, passing. These are sampled rates, not an
+exhaustive numerical search of the continuous interval. The small-feature weight
+can move by at most 600 × 0.1 × 0.06 = 3.6 per class under SGD; its maximum
+class logit separation is only 0.432, insufficient for the loss target even with
+an optimal balanced nuisance coefficient. 3-9 uses a 16-unit sigmoid hidden layer
+and reaches loss 0.003621 / 100%. New expanded pars (3-5…3-9): 12, 14, 4, 14, 25.
 
 ### Symbolic backward graphs
 
@@ -105,6 +134,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–2 and the first four chapter-3 lessons are included. Chapter 3 teaches a scalar update, vector gradients, a player-built MSE component and 60-step linear regression with a tunable learning rate. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Later learning lessons and chapters 4 onward remain upcoming except the XOR preview. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–3 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapters 4 onward remain upcoming. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

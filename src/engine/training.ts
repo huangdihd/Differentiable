@@ -236,6 +236,33 @@ export class TrainingSession {
       this.model.releaseExecution?.(outputs, keep);
     }
   }
+  /** Classification accuracy from the same pre-update forward pass as a step trace. */
+  private async accuracy(
+    outputs: Record<string, Tensor>,
+    batch: TrainingBatch,
+  ): Promise<number | undefined> {
+    if (!(this.sessionOptions.accuracy ?? !this.sessionOptions.lossOutput)) return undefined;
+    if (!batch.targets) throw new Error('training.missing_targets');
+    const prediction = outputs[this.output];
+    const actual = await prediction.read(),
+      expected = await batch.targets.read();
+    if (![...actual, ...expected].every(Number.isFinite)) throw new Error('training.nonfinite');
+    const classes = prediction.shape.at(-1)!,
+      count = actual.length / classes;
+    if (!(classes > 0 && count > 0) || actual.length !== expected.length)
+      throw new Error('training.accuracy_shape');
+    let correct = 0;
+    for (let i = 0; i < count; i++) {
+      let a = 0,
+        e = 0;
+      for (let j = 1; j < classes; j++) {
+        if (actual[i * classes + j] > actual[i * classes + a]) a = j;
+        if (expected[i * classes + j] > expected[i * classes + e]) e = j;
+      }
+      if (a === e) correct++;
+    }
+    return correct / count;
+  }
   /** One live update. Forward values, gradients and loss precede the update; step is 1-based.
    * GraphPlan supplies canvas-node probes without expanding composite internals.
    */
@@ -281,6 +308,8 @@ export class TrainingSession {
         gradient: {},
         parameters: {},
       };
+      const accuracy = await this.accuracy(outputs, batch);
+      if (accuracy !== undefined) trace.accuracy = accuracy;
       for (const [id, tensor] of nodes) {
         trace.forward[id] = await snapshot(tensor);
         if (ancestors.has(tensor)) trace.gradient[id] = await snapshot(byTensor.get(tensor)!);
@@ -376,28 +405,8 @@ export class TrainingSession {
         if (!(await output.read()).every(Number.isFinite)) throw new Error('training.nonfinite');
       }
       const report: TrainingReport = { step: this.optimizer.step, loss: value };
-      if (this.sessionOptions.accuracy ?? !this.sessionOptions.lossOutput) {
-        if (!batch.targets) throw new Error('training.missing_targets');
-        const prediction = outputs[this.output];
-        const actual = await prediction.read(),
-          expected = await batch.targets.read();
-        if (![...actual, ...expected].every(Number.isFinite)) throw new Error('training.nonfinite');
-        const classes = prediction.shape.at(-1)!,
-          count = actual.length / classes;
-        if (!(classes > 0 && count > 0) || actual.length !== expected.length)
-          throw new Error('training.accuracy_shape');
-        let correct = 0;
-        for (let i = 0; i < count; i++) {
-          let a = 0,
-            e = 0;
-          for (let j = 1; j < classes; j++) {
-            if (actual[i * classes + j] > actual[i * classes + a]) a = j;
-            if (expected[i * classes + j] > expected[i * classes + e]) e = j;
-          }
-          if (a === e) correct++;
-        }
-        report.accuracy = correct / count;
-      }
+      const accuracy = await this.accuracy(outputs, batch);
+      if (accuracy !== undefined) report.accuracy = accuracy;
       return report;
     } finally {
       try {

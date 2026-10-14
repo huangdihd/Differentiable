@@ -55,7 +55,7 @@ export const gameLevels: Level[] = [
 export const catalog: CatalogEntry[] = gameLevels.map((level) => ({
   level,
   chapter: level.id === 'xor' ? 3 : Number(level.id.split('-')[0]),
-  code: level.id === 'xor' ? '3-5' : level.id,
+  code: level.id === 'xor' ? '3-10' : level.id,
 }));
 
 export function entryFor(level: Level): CatalogEntry {
