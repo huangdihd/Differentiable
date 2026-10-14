@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3-4 XOR · Differentiable</title>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<style>
+  body { display: grid; grid-template-rows: 48px 1fr; height: 100vh; overflow: hidden; }
+  main { display: grid; grid-template-columns: 290px 1fr; min-height: 0; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow: auto; padding: 18px 16px; }
+  .stage {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 14px; padding: 14px; min-height: 0;
+    background-color: var(--bg); background-image: var(--grid); background-size: var(--grid-size);
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    display: flex; flex-direction: column; min-height: 0; padding: 12px 14px;
+  }
+  :root[data-theme="paper"] .card { border-color: var(--node-border); box-shadow: 3px 3px 0 var(--node-border); }
+  :root[data-theme="blueprint"] .card { background: rgba(15,47,89,.85); border-color: var(--line-strong); }
+  .card.net { grid-column: 1 / 3; }
+  .card .label { display: flex; justify-content: space-between; }
+  .card canvas, .card svg { flex: 1; min-height: 0; width: 100%; display: block; }
+
+  .stepper { display: flex; align-items: center; gap: 10px; }
+  .stepper button { width: 30px; height: 30px; padding: 0; }
+  .stepper b { font-family: var(--mono); font-size: 18px; min-width: 22px; text-align: center; }
+  .ctl { margin-bottom: 16px; }
+  .ctl .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .ctl .row span:last-child { font-family: var(--mono); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .status {
+    margin-top: 6px; padding: 10px 12px; border-radius: var(--radius);
+    border: 1px dashed var(--line-strong); font-size: 13px; color: var(--muted);
+  }
+  .status.pass { border: 1px solid var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+  .status b { font-family: var(--mono); }
+
+  .net-node { stroke: var(--node-border); stroke-width: 1.5; fill: var(--node-bg); }
+  .net-txt { font-family: var(--mono); font-size: 12px; fill: var(--text); text-anchor: middle; dominant-baseline: central; }
+  .net-cap { font-family: var(--font); font-size: 11px; fill: var(--muted); text-anchor: middle; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="mark">∂</span>Differentiable</a>
+  <span class="crumb">第 3 章 · 学习 / <b>3-4 异或</b></span>
+  <span class="spacer"></span>
+  <div id="theme-switch"></div>
+</header>
+
+<main>
+  <aside>
+    <div class="section">
+      <div class="lvl-id">LEVEL 3-4</div>
+      <h1 class="level">异或</h1>
+      <p>一条直线分不开这四团点。在中间加一层隐藏单元，让网络自己学出弯折的边界。</p>
+      <div class="formula">ŷ = σ(w₂ · f(W₁x + b₁) + b₂)</div>
+      <p class="muted" style="font-size:13px">过关：准确率 100% 且交叉熵 &lt; 0.05。<br>评分：参数越少越好。</p>
+    </div>
+
+    <div class="ctl">
+      <div class="label">隐藏单元</div>
+      <div class="stepper">
+        <button class="btn" id="hm">−</button><b id="hv">3</b><button class="btn" id="hp">+</button>
+        <span class="muted" style="font-size:12px">参数 <span class="mono" id="params"></span></span>
+      </div>
+    </div>
+    <div class="ctl">
+      <div class="label">激活函数 f</div>
+      <div class="chips" id="acts"></div>
+    </div>
+    <div class="ctl">
+      <div class="row"><span>学习率</span><span id="lrv"></span></div>
+      <input type="range" id="lr" min="0.05" max="3" step="0.05" value="0.8">
+    </div>
+    <div class="btn-row" style="margin-bottom:16px">
+      <button class="btn primary" id="play">▶ 训练</button>
+      <button class="btn" id="step">单步</button>
+      <button class="btn" id="reinit">↺ 重新初始化</button>
+    </div>
+
+    <dl class="kv">
+      <dt>步数</dt><dd id="s-step">0</dd>
+      <dt>损失</dt><dd id="s-loss">—</dd>
+      <dt>准确率</dt><dd id="s-acc">—</dd>
+    </dl>
+    <div class="status" id="status">还没过关</div>
+  </aside>
+
+  <section class="stage">
+    <div class="card net">
+      <div class="label"><span>网络</span><span>线宽 = |权重| · 颜色 = 正负</span></div>
+      <svg id="net"></svg>
+    </div>
+    <div class="card">
+      <div class="label"><span>决策边界</span><span id="b-note"></span></div>
+      <canvas id="bd"></canvas>
+    </div>
+    <div class="card">
+      <div class="label"><span>损失（对数刻度）</span><span>虚线 = 过关线</span></div>
+      <canvas id="lc"></canvas>
+    </div>
+  </section>
+</main>
+
+<script>
+// ---------- 数据：四团点，对角同类 ----------
+let seed = 7;
+const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
+const DATA = [];
+for (const [cx, cy] of [[1, 1], [-1, -1], [1, -1], [-1, 1]])
+  for (let i = 0; i < 30; i++) DATA.push({ x: [cx + gauss() * 0.28, cy + gauss() * 0.28], y: cx * cy < 0 ? 1 : 0 });
+
+const ACTS = {
+  tanh:    { label: 'tanh', f: z => Math.tanh(z), d: (z, a) => 1 - a * a },
+  relu:    { label: 'ReLU', f: z => z > 0 ? z : 0, d: z => z > 0 ? 1 : 0 },
+  sigmoid: { label: 'σ · 0-4', f: z => 1 / (1 + Math.exp(-z)), d: (z, a) => a * (1 - a) },
+};
+const sig = z => 1 / (1 + Math.exp(-z));
+
+let H = 3, act = 'tanh', lr = 0.8, W1, b1, w2, b2, step = 0, losses = [], playing = false, passed = false;
+
+function init() {
+  const s = 1 / Math.sqrt(2);
+  W1 = Array.from({ length: H }, () => [gauss() * s * 1.2, gauss() * s * 1.2]);
+  b1 = Array.from({ length: H }, () => gauss() * 0.1);
+  w2 = Array.from({ length: H }, () => gauss() / Math.sqrt(H));
+  b2 = 0; step = 0; losses = []; passed = false;
+  document.getElementById('params').textContent = 4 * H + 1;
+  document.getElementById('hv').textContent = H;
+  stats(); draw();
+}
+
+function forward(x) {
+  const z = W1.map((w, j) => w[0] * x[0] + w[1] * x[1] + b1[j]);
+  const h = z.map(ACTS[act].f);
+  const o = sig(h.reduce((s, v, j) => s + v * w2[j], b2));
+  return { z, h, o };
+}
+
+function trainStep() {
+  const gW1 = W1.map(() => [0, 0]), gb1 = b1.map(() => 0), gw2 = w2.map(() => 0);
+  let gb2 = 0, loss = 0;
+  const A = ACTS[act];
+  for (const d of DATA) {
+    const { z, h, o } = forward(d.x);
+    loss += -(d.y * Math.log(o + 1e-12) + (1 - d.y) * Math.log(1 - o + 1e-12));
+    const dz2 = o - d.y;
+    gb2 += dz2;
+    for (let j = 0; j < H; j++) {
+      gw2[j] += dz2 * h[j];
+      const dz = dz2 * w2[j] * A.d(z[j], h[j]);
+      gW1[j][0] += dz * d.x[0]; gW1[j][1] += dz * d.x[1]; gb1[j] += dz;
+    }
+  }
+  const N = DATA.length;
+  for (let j = 0; j < H; j++) {
+    W1[j][0] -= lr * gW1[j][0] / N; W1[j][1] -= lr * gW1[j][1] / N;
+    b1[j] -= lr * gb1[j] / N; w2[j] -= lr * gw2[j] / N;
+  }
+  b2 -= lr * gb2 / N;
+  step++;
+  losses.push(loss / N);
+}
+
+function evalAll() {
+  let loss = 0, right = 0;
+  for (const d of DATA) {
+    const o = forward(d.x).o;
+    loss += -(d.y * Math.log(o + 1e-12) + (1 - d.y) * Math.log(1 - o + 1e-12));
+    if ((o > 0.5 ? 1 : 0) === d.y) right++;
+  }
+  return { loss: loss / DATA.length, acc: right / DATA.length };
+}
+
+function stats() {
+  const { loss, acc } = evalAll();
+  document.getElementById('s-step').textContent = step;
+  document.getElementById('s-loss').textContent = loss.toFixed(4);
+  document.getElementById('s-acc').textContent = (acc * 100).toFixed(1) + '%';
+  const st = document.getElementById('status');
+  if (acc === 1 && loss < 0.05) {
+    if (!passed) passed = true;
+    st.className = 'status pass';
+    st.innerHTML = `✓ 过关 · 用了 <b>${4 * H + 1}</b> 个参数` + (H > 2 ? '<br><span style="font-size:12px">试试更少的隐藏单元？</span>' : '');
+  } else {
+    st.className = 'status';
+    st.textContent = H === 1 ? '只有 1 个隐藏单元：边界还是一条直线' : '还没过关';
+  }
+}
+
+// ---------- 绘制 ----------
+function drawNet() {
+  const svg = document.getElementById('net');
+  const w = svg.clientWidth, h = svg.clientHeight;
+  const pos = [];
+  const colX = [w * 0.16, w * 0.5, w * 0.84];
+  const ys = n => Array.from({ length: n }, (_, i) => h / 2 + (i - (n - 1) / 2) * Math.min(44, (h - 40) / Math.max(n, 1)));
+  const inY = ys(2), hidY = ys(H), outY = ys(1);
+  const pos_c = cssVar('--accent'), neg_c = cssVar('--warm');
+  const line = (x1, y1, x2, y2, wgt) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${wgt >= 0 ? pos_c : neg_c}" stroke-width="${(0.6 + Math.min(Math.abs(wgt), 5) * 1.3).toFixed(2)}" stroke-opacity="${(0.35 + Math.min(Math.abs(wgt), 3) / 5).toFixed(2)}"/>`;
+  let s = '';
+  for (let j = 0; j < H; j++) for (let i = 0; i < 2; i++) s += line(colX[0], inY[i], colX[1], hidY[j], W1[j][i]);
+  for (let j = 0; j < H; j++) s += line(colX[1], hidY[j], colX[2], outY[0], w2[j]);
+  const R = 15;
+  inY.forEach((y, i) => s += `<circle class="net-node" cx="${colX[0]}" cy="${y}" r="${R}"/><text class="net-txt" x="${colX[0]}" y="${y}">x${'₁₂'[i]}</text>`);
+  hidY.forEach(y => s += `<circle class="net-node" cx="${colX[1]}" cy="${y}" r="${R}"/><text class="net-txt" x="${colX[1]}" y="${y}">${act === 'relu' ? 'R' : act === 'tanh' ? 'th' : 'σ'}</text>`);
+  s += `<circle class="net-node" cx="${colX[2]}" cy="${outY[0]}" r="${R}" style="stroke:${pos_c}"/><text class="net-txt" x="${colX[2]}" y="${outY[0]}">σ</text>`;
+  s += `<text class="net-cap" x="${colX[0]}" y="${h - 6}">输入</text><text class="net-cap" x="${colX[1]}" y="${h - 6}">隐藏层 · ${ACTS[act].label}</text><text class="net-cap" x="${colX[2]}" y="${h - 6}">输出</text>`;
+  svg.innerHTML = s;
+}
+
+const off = document.createElement('canvas'); off.width = off.height = 72;
+function drawBoundary() {
+  const c = document.getElementById('bd');
+  const { g, w, h } = fitCanvas(c);
+  const S = Math.min(w, h), ox = (w - S) / 2, oy = (h - S) / 2, L = 2.2;
+  const bg = hexRgb(cssVar('--panel')), c1 = hexRgb(cssVar('--accent')), c0 = hexRgb(cssVar('--warm'));
+  const og = off.getContext('2d'), img = og.createImageData(72, 72);
+  for (let py = 0; py < 72; py++) for (let px = 0; px < 72; px++) {
+    const x = [(px + 0.5) / 72 * 2 * L - L, L - (py + 0.5) / 72 * 2 * L];
+    const o = forward(x).o, col = o > 0.5 ? c1 : c0, t = Math.abs(o - 0.5) * 2 * 0.5;
+    const k = (py * 72 + px) * 4;
+    for (let ch = 0; ch < 3; ch++) img.data[k + ch] = bg[ch] + (col[ch] - bg[ch]) * t;
+    img.data[k + 3] = 255;
+  }
+  og.putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = true;
+  g.drawImage(off, ox, oy, S, S);
+  g.strokeStyle = cssVar('--line-strong'); g.strokeRect(ox + 0.5, oy + 0.5, S - 1, S - 1);
+  const tx = x => ox + (x + L) / (2 * L) * S, ty = y => oy + (L - y) / (2 * L) * S;
+  g.lineWidth = 1.2; g.strokeStyle = cssVar('--bg');
+  for (const d of DATA) {
+    g.fillStyle = d.y ? cssVar('--accent') : cssVar('--warm');
+    g.beginPath();
+    if (d.y) g.arc(tx(d.x[0]), ty(d.x[1]), 4, 0, 7); else g.rect(tx(d.x[0]) - 3.5, ty(d.x[1]) - 3.5, 7, 7);
+    g.fill(); g.stroke();
+  }
+}
+
+function drawLoss() {
+  const { g, w, h } = fitCanvas(document.getElementById('lc'));
+  const P = { l: 34, r: 10, t: 8, b: 18 };
+  const lo = -3, hi = 0.2;
+  const sy = v => P.t + (hi - Math.log10(Math.max(v, 1e-3))) / (hi - lo) * (h - P.t - P.b);
+  const n = Math.max(losses.length, 200);
+  const sx = i => P.l + i / n * (w - P.l - P.r);
+  g.font = '10px ' + cssVar('--mono'); g.fillStyle = cssVar('--muted'); g.strokeStyle = cssVar('--line'); g.lineWidth = 1;
+  for (const e of [0, -1, -2, -3]) {
+    g.beginPath(); g.moveTo(P.l, sy(10 ** e)); g.lineTo(w - P.r, sy(10 ** e)); g.stroke();
+    g.fillText(e === 0 ? '1' : '1e' + e, 4, sy(10 ** e) + 3);
+  }
+  g.fillText(String(n), w - P.r - 24, h - 4);
+  g.setLineDash([4, 4]); g.strokeStyle = cssVar('--good');
+  g.beginPath(); g.moveTo(P.l, sy(0.05)); g.lineTo(w - P.r, sy(0.05)); g.stroke(); g.setLineDash([]);
+  if (!losses.length) return;
+  g.strokeStyle = cssVar('--accent'); g.lineWidth = 2; g.beginPath();
+  losses.forEach((v, i) => i ? g.lineTo(sx(i), sy(v)) : g.moveTo(sx(i), sy(v)));
+  g.stroke();
+}
+
+function draw() { drawNet(); drawBoundary(); drawLoss(); }
+
+function loop() {
+  if (playing) {
+    for (let i = 0; i < 6; i++) trainStep();
+    stats(); draw();
+    if (step >= 6000) togglePlay(false);
+  }
+  requestAnimationFrame(loop);
+}
+function togglePlay(v = !playing) {
+  playing = v;
+  document.getElementById('play').textContent = playing ? '⏸ 暂停' : '▶ 训练';
+}
+
+// ---------- 控件 ----------
+const actsEl = document.getElementById('acts');
+for (const k of Object.keys(ACTS)) {
+  const b = document.createElement('button');
+  b.className = 'chip' + (k === act ? ' on' : ''); b.textContent = ACTS[k].label; b.dataset.k = k;
+  b.onclick = () => { act = k; actsEl.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c.dataset.k === k)); init(); };
+  actsEl.appendChild(b);
+}
+document.getElementById('hm').onclick = () => { if (H > 1) { H--; init(); } };
+document.getElementById('hp').onclick = () => { if (H < 8) { H++; init(); } };
+const lrEl = document.getElementById('lr');
+const setLr = () => { lr = +lrEl.value; document.getElementById('lrv').textContent = lr.toFixed(2); };
+lrEl.oninput = setLr; setLr();
+document.getElementById('play').onclick = () => togglePlay();
+document.getElementById('step').onclick = () => { togglePlay(false); trainStep(); stats(); draw(); };
+document.getElementById('reinit').onclick = init;
+window.addEventListener('themechange', draw);
+window.addEventListener('resize', draw);
+
+init();
+loop();
+</script>
+</body>
+</html>

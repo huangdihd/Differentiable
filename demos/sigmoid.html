@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0-4 Sigmoid · Differentiable</title>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<style>
+  body { display: grid; grid-template-rows: 48px 1fr; height: 100vh; overflow: hidden; }
+  main { display: grid; grid-template-columns: 270px 1fr 330px; min-height: 0; }
+  aside { background: var(--panel); overflow: auto; padding: 18px 16px; }
+  aside.left { border-right: 1px solid var(--line); position: relative; z-index: 1; }
+  aside.right { border-left: 1px solid var(--line); }
+
+  /* 元件栏 */
+  .palette { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pal-item {
+    display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; cursor: grab; user-select: none;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .pal-item:hover { border-color: var(--accent); }
+  .pal-item .sym { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+  .pal-item .nm { font-size: 12px; color: var(--muted); }
+  .pal-item.mine .sym { color: var(--accent); }
+  .pal-item.locked { cursor: not-allowed; opacity: .4; border-style: dashed; }
+  .help { font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .help kbd { font-family: var(--mono); font-size: 11px; padding: 0 5px; border: 1px solid var(--line-strong); border-radius: 3px; }
+
+  /* 画布 */
+  #canvas {
+    position: relative; z-index: 2; overflow: visible;
+    background-color: var(--bg); background-image: var(--grid); background-size: var(--grid-size);
+    user-select: none;
+  }
+  #wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  #nodes { position: absolute; inset: 0; pointer-events: none; }
+  .empty-hint {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    color: var(--muted); font-size: 13px; text-align: center; pointer-events: none; line-height: 1.9;
+  }
+
+  .wire { fill: none; stroke: var(--wire-dead); stroke-width: 2; }
+  .wire.live { stroke: var(--wire); }
+  .wire-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+  .wire-hit:hover + .wire { stroke: var(--bad); stroke-dasharray: 4 3; animation: none; }
+  .wire.temp { stroke: var(--accent); stroke-dasharray: 5 4; }
+  :root[data-theme="circuit"] .wire.live { stroke-dasharray: 7 5; animation: flow .9s linear infinite; filter: drop-shadow(0 0 3px rgba(62,230,160,.6)); }
+  :root[data-theme="blueprint"] .wire { stroke-width: 1.6; }
+  @keyframes flow { to { stroke-dashoffset: -12; } }
+
+  .node {
+    position: absolute; width: 140px; pointer-events: auto; cursor: grab;
+    background: var(--node-bg); border-radius: var(--radius);
+    box-shadow: 0 0 0 1.5px var(--node-border), var(--node-shadow);
+  }
+  .node.sel { box-shadow: 0 0 0 2px var(--accent), var(--node-shadow); }
+  :root[data-theme="circuit"] .node.sel { box-shadow: 0 0 0 2px var(--accent), 0 0 18px rgba(62,230,160,.35); }
+  .node-head {
+    height: 26px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 6px 0 10px; font-size: 12px; color: var(--muted);
+    background: var(--node-head); border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: 1px solid var(--line);
+  }
+  :root[data-theme="paper"] .node-head { border-bottom-color: var(--node-border); }
+  .node-head .del {
+    all: unset; cursor: pointer; width: 18px; text-align: center; font-size: 15px; line-height: 18px; color: var(--muted); opacity: 0;
+  }
+  .node:hover .del, .node.sel .del { opacity: 1; }
+  .node-head .del:hover { color: var(--bad); }
+  .node-body { display: grid; place-items: center; }
+  .bigsym { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+  .t-input .bigsym, .t-output .bigsym { color: var(--accent); font-style: italic; }
+  :root[data-theme="paper"] .bigsym { font-family: var(--font); font-style: italic; font-weight: 400; font-size: 24px; }
+  .cval {
+    width: 92px; text-align: center; font-family: var(--mono); font-size: 15px;
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 3px 4px;
+  }
+  .cval:focus { outline: none; border-color: var(--accent); }
+  .node-foot {
+    height: 24px; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    border-top: 1px dashed var(--line);
+  }
+  .node-foot .val.ok { color: var(--text); }
+  .node-foot .val.bad { color: var(--bad); }
+  .t-input, .t-output { box-shadow: 0 0 0 1.5px var(--accent), var(--node-shadow); }
+
+  .port {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--node-bg); border: 2px solid var(--wire-dead); cursor: crosshair;
+  }
+  :root[data-theme="blueprint"] .port { border-radius: 0; }
+  .port.in { left: -7px; }
+  .port.out { right: -7px; }
+  .port.on { background: var(--wire); border-color: var(--wire); }
+  .port:hover { border-color: var(--accent); background: var(--accent); transform: scale(1.25); }
+  .plabel { position: absolute; left: 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .node.shake { animation: shake .3s; }
+  @keyframes shake { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
+
+  /* 右栏 */
+  .probe-row { display: flex; align-items: baseline; justify-content: space-between; font-family: var(--mono); font-size: 13px; }
+  #plot { width: 100%; height: 190px; display: block; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 5px; }
+  table.tests { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  table.tests th { font-weight: 400; color: var(--muted); text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  table.tests td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+  table.tests td:last-child, table.tests th:last-child { text-align: center; width: 28px; }
+  table.tests tr.run td { background: var(--panel-2); }
+  .st-ok { color: var(--good); } .st-bad { color: var(--bad); }
+
+  .hist { display: flex; align-items: flex-end; gap: 6px; height: 110px; margin: 14px 0 4px; }
+  .hist .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+  .hist .bar div { width: 100%; background: var(--line-strong); border-radius: var(--radius) var(--radius) 0 0; }
+  .hist .bar.me div { background: var(--accent); }
+  .hist .bar span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .hist .bar.me span { color: var(--accent); font-weight: 600; }
+  .unlock {
+    display: flex; gap: 12px; align-items: center; padding: 10px 12px; margin: 12px 0;
+    border: 1px dashed var(--accent); border-radius: var(--radius);
+  }
+  .unlock .sym { font-family: var(--mono); font-size: 22px; color: var(--accent); width: 34px; text-align: center; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="mark">∂</span>Differentiable</a>
+  <span class="crumb">第 0 章 · 标量 / <b>0-4 Sigmoid</b></span>
+  <span class="spacer"></span>
+  <div id="theme-switch"></div>
+</header>
+
+<main>
+  <aside class="left">
+    <div class="section">
+      <div class="lvl-id">LEVEL 0-4</div>
+      <h1 class="level">Sigmoid</h1>
+      <p>把任意实数压进 (0, 1)。后面的门控、概率输出和二分类都要用到它。</p>
+      <div class="formula">σ(x) = 1 / (1 + e<sup>−x</sup>)</div>
+      <p class="muted" style="font-size:13px">目标：在所有测试点上，输出 y 与 σ(x) 的误差小于 10<sup>−6</sup>。</p>
+    </div>
+
+    <div class="section">
+      <div class="label">基础运算</div>
+      <div class="palette" id="pal-basic"></div>
+    </div>
+    <div class="section">
+      <div class="label">你造的元件</div>
+      <div class="palette" id="pal-mine"></div>
+    </div>
+
+    <div class="section help">
+      从这里把元件拖到画布上<br>
+      从右侧 ● 拖到左侧 ● 连线<br>
+      拖已连接的输入口可以改接<br>
+      点连线删除 · 选中后按 <kbd>Delete</kbd> 删除元件
+    </div>
+  </aside>
+
+  <section id="canvas">
+    <svg id="wires"></svg>
+    <div id="nodes"></div>
+    <div class="empty-hint" id="empty-hint">从左侧拖入元件<br>把 x 一路接到 y</div>
+  </section>
+
+  <aside class="right">
+    <div class="section">
+      <div class="label">探针</div>
+      <div class="probe-row"><span>x = <b id="xv">0.00</b></span><span class="muted">拖动看每个节点的值</span></div>
+      <input type="range" id="xs" min="-6" max="6" step="0.01" value="0.8">
+      <div class="probe-row" style="margin-top:4px"><span>y = <b id="yv">—</b></span><span class="muted">σ(x) = <span id="tv"></span></span></div>
+    </div>
+
+    <div class="section">
+      <div class="label">输出曲线</div>
+      <canvas id="plot"></canvas>
+      <div class="legend"><span><i style="border-color:var(--muted);border-top-style:dashed"></i>目标 σ(x)</span><span><i style="border-color:var(--accent)"></i>你的 y</span></div>
+    </div>
+
+    <div class="section">
+      <div class="label" style="display:flex;justify-content:space-between"><span>测试</span><span id="count"></span></div>
+      <table class="tests">
+        <thead><tr><th>x</th><th>期望</th><th>你的输出</th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn primary" id="run">▶ 运行测试</button>
+        <button class="btn" id="reset">清空画布</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div class="modal-back" id="modal">
+  <div class="modal">
+    <div class="lvl-id">LEVEL 0-4 · 完成</div>
+    <h2>Sigmoid 搭好了</h2>
+    <div class="unlock"><span class="sym">σ</span><div><b>Sigmoid</b> 已加入元件库<br><span class="muted" style="font-size:12px">以后的关卡里它就是一个元件，内部是你刚搭的这张图</span></div></div>
+    <div class="label">元件数 · 所有玩家的分布（示意数据）</div>
+    <div class="hist" id="hist"></div>
+    <p id="score-note" class="muted" style="font-size:13px;margin-top:10px"></p>
+    <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
+      <button class="btn" id="close">继续优化</button>
+      <a class="btn primary" href="xor.html" style="text-decoration:none">下一个 demo →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const TYPES = {
+  input:  { name: '输入', sym: 'x', ins: 0, io: true },
+  output: { name: '输出', sym: 'y', ins: 1, io: true },
+  const:  { name: '常量', sym: 'c', ins: 0 },
+  add:    { name: '加法', sym: '+', ins: 2, fn: ([a, b]) => a + b },
+  mul:    { name: '乘法', sym: '×', ins: 2, fn: ([a, b]) => a * b },
+  exp:    { name: '指数', sym: 'eˣ', ins: 1, fn: ([a]) => Math.exp(a) },
+  log:    { name: '对数', sym: 'ln', ins: 1, fn: ([a]) => Math.log(a) },
+  recip:  { name: '倒数', sym: '1/x', ins: 1, fn: ([a]) => 1 / a, mine: '0-3' },
+  neg:    { name: '取负', sym: '−x', ins: 1, fn: ([a]) => -a, mine: '0-1' },
+};
+const BASIC = ['const', 'add', 'mul', 'exp', 'log'];
+const MINE = ['neg', 'recip'];
+const TESTS = [-4, -1.5, 0, 0.7, 2, 5];
+const sigma = x => 1 / (1 + Math.exp(-x));
+
+const W = 140, HEAD = 26, PAD = 8, ROW = 24;
+const rowsOf = n => Math.max(TYPES[n.type].ins, 1);
+const inPos = (n, i) => ({ x: n.x, y: n.y + HEAD + PAD + ROW * i + ROW / 2 });
+const outPos = n => ({ x: n.x + W, y: n.y + HEAD + PAD + rowsOf(n) * ROW / 2 });
+
+const canvas = document.getElementById('canvas');
+const nodesEl = document.getElementById('nodes');
+const wiresEl = document.getElementById('wires');
+const xs = document.getElementById('xs');
+
+let nodes = [], edges = [], nid = 1, selected = null, drag = null, probeX = +xs.value;
+const byId = id => nodes.find(n => n.id === id);
+
+function reset() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  nodes = [
+    { id: 'in', type: 'input', x: 40, y: h / 2 - 50 },
+    { id: 'out', type: 'output', x: Math.max(w - 190, 400), y: h / 2 - 50 },
+  ];
+  edges = []; selected = null;
+  render();
+}
+
+// ---------- 求值 ----------
+function evalGraph(x) {
+  const memo = new Map(), visiting = new Set();
+  function val(id) {
+    if (memo.has(id)) return memo.get(id);
+    if (visiting.has(id)) return NaN;
+    visiting.add(id);
+    const n = byId(id), T = TYPES[n.type];
+    let v;
+    if (n.type === 'input') v = x;
+    else if (n.type === 'const') v = n.value;
+    else {
+      const args = [];
+      for (let i = 0; i < T.ins; i++) {
+        const e = edges.find(e => e.to === id && e.port === i);
+        args.push(e ? val(e.from) : undefined);
+      }
+      if (args.some(a => a === undefined)) v = undefined;
+      else v = n.type === 'output' ? args[0] : T.fn(args);
+    }
+    visiting.delete(id); memo.set(id, v);
+    return v;
+  }
+  nodes.forEach(n => val(n.id));
+  return memo;
+}
+const fmt = v => {
+  if (v === undefined) return '—';
+  if (Number.isNaN(v)) return 'NaN';
+  if (!Number.isFinite(v)) return v > 0 ? '∞' : '−∞';
+  if (v !== 0 && (Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3)) return v.toExponential(2);
+  return v.toFixed(4);
+};
+const isNum = v => typeof v === 'number' && Number.isFinite(v);
+
+// ---------- 渲染 ----------
+function render() {
+  nodesEl.innerHTML = '';
+  for (const n of nodes) {
+    const T = TYPES[n.type], rows = rowsOf(n);
+    const el = document.createElement('div');
+    el.className = 'node t-' + n.type + (selected === n.id ? ' sel' : '');
+    el.dataset.id = n.id;
+    el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+    const body = n.type === 'const'
+      ? `<input class="cval" type="number" step="any" value="${n.value}">`
+      : `<span class="bigsym">${T.sym}</span>`;
+    let ports = '';
+    for (let i = 0; i < T.ins; i++) {
+      const top = HEAD + PAD + ROW * i + ROW / 2;
+      const on = edges.some(e => e.to === n.id && e.port === i) ? ' on' : '';
+      ports += `<div class="port in${on}" data-port="${i}" style="top:${top - 6}px"></div>`;
+      if (T.ins > 1) ports += `<span class="plabel" style="top:${top - 9}px">${'ab'[i]}</span>`;
+    }
+    if (n.type !== 'output') {
+      const on = edges.some(e => e.from === n.id) ? ' on' : '';
+      ports += `<div class="port out${on}" style="top:${HEAD + PAD + rows * ROW / 2 - 6}px"></div>`;
+    }
+    el.innerHTML =
+      `<div class="node-head"><span>${T.name}${T.mine ? ` <span class="tag accent">${T.mine}</span>` : ''}</span>${T.io ? '' : '<button class="del" title="删除">×</button>'}</div>` +
+      `<div class="node-body" style="height:${rows * ROW + PAD * 2}px">${body}</div>` +
+      `<div class="node-foot"><span class="val">—</span></div>${ports}`;
+    nodesEl.appendChild(el);
+  }
+  document.getElementById('empty-hint').style.display = nodes.length > 2 ? 'none' : '';
+  updateValues();
+}
+
+let lastVals = new Map();
+function wirePath(a, b) {
+  const dx = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+  return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
+}
+function drawWires() {
+  let s = '';
+  edges.forEach((e, i) => {
+    const d = wirePath(outPos(byId(e.from)), inPos(byId(e.to), e.port));
+    const live = isNum(lastVals.get(e.from)) ? ' live' : '';
+    s += `<path class="wire-hit" data-i="${i}" d="${d}"/><path class="wire${live}" d="${d}"/>`;
+  });
+  if (drag && drag.kind === 'wire') s += `<path class="wire temp" d="${wirePath(outPos(byId(drag.from)), drag)}"/>`;
+  wiresEl.innerHTML = s;
+}
+
+function updateValues() {
+  lastVals = evalGraph(probeX);
+  for (const el of nodesEl.children) {
+    const v = lastVals.get(el.dataset.id), span = el.querySelector('.val');
+    span.textContent = fmt(v);
+    span.className = 'val ' + (v === undefined ? '' : isNum(v) ? 'ok' : 'bad');
+  }
+  drawWires();
+  const y = lastVals.get('out');
+  document.getElementById('xv').textContent = probeX.toFixed(2);
+  document.getElementById('yv').textContent = fmt(y);
+  document.getElementById('tv').textContent = sigma(probeX).toFixed(4);
+  document.getElementById('count').textContent = '元件 ' + (nodes.length - 2);
+  drawPlot();
+}
+
+function drawPlot() {
+  const { g, w, h } = fitCanvas(document.getElementById('plot'));
+  const X0 = -6, X1 = 6, Y0 = -0.25, Y1 = 1.25;
+  const sx = x => (x - X0) / (X1 - X0) * w, sy = y => h - (y - Y0) / (Y1 - Y0) * h;
+  g.strokeStyle = cssVar('--line'); g.lineWidth = 1;
+  for (const y of [0, 0.5, 1]) { g.beginPath(); g.moveTo(0, sy(y)); g.lineTo(w, sy(y)); g.stroke(); }
+  g.beginPath(); g.moveTo(sx(0), 0); g.lineTo(sx(0), h); g.stroke();
+  g.fillStyle = cssVar('--muted'); g.font = '10px ' + cssVar('--mono');
+  g.fillText('1', 4, sy(1) - 3); g.fillText('0', 4, sy(0) - 3);
+
+  g.setLineDash([5, 4]); g.strokeStyle = cssVar('--muted'); g.lineWidth = 1.5;
+  g.beginPath();
+  for (let i = 0; i <= 200; i++) { const x = X0 + (X1 - X0) * i / 200; i ? g.lineTo(sx(x), sy(sigma(x))) : g.moveTo(sx(x), sy(sigma(x))); }
+  g.stroke(); g.setLineDash([]);
+
+  g.strokeStyle = cssVar('--accent'); g.lineWidth = 2.2;
+  g.beginPath(); let pen = false;
+  for (let i = 0; i <= 200; i++) {
+    const x = X0 + (X1 - X0) * i / 200, y = evalGraph(x).get('out');
+    if (!isNum(y) || Math.abs(y) > 50) { pen = false; continue; }
+    pen ? g.lineTo(sx(x), sy(y)) : g.moveTo(sx(x), sy(y)); pen = true;
+  }
+  g.stroke();
+
+  g.strokeStyle = cssVar('--warm'); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(sx(probeX), 0); g.lineTo(sx(probeX), h); g.stroke();
+  const y = lastVals.get('out');
+  if (isNum(y)) { g.fillStyle = cssVar('--warm'); g.beginPath(); g.arc(sx(probeX), sy(y), 4, 0, 7); g.fill(); }
+  if (y === undefined) { g.fillStyle = cssVar('--muted'); g.font = '12px ' + cssVar('--font'); g.textAlign = 'center'; g.fillText('y 还没有接上', w / 2, h - 12); g.textAlign = 'left'; }
+}
+
+// ---------- 交互 ----------
+const pt = e => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+
+function removeNode(id) {
+  const n = byId(id); if (!n || TYPES[n.type].io) return;
+  nodes = nodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e.from !== id && e.to !== id);
+  if (selected === id) selected = null;
+  render();
+}
+function dependsOn(a, b) { // a 的上游里有没有 b
+  const st = [a], seen = new Set();
+  while (st.length) {
+    const c = st.pop(); if (c === b) return true;
+    if (seen.has(c)) continue; seen.add(c);
+    edges.filter(e => e.to === c).forEach(e => st.push(e.from));
+  }
+  return false;
+}
+function shake(id) {
+  const el = nodesEl.querySelector(`[data-id="${id}"]`); if (!el) return;
+  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+}
+function connect(from, to, port) {
+  if (from === to || dependsOn(from, to)) { shake(to); return; } // 不允许成环
+  edges = edges.filter(e => !(e.to === to && e.port === port));
+  edges.push({ from, to, port });
+}
+
+canvas.addEventListener('pointerdown', e => {
+  const nodeEl = e.target.closest('.node');
+  if (e.target.closest('.del')) { removeNode(nodeEl.dataset.id); return; }
+  if (e.target.closest('.cval')) return;
+  const pOut = e.target.closest('.port.out'), pIn = e.target.closest('.port.in');
+  if (pOut) { drag = { kind: 'wire', from: nodeEl.dataset.id, ...pt(e) }; e.preventDefault(); drawWires(); return; }
+  if (pIn) {
+    const id = nodeEl.dataset.id, port = +pIn.dataset.port;
+    const ed = edges.find(x => x.to === id && x.port === port);
+    if (ed) { edges = edges.filter(x => x !== ed); drag = { kind: 'wire', from: ed.from, ...pt(e) }; render(); }
+    e.preventDefault(); return;
+  }
+  if (nodeEl) {
+    const n = byId(nodeEl.dataset.id), p = pt(e);
+    selected = n.id;
+    nodesEl.querySelectorAll('.node').forEach(el => el.classList.toggle('sel', el.dataset.id === selected));
+    drag = { kind: 'node', id: n.id, dx: p.x - n.x, dy: p.y - n.y };
+    e.preventDefault(); return;
+  }
+  const hit = e.target.closest('.wire-hit');
+  if (hit) { edges.splice(+hit.dataset.i, 1); render(); return; }
+  selected = null; render();
+});
+
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = pt(e);
+  if (drag.kind === 'node') {
+    const n = byId(drag.id);
+    n.x = p.x - drag.dx; n.y = p.y - drag.dy;
+    if (!drag.fromPalette) {
+      n.x = Math.max(8, Math.min(canvas.clientWidth - W - 8, n.x));
+      n.y = Math.max(8, Math.min(canvas.clientHeight - 120, n.y));
+    }
+    const el = nodesEl.querySelector(`[data-id="${n.id}"]`);
+    el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+    drawWires();
+  } else { drag.x = p.x; drag.y = p.y; drawWires(); }
+});
+
+window.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.kind === 'wire') {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const pIn = el && el.closest('.port.in'), nodeEl = el && el.closest('.node');
+    if (nodeEl) {
+      const to = nodeEl.dataset.id, T = TYPES[byId(to).type];
+      let port = pIn ? +pIn.dataset.port : -1;
+      if (port < 0) for (let i = 0; i < T.ins; i++) if (!edges.some(x => x.to === to && x.port === i)) { port = i; break; }
+      if (port >= 0) connect(d.from, to, port);
+    }
+    render();
+  } else if (d.fromPalette) {
+    const r = canvas.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) removeNode(d.id);
+    else {
+      const n = byId(d.id);
+      n.x = Math.max(8, Math.min(canvas.clientWidth - W - 8, n.x));
+      n.y = Math.max(8, Math.min(canvas.clientHeight - 120, n.y));
+      render();
+    }
+  }
+});
+
+nodesEl.addEventListener('input', e => {
+  if (!e.target.classList.contains('cval')) return;
+  const n = byId(e.target.closest('.node').dataset.id);
+  const v = parseFloat(e.target.value);
+  n.value = Number.isFinite(v) ? v : 0;
+  updateValues();
+});
+
+window.addEventListener('keydown', e => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected) { removeNode(selected); e.preventDefault(); }
+});
+
+function buildPalette(hostId, list) {
+  const host = document.getElementById(hostId);
+  for (const t of list) {
+    const T = TYPES[t];
+    const el = document.createElement('div');
+    el.className = 'pal-item' + (T.mine ? ' mine' : '');
+    el.innerHTML = `<span class="sym">${T.sym}</span><span class="nm">${T.name}${T.mine ? ' · ' + T.mine : ''}</span>`;
+    el.addEventListener('pointerdown', e => {
+      const p = pt(e);
+      const n = { id: 'n' + nid++, type: t, x: p.x - W / 2, y: p.y - 13 };
+      if (t === 'const') n.value = 1;
+      nodes.push(n); selected = n.id; render();
+      drag = { kind: 'node', id: n.id, dx: W / 2, dy: 13, fromPalette: true };
+      e.preventDefault();
+    });
+    host.appendChild(el);
+  }
+  if (hostId === 'pal-mine') {
+    const lock = document.createElement('div');
+    lock.className = 'pal-item locked';
+    lock.innerHTML = '<span class="sym">σ</span><span class="nm">本关产出</span>';
+    host.appendChild(lock);
+  }
+}
+
+// ---------- 测试 ----------
+const tbody = document.getElementById('tbody');
+function buildTests() {
+  tbody.innerHTML = TESTS.map(x => `<tr><td>${x}</td><td>${sigma(x).toFixed(4)}</td><td class="got">·</td><td class="st"></td></tr>`).join('');
+}
+document.getElementById('run').onclick = async () => {
+  const btn = document.getElementById('run'); btn.disabled = true;
+  buildTests();
+  let ok = true;
+  const rows = [...tbody.children];
+  for (let i = 0; i < TESTS.length; i++) {
+    rows[i].classList.add('run');
+    await new Promise(r => setTimeout(r, 180));
+    const y = evalGraph(TESTS[i]).get('out');
+    const pass = isNum(y) && Math.abs(y - sigma(TESTS[i])) < 1e-6;
+    rows[i].querySelector('.got').textContent = fmt(y);
+    rows[i].querySelector('.st').innerHTML = pass ? '<span class="st-ok">✓</span>' : '<span class="st-bad">✗</span>';
+    rows[i].classList.remove('run');
+    ok = ok && pass;
+  }
+  btn.disabled = false;
+  if (ok) setTimeout(showWin, 300);
+};
+
+function showWin() {
+  const k = nodes.length - 2;
+  const dist = { 5: 6, 6: 48, 7: 31, 8: 10, '9+': 5 };
+  const key = k >= 9 ? '9+' : String(k);
+  const max = Math.max(...Object.values(dist));
+  document.getElementById('hist').innerHTML = Object.entries(dist).map(([n, c]) =>
+    `<div class="bar${n === key ? ' me' : ''}"><div style="height:${c / max * 85}%"></div><span>${n}${n === key ? ' ← 你' : ''}</span></div>`).join('');
+  document.getElementById('score-note').textContent = k <= 5
+    ? `你用了 ${k} 个元件，和最优解持平。`
+    : `你用了 ${k} 个元件。有人只用了 5 个：想想 e⁻ˣ 能不能不经过常量 −1 得到？`;
+  document.getElementById('modal').classList.add('show');
+}
+document.getElementById('close').onclick = () => document.getElementById('modal').classList.remove('show');
+document.getElementById('reset').onclick = () => { reset(); buildTests(); };
+
+xs.addEventListener('input', () => { probeX = +xs.value; updateValues(); });
+window.addEventListener('themechange', updateValues);
+window.addEventListener('resize', updateValues);
+
+buildPalette('pal-basic', BASIC);
+buildPalette('pal-mine', MINE);
+buildTests();
+reset();
+</script>
+</body>
+</html>

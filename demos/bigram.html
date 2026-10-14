@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4-2 Bigram · Differentiable</title>
+<link rel="stylesheet" href="theme.css">
+<script src="theme.js"></script>
+<style>
+  body { display: grid; grid-template-rows: 48px 1fr; height: 100vh; overflow: hidden; }
+  main { display: grid; grid-template-columns: 290px 1fr 380px; min-height: 0; }
+  aside { background: var(--panel); overflow: auto; padding: 18px 16px; }
+  aside.left { border-right: 1px solid var(--line); }
+  aside.right { border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; }
+  .stage {
+    display: grid; place-items: center; padding: 18px; min-height: 0; position: relative;
+    background-color: var(--bg); background-image: var(--grid); background-size: var(--grid-size);
+  }
+  .hm-wrap {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+    width: 100%; height: 100%; display: flex; flex-direction: column; min-height: 0;
+  }
+  :root[data-theme="paper"] .hm-wrap { border-color: var(--node-border); box-shadow: 3px 3px 0 var(--node-border); }
+  .hm-wrap .label { display: flex; justify-content: space-between; }
+  #hm { flex: 1; min-height: 0; width: 100%; display: block; cursor: crosshair; }
+  #lc { width: 100%; height: 170px; display: block; }
+  .ctl .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .ctl .row span:last-child { font-family: var(--mono); }
+  .ctl { margin-bottom: 14px; }
+  .samples { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+  .sample { border-left: 2px solid var(--line-strong); padding: 2px 0 2px 10px; }
+  .sample.new { border-left-color: var(--accent); }
+  .sample .meta { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .sample pre { margin: 0; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+  .roadmap {
+    font-size: 12px; color: var(--muted); padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  }
+  .roadmap b { color: var(--accent); font-weight: 600; }
+  #tip {
+    position: fixed; pointer-events: none; display: none; z-index: 20;
+    font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: var(--radius);
+    background: var(--panel-2); border: 1px solid var(--line-strong); color: var(--text);
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="mark">∂</span>Differentiable</a>
+  <span class="crumb">第 4 章 · 序列 / <b>4-2 Bigram 语言模型</b></span>
+  <span class="spacer"></span>
+  <div id="theme-switch"></div>
+</header>
+
+<main>
+  <aside class="left">
+    <div class="section">
+      <div class="lvl-id">LEVEL 4-2</div>
+      <h1 class="level">你的第一个语言模型</h1>
+      <p>只看上一个字符，猜下一个字符。整个模型就是一张表 W：第 a 行经过 softmax，就是 a 后面出现各字符的概率。</p>
+      <div class="formula">P(b | a) = softmax(W[a])<sub>b</sub></div>
+      <p class="muted" style="font-size:13px">过关：交叉熵降到理论下界以上 0.05 以内。<br>用到的元件：<span class="tag">embedding · 4-1</span> <span class="tag">softmax · 2-6</span> <span class="tag">交叉熵 · 3-2</span> <span class="tag">Adam · 3-6</span></p>
+    </div>
+
+    <div class="ctl">
+      <div class="row"><span>学习率</span><span id="lrv"></span></div>
+      <input type="range" id="lr" min="0.01" max="0.5" step="0.01" value="0.03">
+    </div>
+    <div class="ctl">
+      <div class="row"><span>采样温度</span><span id="tv"></span></div>
+      <input type="range" id="temp" min="0.2" max="1.6" step="0.05" value="1">
+    </div>
+    <div class="btn-row" style="margin-bottom:16px">
+      <button class="btn primary" id="play">▶ 训练</button>
+      <button class="btn" id="sample">再采一段</button>
+      <button class="btn" id="reinit">↺ 重来</button>
+    </div>
+    <dl class="kv">
+      <dt>步数</dt><dd id="s-step">0</dd>
+      <dt>交叉熵</dt><dd id="s-loss">—</dd>
+      <dt>均匀猜测</dt><dd id="s-uni">—</dd>
+      <dt>理论下界</dt><dd id="s-opt">—</dd>
+      <dt>词表大小</dt><dd id="s-v">—</dd>
+    </dl>
+    <div class="status" id="status" style="margin-top:12px;padding:10px 12px;border:1px dashed var(--line-strong);border-radius:var(--radius);font-size:13px;color:var(--muted)">还没过关</div>
+  </aside>
+
+  <section class="stage">
+    <div class="hm-wrap">
+      <div class="label"><span>概率表 P(下一个 | 当前)</span><span>行 = 当前字符 · 列 = 下一个</span></div>
+      <canvas id="hm"></canvas>
+    </div>
+  </section>
+
+  <aside class="right">
+    <div>
+      <div class="label" style="display:flex;justify-content:space-between"><span>交叉熵</span><span>上虚线 = 均匀猜 · 下虚线 = 下界</span></div>
+      <canvas id="lc"></canvas>
+    </div>
+    <div class="label" style="margin-bottom:-10px">模型写的东西</div>
+    <div class="samples" id="samples"></div>
+    <div class="roadmap">Bigram 只看得见前一个字符。到了 <b>第 5 章</b>，你会搭出注意力，让每个位置都能看到全部上文；<b>第 6 章</b>把它叠成多层，就是 GPT。</div>
+  </aside>
+</main>
+<div id="tip"></div>
+
+<script>
+const RAW = `shall i compare thee to a summer's day?
+thou art more lovely and more temperate:
+rough winds do shake the darling buds of may,
+and summer's lease hath all too short a date;
+sometime too hot the eye of heaven shines,
+and often is his gold complexion dimm'd;
+and every fair from fair sometime declines,
+by chance or nature's changing course untrimm'd;
+but thy eternal summer shall not fade,
+nor lose possession of that fair thou ow'st;
+nor shall death brag thou wander'st in his shade,
+when in eternal lines to time thou grow'st:
+so long as men can breathe or eyes can see,
+so long lives this, and this gives life to thee.
+to be, or not to be, that is the question:
+whether 'tis nobler in the mind to suffer
+the slings and arrows of outrageous fortune,
+or to take arms against a sea of troubles
+and by opposing end them. to die, to sleep;
+no more; and by a sleep to say we end
+the heart-ache and the thousand natural shocks
+that flesh is heir to: 'tis a consummation
+devoutly to be wish'd. to die, to sleep;
+to sleep, perchance to dream. ay, there's the rub:
+for in that sleep of death what dreams may come,
+when we have shuffled off this mortal coil,
+must give us pause.
+`;
+const TEXT = RAW.replace(/[;:?\-]/g, ',').replace(/ +/g, ' ');
+const VOCAB = [...new Set(TEXT)].sort((a, b) => a === '\n' ? -1 : b === '\n' ? 1 : a.localeCompare(b));
+const V = VOCAB.length, IDX = Object.fromEntries(VOCAB.map((c, i) => [c, i]));
+const show = c => c === '\n' ? '↵' : c === ' ' ? '␣' : c;
+
+// 计数矩阵：交叉熵和梯度只依赖 (a, b) 对出现的次数
+const C = Array.from({ length: V }, () => new Float64Array(V));
+const rowN = new Float64Array(V);
+for (let i = 0; i + 1 < TEXT.length; i++) { C[IDX[TEXT[i]]][IDX[TEXT[i + 1]]]++; rowN[IDX[TEXT[i]]]++; }
+const N = TEXT.length - 1;
+let OPT = 0;
+for (let a = 0; a < V; a++) for (let b = 0; b < V; b++) if (C[a][b]) OPT -= C[a][b] / N * Math.log(C[a][b] / rowN[a]);
+const UNI = Math.log(V);
+
+let Wt, m, v, P, t = 0, losses = [], playing = false, lr = 0.03, temp = 1, nextSnap = 0;
+const SNAPS = [0, 10, 30, 80, 200, 500, 1200];
+
+function init() {
+  Wt = Array.from({ length: V }, () => new Float64Array(V));
+  m = Array.from({ length: V }, () => new Float64Array(V));
+  v = Array.from({ length: V }, () => new Float64Array(V));
+  t = 0; losses = []; nextSnap = 1;
+  document.getElementById('samples').innerHTML = '';
+  computeP(); losses.push(loss());
+  snapshot(); stats(); draw();
+}
+
+function computeP() {
+  P = Wt.map(row => {
+    const mx = Math.max(...row), e = row.map(x => Math.exp(x - mx)), s = e.reduce((a, b) => a + b, 0);
+    return e.map(x => x / s);
+  });
+}
+function loss() {
+  let L = 0;
+  for (let a = 0; a < V; a++) for (let b = 0; b < V; b++) if (C[a][b]) L -= C[a][b] * Math.log(P[a][b]);
+  return L / N;
+}
+function trainStep() {
+  // dL/dW[a][b] = (rowN[a] * P[a][b] - C[a][b]) / N，再用 Adam 更新
+  t++;
+  const b1 = 0.9, b2 = 0.999;
+  for (let a = 0; a < V; a++) for (let b = 0; b < V; b++) {
+    const g = (rowN[a] * P[a][b] - C[a][b]) / N * V;
+    m[a][b] = b1 * m[a][b] + (1 - b1) * g;
+    v[a][b] = b2 * v[a][b] + (1 - b2) * g * g;
+    const mh = m[a][b] / (1 - b1 ** t), vh = v[a][b] / (1 - b2 ** t);
+    Wt[a][b] -= lr * mh / (Math.sqrt(vh) + 1e-8);
+  }
+  computeP();
+  losses.push(loss());
+}
+
+function sample(n = 220) {
+  let c = IDX['\n'], out = '';
+  for (let i = 0; i < n; i++) {
+    const logits = P[c].map(p => Math.log(p + 1e-12) / temp);
+    const mx = Math.max(...logits), e = logits.map(x => Math.exp(x - mx)), s = e.reduce((a, b) => a + b, 0);
+    let r = Math.random() * s, k = 0;
+    while (k < V - 1 && (r -= e[k]) > 0) k++;
+    c = k; out += VOCAB[k];
+  }
+  return out;
+}
+function snapshot(label) {
+  const host = document.getElementById('samples');
+  host.querySelectorAll('.sample').forEach(s => s.classList.remove('new'));
+  const el = document.createElement('div');
+  el.className = 'sample new';
+  el.innerHTML = `<div class="meta">${label || '第 ' + t + ' 步'} · 交叉熵 ${losses[losses.length - 1].toFixed(3)}</div><pre></pre>`;
+  el.querySelector('pre').textContent = sample();
+  host.prepend(el);
+}
+
+function stats() {
+  const L = losses[losses.length - 1];
+  document.getElementById('s-step').textContent = t;
+  document.getElementById('s-loss').textContent = L.toFixed(4);
+  document.getElementById('s-uni').textContent = UNI.toFixed(4);
+  document.getElementById('s-opt').textContent = OPT.toFixed(4);
+  document.getElementById('s-v').textContent = V;
+  const st = document.getElementById('status');
+  if (L - OPT < 0.05) { st.style.borderStyle = 'solid'; st.style.borderColor = st.style.color = cssVar('--good'); st.textContent = `✓ 过关 · 第 ${t} 步达到下界附近`; }
+  else { st.style.borderStyle = 'dashed'; st.style.borderColor = cssVar('--line-strong'); st.style.color = cssVar('--muted'); st.textContent = `离下界还差 ${(L - OPT).toFixed(3)}`; }
+}
+
+let geo = null, hover = null;
+function drawHeat() {
+  const c = document.getElementById('hm');
+  const { g, w, h } = fitCanvas(c);
+  const lab = 18, S = Math.min(w - lab, h - lab), cell = S / V, ox = lab + (w - lab - S) / 2, oy = lab;
+  geo = { ox, oy, cell };
+  const acc = hexRgb(cssVar('--accent')), bg = hexRgb(cssVar('--panel-2'));
+  for (let a = 0; a < V; a++) for (let b = 0; b < V; b++) {
+    const k = Math.sqrt(P[a][b]);
+    g.fillStyle = `rgb(${acc.map((x, i) => Math.round(bg[i] + (x - bg[i]) * k)).join(',')})`;
+    g.fillRect(ox + b * cell, oy + a * cell, Math.ceil(cell), Math.ceil(cell));
+  }
+  g.fillStyle = cssVar('--muted'); g.font = `${Math.min(11, cell * 0.8)}px ${cssVar('--mono')}`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 0; i < V; i++) {
+    g.fillText(show(VOCAB[i]), ox + i * cell + cell / 2, oy - 8);
+    g.fillText(show(VOCAB[i]), ox - 9, oy + i * cell + cell / 2);
+  }
+  if (hover) {
+    g.strokeStyle = cssVar('--warm'); g.lineWidth = 1.5;
+    g.strokeRect(ox + hover.b * cell, oy + hover.a * cell, cell, cell);
+  }
+}
+
+function drawLoss() {
+  const { g, w, h } = fitCanvas(document.getElementById('lc'));
+  const P_ = { l: 30, r: 6, t: 8, b: 16 };
+  const lo = Math.floor(OPT * 2) / 2 - 0.25, hi = UNI + 0.15;
+  const sy = x => P_.t + (hi - x) / (hi - lo) * (h - P_.t - P_.b);
+  const n = Math.max(losses.length, 300), sx = i => P_.l + i / n * (w - P_.l - P_.r);
+  g.font = '10px ' + cssVar('--mono'); g.fillStyle = cssVar('--muted'); g.strokeStyle = cssVar('--line'); g.lineWidth = 1;
+  for (let y = Math.ceil(lo); y <= hi; y++) { g.beginPath(); g.moveTo(P_.l, sy(y)); g.lineTo(w - P_.r, sy(y)); g.stroke(); g.fillText(String(y), 6, sy(y) + 3); }
+  g.setLineDash([4, 4]);
+  g.strokeStyle = cssVar('--muted'); g.beginPath(); g.moveTo(P_.l, sy(UNI)); g.lineTo(w - P_.r, sy(UNI)); g.stroke();
+  g.strokeStyle = cssVar('--good'); g.beginPath(); g.moveTo(P_.l, sy(OPT)); g.lineTo(w - P_.r, sy(OPT)); g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle = cssVar('--accent'); g.lineWidth = 2; g.beginPath();
+  losses.forEach((x, i) => i ? g.lineTo(sx(i), sy(x)) : g.moveTo(sx(i), sy(x)));
+  g.stroke();
+}
+function draw() { drawHeat(); drawLoss(); }
+
+const tip = document.getElementById('tip');
+document.getElementById('hm').addEventListener('pointermove', e => {
+  const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const b = Math.floor((x - geo.ox) / geo.cell), a = Math.floor((y - geo.oy) / geo.cell);
+  if (a >= 0 && a < V && b >= 0 && b < V) {
+    hover = { a, b };
+    tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 12 + 'px';
+    tip.textContent = `'${show(VOCAB[a])}' → '${show(VOCAB[b])}'  ${(P[a][b] * 100).toFixed(1)}%  (语料里 ${C[a][b]} 次)`;
+  } else { hover = null; tip.style.display = 'none'; }
+  drawHeat();
+});
+document.getElementById('hm').addEventListener('pointerleave', () => { hover = null; tip.style.display = 'none'; drawHeat(); });
+
+function loop() {
+  if (playing) {
+    trainStep(); trainStep();
+    if (nextSnap < SNAPS.length && t >= SNAPS[nextSnap]) { snapshot(); nextSnap++; }
+    stats(); draw();
+    if (t >= 1500) togglePlay(false);
+  }
+  requestAnimationFrame(loop);
+}
+function togglePlay(val = !playing) { playing = val; document.getElementById('play').textContent = playing ? '⏸ 暂停' : '▶ 训练'; }
+
+const lrEl = document.getElementById('lr'), tEl = document.getElementById('temp');
+const setLr = () => { lr = +lrEl.value; document.getElementById('lrv').textContent = lr.toFixed(2); };
+const setT = () => { temp = +tEl.value; document.getElementById('tv').textContent = temp.toFixed(2); };
+lrEl.oninput = setLr; tEl.oninput = setT; setLr(); setT();
+document.getElementById('play').onclick = () => togglePlay();
+document.getElementById('sample').onclick = () => snapshot();
+document.getElementById('reinit').onclick = () => { togglePlay(false); init(); };
+window.addEventListener('themechange', () => { stats(); draw(); });
+window.addEventListener('resize', draw);
+
+init();
+loop();
+</script>
+</body>
+</html>
