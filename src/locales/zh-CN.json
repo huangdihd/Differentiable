@@ -77,7 +77,7 @@
   "levels.derivative.title": "函数求导",
   "levels.derivative.description": "构建 x × exp(x) 的导数：exp(x) × (1 + x)。",
   "levels.xor.title": "学习异或",
-  "levels.xor.description": "训练网络学习异或，使损失低于 0.05 且准确率达到 100%。",
+  "levels.xor.description": "x 是 4 个样本 [4×2]，每行是一组输入 (0,0) (0,1) (1,0) (1,1)。y 要输出每个样本属于「0」和「1」的概率 [4×2]。训练到损失低于 0.05、准确率 100%。",
   "components.input": "输入",
   "components.output": "输出",
   "components.const": "常量",
@@ -304,7 +304,7 @@
   "ui.comingSoon": "即将推出",
   "ui.bestShort": "最佳：{nodes} 个运算 · {params} 个参数",
   "ui.producedHere": "本关产出",
-  "ui.emptyCanvas": "从左侧拖入元件\n把 x 一路接到 y",
+  "ui.emptyCanvas": "从左侧拖入元件\n把输入一路接到输出",
   "ui.liveValues": "实时数值",
   "ui.probeHelp": "改输入，每个元件下方实时显示它的输出。悬停可看完整数值。",
   "ui.steps": "步数",
@@ -369,5 +369,12 @@
   "levels.1-7.title": "对数链式法则",
   "levels.1-7.description": "构建 f(x) = log(1 + x²) 的导数，解锁自动微分。",
   "levels.1-7.hint": "外层导数乘以内层导数：2x × recip(1 + x²)。",
-  "levels.features.autodiff": "已解锁自动微分"
+  "levels.features.autodiff": "已解锁自动微分",
+  "levels.features.expression": "已解锁表达式框：以后可以直接输入公式生成元件",
+  "ui.scalar": "标量",
+  "ui.verifying": "验证中 · {n}/{count}",
+  "ui.skip": "跳过动画",
+  "errors.matmul_shape": "矩阵乘法的形状对不上：a 是 {a}，b 是 {b}。a 的最后一维必须等于 b 的倒数第二维。",
+  "levels.xor.hint1": "一层线性变换分不开异或。先用矩阵乘法把 x [4×2] 乘上参数 [2×k]，加偏置 [k]，过一个激活函数，再乘 [k×2]、加偏置 [2]，最后 softmax。",
+  "levels.xor.hint2": "参数的形状在右栏「属性」里改。隐藏单元 k 越小，参数越少，成绩越好。"
 }

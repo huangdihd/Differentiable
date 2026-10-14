@@ -21,7 +21,8 @@ import {
 import { WorkerClient, WorkerClientError } from './worker/client';
 import type { WorkerError } from './worker/protocol';
 import type { TrainingReport } from './engine/training';
-import Canvas, { position, type CanvasHandle, type NodeValue } from './ui/Canvas';
+import Canvas, { position, shapeText, type CanvasHandle, type NodeValue } from './ui/Canvas';
+import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
@@ -251,6 +252,9 @@ type EditorProps = {
   revision: React.RefObject<number>;
 };
 
+/** Time each test case stays on the canvas during step-through verification. */
+const STEP_MS = 420;
+
 function compact(locale: Locale, n: number) {
   if (!Number.isFinite(n)) return Number.isNaN(n) ? 'NaN' : n > 0 ? '∞' : '−∞';
   if (n !== 0 && (Math.abs(n) >= 1e5 || Math.abs(n) < 1e-3)) return n.toExponential(2);
@@ -299,7 +303,22 @@ function Editor({
   const [shake, setShake] = useState<{ node: string; tick: number }>();
   const [ghost, setGhost] = useState<{ component: string; x: number; y: number }>();
   const canvas = useRef<CanvasHandle>(null);
-  const probing = level.kind !== 'train';
+  // Every level probes values: training levels show what the initial (seeded) network computes.
+  const probing = true;
+  // Step-through verification, Turing Complete style: one test case at a time on the canvas.
+  const [verify, setVerify] = useState<{ index: number; result: LevelResult } | null>(null);
+  const skip = useRef(false);
+  const testCases = useMemo(() => {
+    if (level.kind === 'train') return [];
+    const generated = level.generated;
+    const random = generated ? new Random(generated.seed) : undefined;
+    return [
+      ...level.fixed,
+      ...(generated
+        ? Array.from({ length: generated.count }, (_, i) => generated.generate(random!, i))
+        : []),
+    ];
+  }, [level]);
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(
       Object.entries(level.interface.inputs).map(([name, shape]) => [
@@ -311,6 +330,24 @@ function Editor({
       ]),
     ),
   );
+  useEffect(() => {
+    if (level.kind !== 'train') return;
+    let alive = true;
+    const batch = level.dataset(new Random(level.seed));
+    void Promise.all(
+      Object.entries(batch.inputs).map(async ([k, v]) => [k, Array.from(await v.read())] as const),
+    )
+      .then((entries) => {
+        if (alive) setInputs(Object.fromEntries(entries.map(([k, v]) => [k, v.join(', ')])));
+      })
+      .finally(() => {
+        Object.values(batch.inputs).forEach((v) => v.dispose());
+        batch.targets.dispose();
+      });
+    return () => {
+      alive = false;
+    };
+  }, [level]);
   const t = createTranslator(locale);
   const latest = useRef({ progress, onProgress, graph: state.graph });
   latest.current = { progress, onProgress, graph: state.graph };
@@ -440,52 +477,62 @@ function Editor({
       return;
     }
     const probeRevision = revision.current;
-    const timer = setTimeout(async () => {
-      const c = client.current;
-      if (!c) return;
-      const next: Record<string, NodeValue> = {};
-      for (const node of state.graph.nodes) {
-        const port =
-          node.component === 'output'
-            ? null
-            : node.component === 'input'
-              ? 'out'
-              : registry.get(node.component)?.outputs[0];
-        const source =
-          node.component === 'output'
-            ? state.graph.edges.find((e) => e.to.node === node.id)?.from
-            : port
-              ? { node: node.id, port }
-              : undefined;
-        if (!source) continue;
-        if (diagnostics.some((d) => d.node === source.node)) continue;
-        try {
-          const r = await c.probe(
-            level.id,
-            state.graph,
-            source,
-            parsedInputs as Record<string, number[]>,
-          );
-          if (revision.current !== probeRevision) return;
-          const shown =
-            r.values.length === 1 ? compact(locale, r.values[0]) : listText(locale, r.values, 2);
-          next[node.id] = {
-            text: shown,
-            title: `[${r.shape.join('×') || '·'}] ${listText(locale, r.values, 12)}`,
-            ok: r.values.every(Number.isFinite),
-          };
-        } catch {
-          if (revision.current !== probeRevision) return;
+    const timer = setTimeout(
+      async () => {
+        const c = client.current;
+        if (!c) return;
+        const next: Record<string, NodeValue> = {};
+        for (const node of state.graph.nodes) {
+          const port =
+            node.component === 'output'
+              ? null
+              : node.component === 'input'
+                ? 'out'
+                : registry.get(node.component)?.outputs[0];
+          const source =
+            node.component === 'output'
+              ? state.graph.edges.find((e) => e.to.node === node.id)?.from
+              : port
+                ? { node: node.id, port }
+                : undefined;
+          if (!source) continue;
+          if (diagnostics.some((d) => d.node === source.node)) continue;
+          try {
+            const r = await c.probe(
+              level.id,
+              state.graph,
+              source,
+              parsedInputs as Record<string, number[]>,
+            );
+            if (revision.current !== probeRevision) return;
+            const shown =
+              r.values.length === 1 ? compact(locale, r.values[0]) : listText(locale, r.values, 2);
+            next[node.id] = {
+              text: shown,
+              title: `[${r.shape.join('×') || '·'}] ${listText(locale, r.values, 12)}`,
+              ok: r.values.every(Number.isFinite),
+              shape: r.shape,
+            };
+          } catch {
+            if (revision.current !== probeRevision) return;
+          }
         }
-      }
-      setValues(next);
-    }, 300);
+        setValues(next);
+      },
+      verify ? 10 : 300,
+    );
     return () => clearTimeout(timer);
   }, [state.graph, parsedInputs, diagnostics, busy]);
 
   const selected = state.graph.nodes.find((n) => n.id === state.selection[0]);
   const display = inside.at(-1)?.graph ?? state.graph;
-  const errors = diagnostics.map((e) => ({ ...e, message: translateDiagnostic(locale, e) }));
+  // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
+  const SOFT = new Set(['missing_port', 'missing_input']);
+  const errors = diagnostics.map((e) => ({
+    ...e,
+    soft: SOFT.has(e.key),
+    message: translateDiagnostic(locale, e),
+  }));
   // Component internals get their own framing; leaving restores the player's view.
   const outerView = useRef(state.viewport);
   useEffect(() => {
@@ -524,7 +571,25 @@ function Editor({
       } else {
         setRunning(true);
         const r = await client.current?.evaluate(level.id, state.graph);
-        if (r) finish(r);
+        if (!r) return;
+        if (r.errorKey || !r.tests.length) {
+          finish(r);
+          return;
+        }
+        skip.current = false;
+        for (let i = 0; i < r.tests.length; i++) {
+          setVerify({ index: i, result: r });
+          const c = testCases[i];
+          if (c)
+            setInputs(
+              Object.fromEntries(Object.entries(c.inputs).map(([k, v]) => [k, v.join(', ')])),
+            );
+          // Stop on the first failing case and leave its values on the canvas to debug.
+          if (!r.tests[i].passed) break;
+          if (!skip.current) await new Promise((done) => setTimeout(done, STEP_MS));
+        }
+        setVerify(null);
+        finish(r);
       }
     } catch (e) {
       setTraining('idle');
@@ -613,8 +678,29 @@ function Editor({
   );
   const outputValue = values[state.graph.nodes.find((n) => n.component === 'output')?.id ?? ''];
   const canEdit = !busy && !inside.length;
-  const onlyIO = state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
+  // The empty-canvas hint is for the very first look only: any edit (even wiring x straight to y)
+  // or any history at all hides it for good.
+  const untouched =
+    !state.graph.edges.length &&
+    !state.past.length &&
+    state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
   const threshold = level.kind === 'train' ? level.threshold.loss : undefined;
+  // The expression box is a tool you earn at the end of chapter 1; early levels are about wiring.
+  const expressionUnlocked = gameLevels.some(
+    (l) =>
+      l.unlockFeatures?.includes('levels.features.expression') && progress.passed.includes(l.id),
+  );
+  const ioShapes = Object.fromEntries(
+    state.graph.nodes.flatMap((n) =>
+      n.component === 'input'
+        ? [[n.id, level.interface.inputs[String(n.attrs?.name)] ?? []]]
+        : n.component === 'output'
+          ? [[n.id, level.interface.outputShape]]
+          : [],
+    ),
+  );
+  const shown = verify ? verify.result : result;
+  const shownTests = verify ? verify.result.tests.slice(0, verify.index + 1) : result?.tests;
 
   return (
     <main className="workspace">
@@ -685,33 +771,35 @@ function Editor({
             </div>
           </section>
         )}
-        <form
-          className="section expression"
-          onSubmit={(e) => {
-            e.preventDefault();
-            insertExpression();
-          }}
-        >
-          <label className="label" htmlFor="expression">
-            {t('ui.expression')}
-          </label>
-          <div className="expression-row">
-            <input
-              id="expression"
-              className="field"
-              value={expression}
-              placeholder={t('ui.expressionPlaceholder')}
-              disabled={!canEdit}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setExpression(e.target.value)}
-            />
-            <button className="btn" disabled={!canEdit || !expression.trim()}>
-              ↵
-            </button>
-          </div>
-          <p className="hint">{t('ui.expressionHelp')}</p>
-        </form>
+        {expressionUnlocked && (
+          <form
+            className="section expression"
+            onSubmit={(e) => {
+              e.preventDefault();
+              insertExpression();
+            }}
+          >
+            <label className="label" htmlFor="expression">
+              {t('ui.expression')}
+            </label>
+            <div className="expression-row">
+              <input
+                id="expression"
+                className="field"
+                value={expression}
+                placeholder={t('ui.expressionPlaceholder')}
+                disabled={!canEdit}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setExpression(e.target.value)}
+              />
+              <button className="btn" disabled={!canEdit || !expression.trim()}>
+                ↵
+              </button>
+            </div>
+            <p className="hint">{t('ui.expressionHelp')}</p>
+          </form>
+        )}
         <p className="hint help">{t('ui.help')}</p>
       </aside>
 
@@ -728,7 +816,8 @@ function Editor({
           readonly={!canEdit}
           t={t}
           errors={inside.length ? [] : errors}
-          values={inside.length || !probing ? null : values}
+          values={inside.length ? null : values}
+          ioShapes={inside.length ? undefined : ioShapes}
           onSelect={(ids, shift) => command({ type: 'select', ids, shift })}
           onMove={(positions) => command({ type: 'moveNodes', positions })}
           onDeleteEdge={(index) => command({ type: 'disconnect', edge: state.graph.edges[index] })}
@@ -837,7 +926,7 @@ function Editor({
             </span>
           </div>
         )}
-        {onlyIO && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>}
+        {untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>}
       </section>
 
       <aside className="panel panel-right">
@@ -847,7 +936,7 @@ function Editor({
           </p>
         )}
         {errors
-          .filter((e) => !e.node)
+          .filter((e) => !e.node && !e.soft)
           .map((e, i) => (
             <p className="status status-fail" key={i}>
               {e.message}
@@ -877,8 +966,25 @@ function Editor({
                   value={value}
                   aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
                   spellCheck={false}
+                  disabled={!!verify}
                   onChange={(e) => setInputs((s) => ({ ...s, [name]: e.target.value }))}
                 />
+                {level.interface.inputs[name].length > 0 && (
+                  <span className="probe-shape">{shapeText(level.interface.inputs[name], t)}</span>
+                )}
+                {level.interface.inputs[name].length === 0 && (
+                  <input
+                    type="range"
+                    className="probe-slider"
+                    aria-label={name}
+                    min={-5}
+                    max={5}
+                    step={0.05}
+                    disabled={!!verify}
+                    value={Number(value) || 0}
+                    onChange={(e) => setInputs((s) => ({ ...s, [name]: e.target.value }))}
+                  />
+                )}
               </div>
             ))}
             <div className="probe-out">
@@ -930,13 +1036,19 @@ function Editor({
             </>
           )}
           <div className="btn-row">
-            <button
-              className="btn btn-primary"
-              disabled={busy || running || !!inside.length}
-              onClick={() => void run()}
-            >
-              ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
-            </button>
+            {verify ? (
+              <button className="btn btn-primary" onClick={() => (skip.current = true)}>
+                ⏭ {t('ui.skip')}
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                disabled={busy || running || !!inside.length}
+                onClick={() => void run()}
+              >
+                ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
+              </button>
+            )}
             {busy && (
               <>
                 <button
@@ -964,15 +1076,21 @@ function Editor({
               </>
             )}
           </div>
-          {result && (
+          {shown && shownTests && (
             <div className="results">
-              <p className={`status ${result.passed ? 'status-pass' : 'status-fail'}`}>
-                {result.passed ? '✓ ' : '✗ '}
-                {t(result.passed ? 'ui.passedCount' : 'ui.failedCount', {
-                  passed: result.tests.filter((r) => r.passed).length,
-                  count: result.tests.length,
-                })}
-              </p>
+              {verify ? (
+                <p className="status">
+                  {t('ui.verifying', { n: verify.index + 1, count: verify.result.tests.length })}
+                </p>
+              ) : (
+                <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
+                  {shown.passed ? '✓ ' : '✗ '}
+                  {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
+                    passed: shown.tests.filter((r) => r.passed).length,
+                    count: shown.tests.length,
+                  })}
+                </p>
+              )}
               {level.kind !== 'train' && (
                 <div className="table-scroll">
                   <table className="table">
@@ -985,8 +1103,11 @@ function Editor({
                       </tr>
                     </thead>
                     <tbody>
-                      {result.tests.map((r, i) => (
-                        <tr key={r.id}>
+                      {shownTests.map((r, i) => (
+                        <tr
+                          key={r.id}
+                          className={verify && i === verify.index ? 'is-current' : undefined}
+                        >
                           <td>{i + 1}</td>
                           <td title={listText(locale, r.expected, 99)}>
                             {listText(locale, r.expected, 2)}
@@ -994,7 +1115,9 @@ function Editor({
                           <td title={listText(locale, r.actual, 99)}>
                             {listText(locale, r.actual, 2)}
                           </td>
-                          <td className={r.passed ? 'ok' : 'err'}>{r.passed ? '✓' : '✗'}</td>
+                          <td className={r.passed ? 'ok' : 'err'}>
+                            {verify && i === verify.index && r.passed ? '·' : r.passed ? '✓' : '✗'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

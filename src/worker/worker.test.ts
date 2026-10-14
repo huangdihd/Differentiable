@@ -94,6 +94,22 @@ describe('worker runtime protocol', () => {
     }
     expect(sigmoidSolution).toEqual(before);
   });
+  it('probes the wired part of a half-built graph', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    // Only x -> neg is wired; the output is still unconnected, so a full compile would fail.
+    const graph = structuredClone(sigmoidSolution);
+    graph.edges = graph.edges.filter((e) => e.to.node === 'neg');
+    expect(
+      await h.send({
+        type: 'probe',
+        levelId: 'sigmoid',
+        graph,
+        endpoint: { node: 'neg', port: 'out' },
+        inputs: { x: [-4, -1, 0, 1, 4] },
+      }),
+    ).toMatchObject({ data: { shape: [5], values: [4, 1, -0, -1, -4] } });
+  });
   it('evaluates actual forward and derivative graphs and rejects old revisions', async () => {
     const h = harness();
     await h.send({ type: 'init', backend: 'cpu' });

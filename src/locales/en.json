@@ -77,7 +77,7 @@
   "levels.derivative.title": "Differentiate a function",
   "levels.derivative.description": "Build the derivative of x × exp(x): exp(x) × (1 + x).",
   "levels.xor.title": "Learn XOR",
-  "levels.xor.description": "Train a network to classify XOR with loss below 0.05 and perfect accuracy.",
+  "levels.xor.description": "x holds 4 samples [4×2], one input pair per row: (0,0) (0,1) (1,0) (1,1). y must give each sample the probability of class 0 and class 1 [4×2]. Train until loss is below 0.05 with 100% accuracy.",
   "components.input": "Input",
   "components.output": "Output",
   "components.const": "Constant",
@@ -306,7 +306,7 @@
   "ui.comingSoon": "Coming soon",
   "ui.bestShort": "Best: {nodes} ops · {params} params",
   "ui.producedHere": "Built here",
-  "ui.emptyCanvas": "Drag parts in from the left\nand wire x all the way to y",
+  "ui.emptyCanvas": "Drag parts in from the left\nand wire the inputs through to the output",
   "ui.liveValues": "Live values",
   "ui.probeHelp": "Change the input; each part shows its output underneath. Hover for full values.",
   "ui.steps": "Steps",
@@ -372,5 +372,12 @@
   "levels.1-7.title": "Logarithmic chain rule",
   "levels.1-7.description": "Build the derivative of f(x) = log(1 + x²) to unlock automatic differentiation.",
   "levels.1-7.hint": "Multiply the outer derivative by the inner derivative: 2x × recip(1 + x²).",
-  "levels.features.autodiff": "Automatic differentiation unlocked"
+  "levels.features.autodiff": "Automatic differentiation unlocked",
+  "levels.features.expression": "Expression box unlocked: type a formula to generate its parts",
+  "ui.scalar": "scalar",
+  "ui.verifying": "Checking · {n}/{count}",
+  "ui.skip": "Skip animation",
+  "errors.matmul_shape": "Matrix multiply shapes do not fit: a is {a}, b is {b}. The last axis of a must equal the second-to-last axis of b.",
+  "levels.xor.hint1": "One linear layer cannot separate XOR. Multiply x [4×2] by a parameter [2×k], add a bias [k], apply an activation, multiply by [k×2], add a bias [2], then softmax.",
+  "levels.xor.hint2": "Set a parameter's shape in the Properties panel on the right. A smaller hidden size k means fewer parameters and a better score."
 }

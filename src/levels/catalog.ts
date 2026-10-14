@@ -34,6 +34,7 @@ export const gameLevels: Level[] = [
       'transpose',
     ],
     presets: ['matmul', 'softmax'],
+    hintsKeys: ['levels.xor.hint1', 'levels.xor.hint2'],
     referenceGraph: xorSolution,
     par: graphMetrics(xorSolution, referenceRegistry(chapter0Levels)).expandedPrimitives,
   },

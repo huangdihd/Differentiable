@@ -1,4 +1,10 @@
-import type { Attributes, ComponentDefinition, GraphJSON, ShapePorts } from './graph';
+import {
+  GraphError,
+  type Attributes,
+  type ComponentDefinition,
+  type GraphJSON,
+  type ShapePorts,
+} from './graph';
 import { infer } from './backend';
 import * as T from './tensor';
 
@@ -90,9 +96,14 @@ export const standardComponents: ComponentDefinition[] = (
   outputs: ['out'],
   subgraph: (attrs, inputs) => answer(name, attrs, inputs),
   native: {
-    infer: (inputs, attrs) => ({
-      out: infer(name, name === 'matmul' ? [inputs.a, inputs.b] : [inputs.x], attrs),
-    }),
+    infer: (inputs, attrs) => {
+      if (
+        name === 'matmul' &&
+        (inputs.a.length < 2 || inputs.b.length < 2 || inputs.a.at(-1) !== inputs.b.at(-2))
+      )
+        throw new GraphError('matmul_shape', undefined, undefined, { a: inputs.a, b: inputs.b });
+      return { out: infer(name, name === 'matmul' ? [inputs.a, inputs.b] : [inputs.x], attrs) };
+    },
     execute: (inputs, attrs) => ({
       out:
         name === 'matmul'

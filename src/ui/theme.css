@@ -745,13 +745,16 @@ input[type='range'] {
   padding-right: var(--s2);
 }
 .canvas-hint {
-  color: var(--muted);
+  color: var(--faint);
   font-size: 13px;
   line-height: 1.9;
   white-space: pre-line;
-  border: 1px dashed var(--line-strong);
-  padding: var(--s3) var(--s4);
-  background: rgba(15, 47, 89, 0.6);
+}
+.node-note {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  padding: 2px var(--s2) 4px;
+  border-top: 1px dashed var(--line);
 }
 
 /* right panel */
@@ -937,4 +940,39 @@ input[type='range'] {
   .node.is-shaking {
     animation: none;
   }
+}
+
+/* shapes & verification */
+.node-shape {
+  color: var(--faint);
+  font-family: var(--mono);
+}
+.node-foot {
+  gap: 6px;
+}
+.node-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.node-shape-tag {
+  flex: none;
+  font-size: 10px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+.probe-field {
+  grid-template-columns: auto 1fr auto;
+}
+.probe-shape {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.probe-slider {
+  grid-column: 1 / -1;
+}
+.table tr.is-current td {
+  background: var(--panel-2);
+  color: var(--accent);
 }

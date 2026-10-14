@@ -55,9 +55,9 @@ describe('formal chapter catalog', () => {
     for (const level of formalLevels) {
       const names = ['0-2', '0-4'].includes(level.id) ? ['a', 'b'] : ['x'];
       expect(level.interface).toEqual({
-        inputs: Object.fromEntries(names.map((name) => [name, [8]])),
+        inputs: Object.fromEntries(names.map((name) => [name, []])),
         output: 'y',
-        outputShape: [8],
+        outputShape: [],
       });
       expect(level.available).toEqual([
         'const',
@@ -77,13 +77,13 @@ describe('formal chapter catalog', () => {
       for (const test of cases) {
         expect(Object.keys(test.inputs)).toEqual(names);
         for (const [name, data] of Object.entries(test.inputs)) {
-          expect(data).toHaveLength(8);
+          expect(data).toHaveLength(1);
           expect(data.every(Number.isFinite)).toBe(true);
           if (['0-3', '0-8', '1-4'].includes(level.id) || (level.id === '0-4' && name === 'b'))
             expect(data.every((x) => x > 0)).toBe(true);
         }
       }
-      if (level.id === '0-4') expect(level.fixed[0].inputs.a.some((x) => x < 0)).toBe(true);
+      if (level.id === '0-4') expect(level.fixed.some((test) => test.inputs.a[0] < 0)).toBe(true);
     }
   });
 
@@ -120,35 +120,29 @@ describe('formal chapter catalog', () => {
   };
   for (const level of formalLevels) {
     it(`${level.id}: reference is the specified f, with the specified derivative`, async () => {
-      const data = level.fixed[0].inputs;
-      const inputs = Object.fromEntries(
-        Object.entries(data).map(([name, values]) => [name, T.tensor(values, [8])]),
-      );
-      const output = level.reference(inputs);
-      let gradient: T.Tensor | undefined;
-      try {
-        expect(output.shape).toEqual([8]);
-        const x = data.x ?? data.a;
-        const actual = await output.read();
-        x.forEach((value, i) => {
-          const expected = functions[level.id](value, data.b?.[i] ?? 0);
-          expect(Math.abs(actual[i] - expected)).toBeLessThan(
-            1e-5 * Math.max(1, Math.abs(expected)),
-          );
-        });
-        if (level.kind === 'derivative') {
-          [gradient] = await T.backward(output, [inputs.x]);
-          const values = await gradient.read();
-          x.forEach((value, i) => {
-            const expected = derivatives[level.id](value);
-            expect(Math.abs(values[i] - expected)).toBeLessThan(
-              1e-5 * Math.max(1, Math.abs(expected)),
-            );
-          });
+      for (const test of level.fixed) {
+        const data = test.inputs;
+        const inputs = Object.fromEntries(
+          Object.entries(data).map(([name, values]) => [name, T.tensor(values, [])]),
+        );
+        const output = level.reference(inputs);
+        let gradient: T.Tensor | undefined;
+        try {
+          expect(output.shape).toEqual([]);
+          const x = (data.x ?? data.a)[0];
+          const [actual] = await output.read();
+          const expected = functions[level.id](x, data.b?.[0] ?? 0);
+          expect(Math.abs(actual - expected)).toBeLessThan(1e-5 * Math.max(1, Math.abs(expected)));
+          if (level.kind === 'derivative') {
+            [gradient] = await T.backward(output, [inputs.x]);
+            const [value] = await gradient.read();
+            const slope = derivatives[level.id](x);
+            expect(Math.abs(value - slope)).toBeLessThan(1e-5 * Math.max(1, Math.abs(slope)));
+          }
+        } finally {
+          gradient?.dispose();
+          T.disposeGraph([output, ...Object.values(inputs)]);
         }
-      } finally {
-        gradient?.dispose();
-        T.disposeGraph([output, ...Object.values(inputs)]);
       }
     });
   }
@@ -175,10 +169,10 @@ describe('formal chapter catalog', () => {
       });
       expect(result.errorKey).toBeUndefined();
       expect(result.passed).toBe(true);
-      expect(result.tests).toHaveLength(6);
+      expect(result.tests).toHaveLength(level.fixed.length + level.generated!.count);
       expect(
         result.tests.every(
-          (test) => test.passed && test.actual.length === 8 && test.expected.length === 8,
+          (test) => test.passed && test.actual.length === 1 && test.expected.length === 1,
         ),
       ).toBe(true);
     });
@@ -191,10 +185,10 @@ describe('formal chapter catalog', () => {
       const result = await evaluateLevel(level, wrong, { registry });
       expect(result.errorKey).toBeUndefined();
       expect(result.passed).toBe(false);
-      expect(result.tests).toHaveLength(6);
+      expect(result.tests).toHaveLength(level.fixed.length + level.generated!.count);
       expect(
         result.tests.every(
-          (test) => !test.errorKey && test.actual.length === 8 && test.expected.length === 8,
+          (test) => !test.errorKey && test.actual.length === 1 && test.expected.length === 1,
         ),
       ).toBe(true);
       expect(

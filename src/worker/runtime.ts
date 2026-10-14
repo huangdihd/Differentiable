@@ -269,13 +269,24 @@ export class WorkerRuntime {
       if (request.type === 'probe') {
         while (graph.nodes.some((n) => n.id === probeName || n.attrs?.name === probeName))
           probeName += '_';
+        // Probe only what feeds the endpoint (plus the level inputs), so a half-built graph still
+        // shows values for the parts that are already wired.
+        const upstream = new Set<string>();
+        const pending = [request.endpoint.node];
+        while (pending.length) {
+          const id = pending.pop()!;
+          if (upstream.has(id)) continue;
+          upstream.add(id);
+          for (const e of graph.edges) if (e.to.node === id) pending.push(e.from.node);
+        }
+        const kept = graph.nodes.filter((n) => upstream.has(n.id) || n.component === 'input');
         graph = {
           ...graph,
-          nodes: [
-            ...graph.nodes,
-            { id: probeName, component: 'output', attrs: { name: probeName } },
+          nodes: [...kept, { id: probeName, component: 'output', attrs: { name: probeName } }],
+          edges: [
+            ...graph.edges.filter((e) => upstream.has(e.to.node)),
+            { from: request.endpoint, to: { node: probeName, port: 'x' } },
           ],
-          edges: [...graph.edges, { from: request.endpoint, to: { node: probeName, port: 'x' } }],
         };
       }
       let plan: GraphPlan;
@@ -287,8 +298,9 @@ export class WorkerRuntime {
           random: new Random(level.kind === 'train' ? level.seed : 1),
         });
         if (
+          request.type !== 'probe' &&
           JSON.stringify(plan.outputShapes[level.interface.output]) !==
-          JSON.stringify(level.interface.outputShape)
+            JSON.stringify(level.interface.outputShape)
         ) {
           plan.dispose();
           throw new Error('levels.output_shape');

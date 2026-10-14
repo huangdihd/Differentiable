@@ -112,6 +112,8 @@ export function translateDiagnostic(
   for (const [key, value] of Object.entries(error.params ?? {})) {
     if (key !== 'message' && (typeof value === 'string' || typeof value === 'number'))
       params[key] = value;
+    else if (Array.isArray(value) && value.every((d) => typeof d === 'number'))
+      params[key] = value.length ? `[${value.join('×')}]` : '[]';
   }
   if (error.node) params.node = error.node;
   if (error.port) params.port = error.port;

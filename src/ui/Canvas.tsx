@@ -13,6 +13,11 @@ import {
 
 const IO = ['input', 'output'];
 
+/** `[]` reads as "scalar"; anything else as `[4×2]`. */
+export function shapeText(shape: readonly number[], t: CanvasProps['t']): string {
+  return shape.length ? `[${shape.join('×')}]` : t('ui.scalar');
+}
+
 /** Fallback position for callers outside the canvas (e.g. placing an inserted expression). */
 export const position = (n: GraphNode, i = 0) => ({
   x: Number(n.ui?.x ?? 60 + i * 190),
@@ -30,6 +35,8 @@ export interface NodeValue {
   /** Full text for the tooltip. */
   title: string;
   ok: boolean;
+  /** Output shape; shown on the node once tensors are bigger than a scalar. */
+  shape?: readonly number[];
 }
 export interface CanvasHandle {
   /** Converts browser client coordinates to graph coordinates, or null when outside the canvas. */
@@ -44,9 +51,11 @@ export interface CanvasProps {
   viewport: Viewport;
   onViewport: (view: Viewport) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
-  errors: { node?: string; port?: string; message: string }[];
+  errors: { node?: string; port?: string; message: string; soft?: boolean }[];
   /** Probe results by node id. When null, values are not being probed and every wire is drawn live. */
   values: Record<string, NodeValue> | null;
+  /** Shapes required by the level for its input and output nodes, by node id. */
+  ioShapes?: Record<string, readonly number[]>;
   onSelect: (ids: string[], additive: boolean) => void;
   onMove: (positions: Record<string, Point>) => void;
   onConnect: (from: GraphEndpoint, to: GraphEndpoint, previous?: GraphEndpoint) => void;
@@ -205,7 +214,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
       ref={root}
       className="canvas blueprint-bg"
       tabIndex={0}
-      style={{ backgroundPosition: `${view.x}px ${view.y}px` }}
+      style={{
+        // The blueprint grid lives in graph space: it pans and scales with the nodes.
+        backgroundPosition: `${view.x}px ${view.y}px`,
+        backgroundSize: [100, 100, 20, 20]
+          .map((size) => `${size * view.zoom}px ${size * view.zoom}px`)
+          .join(', '),
+      }}
       onKeyDown={(e) => {
         if (e.code === 'Space') {
           space.current = true;
@@ -299,7 +314,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
         </svg>
         {p.graph.nodes.map((n) => {
           const a = pos(n);
-          const errors = p.errors.filter((e) => e.node === n.id);
+          const notes = p.errors.filter((e) => e.node === n.id);
+          const errors = notes.filter((e) => !e.soft);
           const io = IO.includes(n.component);
           const value = p.values?.[n.id];
           const name = io ? String(n.attrs?.name ?? '') : (SYMBOLS[n.component] ?? '');
@@ -363,7 +379,12 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               }}
             >
               <div className="node-head">
-                <span className="node-name">{p.t(`components.${n.component}`)}</span>
+                <span className="node-name">
+                  {p.t(`components.${n.component}`)}
+                  {io && p.ioShapes?.[n.id] && (
+                    <span className="node-shape"> · {shapeText(p.ioShapes[n.id], p.t)}</span>
+                  )}
+                </span>
                 {!io && !p.readonly && (
                   <button
                     className="icon-btn node-delete"
@@ -385,7 +406,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 className={`node-foot ${value ? (value.ok ? 'is-ok' : 'is-bad') : ''}`}
                 title={value?.title}
               >
-                {value?.text ?? '—'}
+                {value?.shape && value.shape.length > 0 && (
+                  <span className="node-shape-tag">{shapeText(value.shape, p.t)}</span>
+                )}
+                <span className="node-value">{value?.text ?? '—'}</span>
               </div>
               {(['inputs', 'outputs'] as const).map((side) => {
                 const list = ports(n, side);
@@ -436,8 +460,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   );
                 });
               })}
-              {errors.map((e, i) => (
-                <div className="node-error" key={i}>
+              {notes.map((e, i) => (
+                <div className={e.soft ? 'node-note' : 'node-error'} key={i}>
                   {e.message}
                 </div>
               ))}

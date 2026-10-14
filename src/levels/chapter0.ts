@@ -83,9 +83,9 @@ for (const [index, definition] of definitions.entries()) {
         available: index < 6 ? scalarPrimitives : [...scalarPrimitives, 'max'],
         forbidden: [definition.name],
         interface: {
-          inputs: Object.fromEntries(inputs.map((name) => [name, [8]])),
+          inputs: Object.fromEntries(inputs.map((name) => [name, []])),
           output: 'y',
-          outputShape: [8],
+          outputShape: [],
         },
         unlock: [index === 7 ? '1-1' : `0-${index + 2}`],
         unlockComponents: [definition.name],
