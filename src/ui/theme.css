@@ -605,6 +605,37 @@ input[type='range'] {
   line-height: 1.6;
   margin: var(--s2) 0 0;
 }
+.hint-open {
+  display: flex;
+  gap: var(--s2);
+  color: var(--text);
+}
+.hint-n {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  margin-top: 2px;
+  height: fit-content;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
+}
+.hint-toggle {
+  display: block;
+  margin-top: var(--s2);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--line-strong);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.hint-toggle:hover {
+  border-bottom-style: solid;
+}
 .help {
   white-space: pre-line;
   border-top: 1px dashed var(--line);

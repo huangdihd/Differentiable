@@ -18,7 +18,7 @@ const definitions: {
   { formula: 'exp(x) * (1 + x)', reference: ({ x }) => T.mul(x, T.exp(x)) },
   { formula: '3 * exp(3 * x)', reference: ({ x }) => T.exp(T.mul(c(x, 3), x)) },
   { formula: 'recip(x)', positiveInputs: ['x'], reference: ({ x }) => T.log(x) },
-  { formula: 'sigmoid(x) * (1 + neg(sigmoid(x)))', reference: ({ x }) => sigmoid(x) },
+  { formula: 'sigmoid(x) + neg(sigmoid(x) * sigmoid(x))', reference: ({ x }) => sigmoid(x) },
   { formula: '1 + neg(tanh(x) * tanh(x))', reference: ({ x }) => tanh(x) },
   { formula: '2 * x * recip(1 + x * x)', reference: ({ x }) => T.log(T.add(c(x, 1), T.mul(x, x))) },
 ];
@@ -32,7 +32,7 @@ export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index
       kind: 'derivative',
       titleKey: `levels.${id}.title`,
       descriptionKey: `levels.${id}.description`,
-      hintsKeys: [`levels.${id}.hint`],
+      hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
       available: [...scalarPrimitives, 'max'],
       interface: { inputs: { x: [] }, output: 'y', outputShape: [] },
       unlock: [index === 6 ? 'xor' : `1-${index + 2}`],

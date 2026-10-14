@@ -29,15 +29,39 @@ export function formulaGraph(formula: string, inputs: readonly string[] = ['x'])
       ]),
     ),
   });
+  // Share repeated subexpressions (sigmoid(x) used twice is one node), so par is what a player
+  // wiring the formula by hand would reach. Parser output lists operands before their users.
+  const alias = new Map<string, string>();
+  const seen = new Map<string, string>();
+  const nodes = parsed.nodes.filter((node) => {
+    const incoming = parsed.edges
+      .filter((e) => e.to.node === node.id)
+      .map((e) => `${e.to.port}=${alias.get(e.from.node) ?? e.from.node}.${e.from.port}`)
+      .sort();
+    const key = JSON.stringify([node.component, node.attrs ?? null, incoming]);
+    const existing = seen.get(key);
+    if (existing) alias.set(node.id, existing);
+    else seen.set(key, node.id);
+    return !existing;
+  });
+  const remap = (end: { node: string; port: string }) => ({
+    ...end,
+    node: alias.get(end.node) ?? end.node,
+  });
   return {
     version: 1,
     nodes: [
       ...inputs.map((name) => ({ id: name, component: 'input', attrs: { name } })),
       ...literals.map((l) => ({ id: l.name, component: 'const', attrs: { value: l.value } })),
-      ...parsed.nodes,
+      ...nodes,
       { id: 'output', component: 'output', attrs: { name: 'y' } },
     ],
-    edges: [...parsed.edges, { from: parsed.output, to: { node: 'output', port: 'x' } }],
+    edges: [
+      ...parsed.edges
+        .filter((e) => !alias.has(e.to.node))
+        .map((e) => ({ from: remap(e.from), to: e.to })),
+      { from: remap(parsed.output), to: { node: 'output', port: 'x' } },
+    ],
   };
 }
 

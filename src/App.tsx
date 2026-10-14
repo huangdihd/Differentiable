@@ -306,6 +306,7 @@ function Editor({
   // Every level probes values: training levels show what the initial (seeded) network computes.
   const probing = true;
   // Step-through verification, Turing Complete style: one test case at a time on the canvas.
+  const [hintsShown, setHintsShown] = useState(0);
   const [verify, setVerify] = useState<{ index: number; result: LevelResult } | null>(null);
   const skip = useRef(false);
   const testCases = useMemo(() => {
@@ -710,11 +711,17 @@ function Editor({
           <h1 className="level-title">{t(level.titleKey)}</h1>
           <p className="level-desc">{t(level.descriptionKey)}</p>
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
-          {level.hintsKeys?.map((key) => (
-            <p className="hint" key={key}>
+          {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
+            <p className="hint hint-open" key={key}>
+              <span className="hint-n">{i + 1}</span>
               {t(key)}
             </p>
           ))}
+          {hintsShown < (level.hintsKeys?.length ?? 0) && (
+            <button className="hint-toggle" onClick={() => setHintsShown((n) => n + 1)}>
+              {t('ui.showHint', { n: hintsShown + 1 })}
+            </button>
+          )}
         </div>
         <section className="section">
           <h2 className="label">{t('ui.primitives')}</h2>

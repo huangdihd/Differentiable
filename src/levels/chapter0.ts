@@ -37,7 +37,7 @@ const definitions: {
   { name: 'sigmoid', formula: 'recip(1 + exp(neg(x)))', reference: ({ x }) => sigmoid(x) },
   {
     name: 'tanh',
-    formula: '2 * sigmoid(2 * x) + (-1)',
+    formula: '(exp(2 * x) + (-1)) * recip(exp(2 * x) + 1)',
     reference: ({ x }) =>
       T.add(T.mul(constant(x, 2), sigmoid(T.mul(constant(x, 2), x))), constant(x, -1)),
   },
@@ -79,7 +79,7 @@ for (const [index, definition] of definitions.entries()) {
         kind: 'forward',
         titleKey: `levels.${id}.title`,
         descriptionKey: `levels.${id}.description`,
-        hintsKeys: [`levels.${id}.hint`],
+        hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
         available: index < 6 ? scalarPrimitives : [...scalarPrimitives, 'max'],
         forbidden: [definition.name],
         interface: {
