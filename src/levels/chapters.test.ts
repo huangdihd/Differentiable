@@ -1,0 +1,225 @@
+import { describe, expect, it } from 'vitest';
+import { evaluateLevel, graphMetrics } from '../engine/levels';
+import * as T from '../engine/tensor';
+import { Random } from '../engine/random';
+import { catalog, gameLevels } from './catalog';
+import { chapter0Levels } from './chapter0';
+import { chapter1Levels } from './chapter1';
+import { formulaGraph, referenceRegistry } from './level-helpers';
+import en from '../locales/en.json';
+import zh from '../locales/zh-CN.json';
+
+const registry = referenceRegistry(chapter0Levels);
+const formalLevels = [...chapter0Levels, ...chapter1Levels];
+
+describe('formal chapter catalog', () => {
+  it('contains fifteen sequential lessons and the preserved XOR challenge', () => {
+    expect(gameLevels.map((level) => level.id)).toEqual([
+      ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
+      ...Array.from({ length: 7 }, (_, i) => `1-${i + 1}`),
+      'xor',
+    ]);
+    expect(catalog.map((entry) => entry.level)).toEqual(gameLevels);
+    for (const [index, level] of gameLevels.entries()) {
+      expect(level.unlock).toEqual(
+        index === gameLevels.length - 1 ? [] : [gameLevels[index + 1].id],
+      );
+      expect(level.referenceGraph).toBeDefined();
+      expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
+      for (const name of level.available) expect(registry.get(name)?.primitive).toBeDefined();
+      for (const key of [
+        level.titleKey,
+        level.descriptionKey,
+        ...(level.hintsKeys ?? []),
+        ...(level.unlockFeatures ?? []),
+      ]) {
+        expect(en).toHaveProperty(key);
+        expect(zh).toHaveProperty(key);
+      }
+    }
+    expect(gameLevels.at(-1)?.presets).toEqual(['matmul', 'softmax']);
+    expect(chapter1Levels.at(-1)?.unlockFeatures).toContain('levels.features.autodiff');
+  });
+
+  it('matches the required lesson order, interfaces and primitive progression', () => {
+    expect(chapter0Levels.map((level) => [level.id, level.unlockComponents])).toEqual([
+      ['0-1', ['neg']],
+      ['0-2', ['sub']],
+      ['0-3', ['recip']],
+      ['0-4', ['div']],
+      ['0-5', ['sigmoid']],
+      ['0-6', ['tanh']],
+      ['0-7', ['relu']],
+      ['0-8', ['sqrt']],
+    ]);
+    for (const level of formalLevels) {
+      const names = ['0-2', '0-4'].includes(level.id) ? ['a', 'b'] : ['x'];
+      expect(level.interface).toEqual({
+        inputs: Object.fromEntries(names.map((name) => [name, [8]])),
+        output: 'y',
+        outputShape: [8],
+      });
+      expect(level.available).toEqual([
+        'const',
+        'add',
+        'mul',
+        'exp',
+        'log',
+        ...(level.chapter === '1' || ['0-7', '0-8'].includes(level.id) ? ['max'] : []),
+      ]);
+      const random = new Random(level.generated!.seed);
+      const cases = [
+        ...level.fixed,
+        ...Array.from({ length: level.generated!.count }, (_, i) =>
+          level.generated!.generate(random, i),
+        ),
+      ];
+      for (const test of cases) {
+        expect(Object.keys(test.inputs)).toEqual(names);
+        for (const [name, data] of Object.entries(test.inputs)) {
+          expect(data).toHaveLength(8);
+          expect(data.every(Number.isFinite)).toBe(true);
+          if (['0-3', '0-8', '1-4'].includes(level.id) || (level.id === '0-4' && name === 'b'))
+            expect(data.every((x) => x > 0)).toBe(true);
+        }
+      }
+      if (level.id === '0-4') expect(level.fixed[0].inputs.a.some((x) => x < 0)).toBe(true);
+    }
+  });
+
+  // Independent scalar mathematics anchors the curriculum, not just agreement
+  // between two graphs that could encode the same wrong lesson.
+  const functions: Record<string, (x: number, b: number) => number> = {
+    '0-1': (x) => -x,
+    '0-2': (a, b) => a - b,
+    '0-3': (x) => 1 / x,
+    '0-4': (a, b) => a / b,
+    '0-5': (x) => 1 / (1 + Math.exp(-x)),
+    '0-6': Math.tanh,
+    '0-7': (x) => Math.max(x, 0),
+    '0-8': Math.sqrt,
+    '1-1': (x) => x * x,
+    '1-2': (x) => x * Math.exp(x),
+    '1-3': (x) => Math.exp(3 * x),
+    '1-4': Math.log,
+    '1-5': (x) => 1 / (1 + Math.exp(-x)),
+    '1-6': Math.tanh,
+    '1-7': (x) => Math.log(1 + x * x),
+  };
+  const derivatives: Record<string, (x: number) => number> = {
+    '1-1': (x) => 2 * x,
+    '1-2': (x) => Math.exp(x) * (1 + x),
+    '1-3': (x) => 3 * Math.exp(3 * x),
+    '1-4': (x) => 1 / x,
+    '1-5': (x) => {
+      const s = 1 / (1 + Math.exp(-x));
+      return s * (1 - s);
+    },
+    '1-6': (x) => 1 - Math.tanh(x) ** 2,
+    '1-7': (x) => (2 * x) / (1 + x * x),
+  };
+  for (const level of formalLevels) {
+    it(`${level.id}: reference is the specified f, with the specified derivative`, async () => {
+      const data = level.fixed[0].inputs;
+      const inputs = Object.fromEntries(
+        Object.entries(data).map(([name, values]) => [name, T.tensor(values, [8])]),
+      );
+      const output = level.reference(inputs);
+      let gradient: T.Tensor | undefined;
+      try {
+        expect(output.shape).toEqual([8]);
+        const x = data.x ?? data.a;
+        const actual = await output.read();
+        x.forEach((value, i) => {
+          const expected = functions[level.id](value, data.b?.[i] ?? 0);
+          expect(Math.abs(actual[i] - expected)).toBeLessThan(
+            1e-5 * Math.max(1, Math.abs(expected)),
+          );
+        });
+        if (level.kind === 'derivative') {
+          [gradient] = await T.backward(output, [inputs.x]);
+          const values = await gradient.read();
+          x.forEach((value, i) => {
+            const expected = derivatives[level.id](value);
+            expect(Math.abs(values[i] - expected)).toBeLessThan(
+              1e-5 * Math.max(1, Math.abs(expected)),
+            );
+          });
+        }
+      } finally {
+        gradient?.dispose();
+        T.disposeGraph([output, ...Object.values(inputs)]);
+      }
+    });
+  }
+
+  for (const level of formalLevels) {
+    it(`${level.id}: reference answer passes fixed and reproducible seeded cases`, async () => {
+      const randomA = new Random(level.generated!.seed);
+      const randomB = new Random(level.generated!.seed);
+      for (let i = 0; i < level.generated!.count; i++)
+        expect(level.generated!.generate(randomA, i)).toEqual(
+          level.generated!.generate(randomB, i),
+        );
+      // Simulate the palette supplied by progression; available itself is primitives only.
+      const preceding = chapter0Levels.slice(
+        0,
+        level.kind === 'derivative' ? 8 : chapter0Levels.indexOf(level),
+      );
+      const available = [
+        ...level.available,
+        ...preceding.flatMap((item) => item.unlockComponents ?? []),
+      ];
+      const result = await evaluateLevel({ ...level, available }, level.referenceGraph!, {
+        registry,
+      });
+      expect(result.errorKey).toBeUndefined();
+      expect(result.passed).toBe(true);
+      expect(result.tests).toHaveLength(6);
+      expect(
+        result.tests.every(
+          (test) => test.passed && test.actual.length === 8 && test.expected.length === 8,
+        ),
+      ).toBe(true);
+    });
+
+    it(`${level.id}: rejects a constant impostor`, async () => {
+      const wrong = formulaGraph(
+        `0 * ${Object.keys(level.interface.inputs)[0]}`,
+        Object.keys(level.interface.inputs),
+      );
+      const result = await evaluateLevel(level, wrong, { registry });
+      expect(result.errorKey).toBeUndefined();
+      expect(result.passed).toBe(false);
+      expect(result.tests).toHaveLength(6);
+      expect(
+        result.tests.every(
+          (test) => !test.errorKey && test.actual.length === 8 && test.expected.length === 8,
+        ),
+      ).toBe(true);
+      expect(
+        result.tests.some(
+          (test) =>
+            !test.passed &&
+            test.actual.some((value, i) => Math.abs(value - test.expected[i]) > 0.01),
+        ),
+      ).toBe(true);
+    });
+  }
+
+  it('preserved XOR reference trains with its explicit presets', async () => {
+    const level = gameLevels.at(-1)!;
+    const available = [
+      ...level.available,
+      ...chapter0Levels.flatMap((item) => item.unlockComponents ?? []),
+      ...(level.presets ?? []),
+    ];
+    const result = await evaluateLevel({ ...level, available }, level.referenceGraph!, {
+      registry,
+    });
+    expect(result.errorKey).toBeUndefined();
+    expect(result.passed).toBe(true);
+    expect(result.training?.loss).toBeLessThan(0.05);
+    expect(result.training?.accuracy).toBe(1);
+  }, 20000);
+});

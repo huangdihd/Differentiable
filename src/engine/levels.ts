@@ -24,6 +24,11 @@ export interface LevelMetadata {
   chapter?: string;
   hintsKeys?: readonly string[];
   available: readonly string[];
+  forbidden?: readonly string[];
+  presets?: readonly string[];
+  referenceGraph?: GraphJSON;
+  par?: number;
+  unlockFeatures?: readonly string[];
   interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
   unlock: readonly string[];
   unlockComponents?: readonly string[];
@@ -241,6 +246,7 @@ export interface Progress {
   unlockedComponents: string[];
   passed: string[];
   savedGraphs: Record<string, GraphJSON>;
+  passedSolutions: Record<string, GraphJSON>;
   bestScores: Record<string, GraphMetrics>;
 }
 export const initialProgress = (
@@ -251,6 +257,7 @@ export const initialProgress = (
   unlockedComponents: [...components],
   passed: [],
   savedGraphs: {},
+  passedSolutions: {},
   bestScores: {},
 });
 export function saveGraph(progress: Progress, levelId: string, graph: GraphJSON): Progress {
@@ -260,7 +267,12 @@ export function saveGraph(progress: Progress, levelId: string, graph: GraphJSON)
   };
 }
 /** Pure progression: only an unlocked, matching, passing level unlocks its successors. */
-export function applyResult(progress: Progress, level: Level, result: LevelResult): Progress {
+export function applyResult(
+  progress: Progress,
+  level: Level,
+  result: LevelResult,
+  graph?: GraphJSON,
+): Progress {
   if (!result.passed || result.levelId !== level.id || !progress.unlocked.includes(level.id))
     return progress;
   const old = progress.bestScores[level.id],
@@ -277,6 +289,9 @@ export function applyResult(progress: Progress, level: Level, result: LevelResul
     ],
     unlocked: [...new Set([...progress.unlocked, ...level.unlock])],
     passed: [...new Set([...progress.passed, level.id])],
+    passedSolutions: graph
+      ? { ...progress.passedSolutions, [level.id]: structuredClone(graph) }
+      : progress.passedSolutions,
     bestScores: better ? { ...progress.bestScores, [level.id]: { ...score } } : progress.bestScores,
   };
 }

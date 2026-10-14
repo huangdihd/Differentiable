@@ -7,6 +7,7 @@ import {
   LANGUAGE_KEY,
   loadLanguage,
   loadProgress,
+  loadProgressWithMigration,
   saveLanguage,
   saveProgress,
   saveSave,
@@ -14,6 +15,10 @@ import {
   STORAGE_VERSION,
 } from './storage';
 import type { GraphJSON } from './engine/graph';
+import type { ForwardLevel } from './engine/levels';
+import { chapter0Levels } from './levels/chapter0';
+import { chapter1Levels } from './levels/chapter1';
+import { derivativeSolution } from './levels/examples';
 
 function memory() {
   const data = new Map<string, string>();
@@ -35,10 +40,10 @@ const graph: GraphJSON = {
 };
 afterEach(() => vi.useRealTimers());
 describe('storage', () => {
-  it('roundtrips versioned progress with a fresh sigmoid initial state', () => {
+  it('roundtrips versioned progress with a fresh chapter-zero initial state', () => {
     const { source } = memory();
     const progress = loadProgress(source);
-    expect(progress.unlocked).toEqual(['sigmoid']);
+    expect(progress.unlocked).toEqual(['0-1']);
     progress.savedGraphs.sigmoid = graph;
     progress.bestScores.sigmoid = { topNodes: 2, expandedPrimitives: 0, parameterCount: 0 };
     expect(saveProgress(progress, source)).toBe(true);
@@ -51,7 +56,7 @@ describe('storage', () => {
       '{',
       'null',
       '{}',
-      JSON.stringify({ version: 2, progress: createInitialProgress() }),
+      JSON.stringify({ version: 99, progress: createInitialProgress() }),
       JSON.stringify({
         version: 1,
         progress: {
@@ -63,6 +68,80 @@ describe('storage', () => {
       data.set(STORAGE_KEY, raw);
       expect(loadProgress(source)).toEqual(createInitialProgress());
     }
+  });
+  it('migrates legacy milestones with validated graphs and reference fallback', async () => {
+    const { source, data } = memory();
+    const reference = structuredClone(graph);
+    reference.nodes[1].attrs = { name: 'y' };
+    const level: ForwardLevel = {
+      id: '0-4',
+      titleKey: 'levels.sigmoid.title',
+      descriptionKey: 'test.description',
+      kind: 'forward',
+      available: [],
+      interface: { inputs: { x: [2] }, output: 'y', outputShape: [2] },
+      unlock: ['1-1'],
+      unlockComponents: ['identity'],
+      fixed: [{ id: 'case', inputs: { x: [1, 2] } }],
+      reference: (inputs) => inputs.x,
+      referenceGraph: reference,
+    };
+    for (const saved of [reference, { version: 1, nodes: [], edges: [] }]) {
+      const legacy = {
+        ...createInitialProgress(),
+        unlocked: ['sigmoid'],
+        passed: ['sigmoid'],
+        savedGraphs: { sigmoid: saved },
+      };
+      data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress: legacy }));
+      const result = await loadProgressWithMigration([level], source);
+      expect(result.passed).toEqual(['0-4']);
+      expect(result.passedSolutions['0-4']).toEqual(reference);
+      expect(result.unlockedComponents).toEqual(['identity']);
+      expect(result.unlocked).toContain('1-1');
+      expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(2);
+      expect(loadProgress(source)).toEqual(result);
+    }
+    data.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        progress: { ...createInitialProgress(), unlocked: ['sigmoid'], passed: ['sigmoid'] },
+      }),
+    );
+    expect(
+      (await loadProgressWithMigration([{ ...level, referenceGraph: undefined }], source)).passed,
+    ).toEqual([]);
+  });
+  it('maps the old derivative to the matching product-rule lesson and restores prerequisites', async () => {
+    const { data, source } = memory();
+    data.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        progress: {
+          ...createInitialProgress(),
+          unlocked: ['sigmoid', 'derivative'],
+          passed: ['sigmoid', 'derivative'],
+          savedGraphs: { derivative: derivativeSolution },
+        },
+      }),
+    );
+    const progress = await loadProgressWithMigration(
+      [...chapter0Levels, ...chapter1Levels],
+      source,
+    );
+    expect(progress.passed).toEqual(
+      [...chapter0Levels, ...chapter1Levels.slice(0, 2)].map((level) => level.id),
+    );
+    expect(progress.passedSolutions['1-2']).toEqual(derivativeSolution);
+    expect(progress.unlocked).toContain('1-3');
+    expect(progress.unlockedComponents).toContain('sigmoid');
+  });
+  it('keeps legacy language preferences during the version upgrade', () => {
+    const { data, source } = memory();
+    data.set(LANGUAGE_KEY, JSON.stringify({ version: 1, language: 'en' }));
+    expect(loadLanguage(source, 'zh-CN')).toBe('en');
   });
   it('validates graph structure and recursive JSON without requiring a complete circuit', () => {
     expect(isGraphJSON(graph)).toBe(true);
@@ -122,7 +201,11 @@ describe('storage', () => {
     });
     expect(
       saveSave(
-        { version: 1, progress: createInitialProgress(), settings: { language: 'en' } },
+        {
+          version: STORAGE_VERSION,
+          progress: createInitialProgress(),
+          settings: { language: 'en' },
+        },
         partial,
       ),
     ).toBe(false);

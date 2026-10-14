@@ -6,10 +6,11 @@ module worker; an injected `WorkerTransport` supports Node protocol tests.
 ```ts
 const client = new WorkerClient();
 const backend = await client.init('auto'); // 'auto' | 'cpu' | 'webgpu'
-client.setRevision(1); // monotonically increasing; bump on graph or level edits
-const compiled = await client.compile('sigmoid', graph);
-const probe = await client.probe('sigmoid', graph, { node: 'neg', port: 'out' }, inputs);
-const result = await client.evaluate('sigmoid', graph);
+await client.syncProgress(progress, 1); // Progress includes passedSolutions
+client.setRevision(2); // monotonically increasing; bump on graph or level edits
+const compiled = await client.compile(level.id, graph);
+const probe = await client.probe(level.id, graph, { node: 'neg', port: 'out' }, inputs);
+const result = await client.evaluate(level.id, graph);
 const unsubscribe = client.subscribe((event) => {
   if (event.type === 'progress') console.log(event.report);
   if (event.type === 'result') console.log(event.result);
@@ -22,13 +23,22 @@ unsubscribe();
 client.dispose();
 ```
 
-Use existing example level IDs (`sigmoid`, `derivative`, `xor`) and serializable
-`GraphJSON`. Level callbacks and the example component registry stay inside the
-worker. Forward/derivative evaluation uses `evaluate`; training uses `start`.
+Use formal `gameLevels` IDs from `levels/catalog` and serializable `GraphJSON`.
+Level callbacks and the player component registry stay inside the worker. Forward/derivative evaluation uses `evaluate`; training uses `start`.
 `compile` returns output shapes, graph metrics, and structured diagnostics.
 `probe` returns shape/values from a fresh seeded execution, not live training
 parameters. It adds a collision-free output to a copied graph and releases the
 execution, inputs, and plan after readback.
+
+`syncProgress(progress: Progress, revision?: number)` returns
+`Promise<{ state: 'synced' }>`. Call it after `init`, before loading/evaluating a
+persisted graph, and whenever progress changes. The optional revision must be
+strictly newer than the client's current revision; omitted means current + 1.
+UI code maintaining its own revision counter should pass `++revision`.
+Synchronization rejects pending old promises, filters old training events, and
+cancels training before rebuilding the registry from `passedSolutions`. Subsequent
+compile/probe/evaluate/start requests derive availability from the current progress.
+The runtime starts with empty progress, not an example solution registry.
 
 `init` selects the worker-local backend exactly once. Both automatic and explicit
 WebGPU preference fall back to CPU if unavailable, returning the key
@@ -51,7 +61,7 @@ stop evaluation still releases the session and rejects the stop request. Failed
 training emits a nonpassing final result with structured error data. A graph revision change
 silently disposes obsolete training rather than emitting an obsolete result.
 
-`WorkerRuntime.handle` is the Node-testable protocol handler, with optional level
-injection for tests. One runtime owns the engine default backend per worker/global
+`WorkerRuntime.handle` is the Node-testable protocol handler, with optional level, progress, and registry
+injection for tests (registry overrides are replaced by progress synchronization). One runtime owns the engine default backend per worker/global
 context; do not run independent runtimes concurrently in one JS global. The
 protocol types are exported from `protocol.ts`; they contain no tensors/functions.

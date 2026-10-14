@@ -1,5 +1,15 @@
+import { gameLevels } from '../levels/catalog';
+import { initialProgress } from '../engine/levels';
 import { afterEach, describe, expect, it } from 'vitest';
-import { derivativeSolution, sigmoidSolution, xorLevel, xorSolution } from '../levels/examples';
+import {
+  createExampleRegistry,
+  exampleLevels,
+  derivativeLevel,
+  derivativeSolution,
+  sigmoidSolution,
+  xorLevel,
+  xorSolution,
+} from '../levels/examples';
 import { WorkerRuntime, workerError } from './runtime';
 import { WorkerClient, type WorkerTransport } from './client';
 import type { Command, WorkerRequest, WorkerResponse } from './protocol';
@@ -8,9 +18,14 @@ const runtimes: WorkerRuntime[] = [];
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((r) => r.dispose()));
 });
-function harness(levels?: ConstructorParameters<typeof WorkerRuntime>[1]) {
+function harness(levels: ConstructorParameters<typeof WorkerRuntime>[1] = exampleLevels) {
   const messages: WorkerResponse[] = [];
-  const runtime = new WorkerRuntime((m) => messages.push(structuredClone(m)), levels);
+  const runtime = new WorkerRuntime(
+    (m) => messages.push(structuredClone(m)),
+    levels,
+    initialProgress([]),
+    createExampleRegistry(),
+  );
   runtimes.push(runtime);
   let requestId = 0;
   return {
@@ -27,6 +42,22 @@ async function until(check: () => boolean) {
   expect(check()).toBe(true);
 }
 describe('worker runtime protocol', () => {
+  it('uses the formal catalog by default', async () => {
+    const messages: WorkerResponse[] = [];
+    const runtime = new WorkerRuntime((message) => messages.push(message));
+    runtimes.push(runtime);
+    await runtime.handle({ type: 'init', backend: 'cpu', requestId: 1, revision: 0 });
+    const level = gameLevels.find((item) => item.referenceGraph)!;
+    expect(level).toBeDefined();
+    await runtime.handle({
+      type: 'compile',
+      levelId: level.id,
+      graph: level.referenceGraph!,
+      requestId: 2,
+      revision: 0,
+    });
+    expect(messages.at(-1)).toMatchObject({ type: 'reply', data: { diagnostics: [] } });
+  });
   it('requires init and falls back to CPU in Node', async () => {
     const h = harness();
     expect(await h.send({ type: 'pause' })).toMatchObject({
@@ -157,6 +188,68 @@ describe('worker runtime protocol', () => {
       error: { key: 'worker.disposed' },
     });
   });
+  it('sync rebuilds the registry from passed solutions and applies dynamic availability', async () => {
+    const source = {
+      ...derivativeLevel,
+      id: 'earned',
+      kind: 'forward' as const,
+      unlockComponents: ['earnedComponent'],
+    };
+    const target = { ...source, id: 'consumer', available: [], unlockComponents: [] };
+    const h = harness([source, target]);
+    const graph = {
+      version: 1 as const,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'f', component: 'earnedComponent' },
+        { id: 'y', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'f', port: 'x' } },
+        { from: { node: 'f', port: 'out' }, to: { node: 'y', port: 'x' } },
+      ],
+    };
+    await h.send({ type: 'init', backend: 'cpu' });
+    const progress = initialProgress(['consumer'], ['earnedComponent']);
+    progress.passed = ['earned'];
+    progress.passedSolutions.earned = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'y', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [{ from: { node: 'x', port: 'out' }, to: { node: 'y', port: 'x' } }],
+    };
+    expect(await h.send({ type: 'syncProgress', progress }, 1)).toMatchObject({
+      data: { state: 'synced' },
+    });
+    expect(await h.send({ type: 'compile', levelId: 'consumer', graph }, 1)).toMatchObject({
+      data: { diagnostics: [], outputShapes: { y: [5] } },
+    });
+    expect(await h.send({ type: 'evaluate', levelId: 'consumer', graph }, 1)).toMatchObject({
+      data: {
+        tests: expect.arrayContaining([expect.objectContaining({ actual: [-2, -1, 0, 1, 2] })]),
+      },
+    });
+    await h.send({ type: 'syncProgress', progress: initialProgress([]) }, 2);
+    expect(await h.send({ type: 'compile', levelId: 'consumer', graph }, 2)).toMatchObject({
+      data: { diagnostics: [expect.objectContaining({ key: expect.any(String) })] },
+    });
+    expect(await h.send({ type: 'compile', levelId: 'consumer', graph }, 1)).toMatchObject({
+      error: { key: 'worker.stale_revision' },
+    });
+  });
+  it('sync releases paused training without emitting an old result', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await h.send({ type: 'pause' });
+    await h.send({ type: 'syncProgress', progress: initialProgress([]) }, 1);
+    expect(await h.send({ type: 'resume' }, 1)).toMatchObject({
+      error: { key: 'worker.no_training' },
+    });
+    expect(h.messages.some((m) => m.type === 'result')).toBe(false);
+  });
   it('does not leak arbitrary exception prose', () => {
     expect(workerError(new Error('private exception text'))).toEqual({
       key: 'worker.execution_error',
@@ -250,6 +343,31 @@ it('typed client matches IDs, rejects stale pending calls and filters training e
     data: { state: 'paused' },
   });
   await invalidReply;
+  const obsolete = client.compile('sigmoid', sigmoidSolution);
+  const obsoleteRejected = expect(obsolete).rejects.toMatchObject({
+    detail: { key: 'worker.stale_revision' },
+  });
+  const progress = initialProgress([]);
+  const synced = client.syncProgress(progress);
+  await obsoleteRejected;
+  expect(requests.at(-2)).toMatchObject({ type: 'cancel', revision: 2 });
+  expect(requests.at(-1)).toMatchObject({ type: 'syncProgress', revision: 2, progress });
+  emit({
+    type: 'progress',
+    requestId: request.requestId,
+    revision: 1,
+    report: { step: 3, loss: 0.1 },
+  });
+  expect(events).toHaveLength(2);
+  emit({
+    type: 'reply',
+    requestId: requests.at(-1)!.requestId,
+    revision: 2,
+    command: 'syncProgress',
+    data: { state: 'synced' },
+  });
+  await expect(synced).resolves.toEqual({ state: 'synced' });
+  expect(() => client.syncProgress(progress, 2)).toThrow('worker.invalid_revision');
   client.dispose();
   await expect(client.pause()).rejects.toMatchObject({ detail: { key: 'worker.disposed' } });
 });

@@ -1,9 +1,17 @@
 import { createBackend } from '../engine/backend-selection';
 import { CpuBackend } from '../engine/cpu';
 import { BackendError } from '../engine/webgpu';
-import { compileGraph, GraphError, type GraphPlan, type TensorPorts } from '../engine/graph';
+import {
+  compileGraph,
+  GraphError,
+  type GraphPlan,
+  type TensorPorts,
+  type ComponentRegistry,
+} from '../engine/graph';
 import {
   evaluateLevel,
+  initialProgress,
+  type Progress,
   graphMetrics,
   type Level,
   type LevelResult,
@@ -17,7 +25,8 @@ import {
   type TrainingBatch,
   type TrainingReport,
 } from '../engine/training';
-import { createExampleRegistry, exampleLevels } from '../levels/examples';
+import { gameLevels } from '../levels/catalog';
+import { availableComponents, buildPlayerRegistry } from '../levels/registry';
 import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
 
 /** Never send exception prose or stack traces across the player-facing boundary. */
@@ -44,19 +53,30 @@ interface Run {
 }
 /** Node-testable message handler. One runtime per worker; engine default backend is process-local. */
 export class WorkerRuntime {
-  private registry = createExampleRegistry();
+  private registry: ComponentRegistry;
   private initialized = false;
   private disposed = false;
   private revision = -1;
+  private latestRevision = -1;
   private queue: Promise<void> = Promise.resolve();
   private run?: Run;
   private timer?: ReturnType<typeof setTimeout>;
   private timerGeneration = 0;
   constructor(
-    private emit: (message: WorkerResponse) => void,
-    private levels: readonly Level[] = exampleLevels,
-  ) {}
+    private output: (message: WorkerResponse) => void,
+    private levels: readonly Level[] = gameLevels,
+    private progress: Progress = initialProgress([]),
+    registry?: ComponentRegistry,
+  ) {
+    this.registry = registry ?? buildPlayerRegistry(levels, progress);
+  }
+  private emit(message: WorkerResponse) {
+    if (message.type !== 'error' && message.revision < this.latestRevision) return;
+    this.output(message);
+  }
   handle(request: WorkerRequest): Promise<void> {
+    if (Number.isSafeInteger(request.requestId) && Number.isSafeInteger(request.revision))
+      this.latestRevision = Math.max(this.latestRevision, request.revision);
     const task = this.queue.then(() => this.dispatch(request));
     this.queue = task.catch(() => {});
     return task;
@@ -191,6 +211,15 @@ export class WorkerRuntime {
         return;
       }
       if (!this.initialized) throw new Error('worker.not_initialized');
+      if (request.type === 'syncProgress') {
+        this.release();
+        const progress = structuredClone(request.progress);
+        const registry = buildPlayerRegistry(this.levels, progress);
+        this.progress = progress;
+        this.registry = registry;
+        this.reply(request, { state: 'synced' });
+        return;
+      }
       if (request.type === 'pause' || request.type === 'resume' || request.type === 'stop') {
         const run = this.run;
         if (!run) throw new Error('worker.no_training');
@@ -215,8 +244,9 @@ export class WorkerRuntime {
         }
         return;
       }
-      const level = this.levels.find((l) => l.id === request.levelId);
-      if (!level) throw new Error('worker.unknown_level');
+      const sourceLevel = this.levels.find((l) => l.id === request.levelId);
+      if (!sourceLevel) throw new Error('worker.unknown_level');
+      const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
       if (request.type === 'evaluate') {
         if (level.kind === 'train') throw new Error('worker.use_training');
         const result = await evaluateLevel(level, request.graph, { registry: this.registry });

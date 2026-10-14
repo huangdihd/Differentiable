@@ -1,5 +1,5 @@
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
-import type { GraphMetrics, LevelResult } from '../engine/levels';
+import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
 import type { TrainingReport } from '../engine/training';
 
 export interface WorkerError {
@@ -11,6 +11,7 @@ export interface WorkerError {
 export type BackendPreference = 'auto' | 'cpu' | 'webgpu';
 export type Command =
   | { type: 'init'; backend?: BackendPreference }
+  | { type: 'syncProgress'; progress: Progress }
   | { type: 'compile'; levelId: string; graph: GraphJSON }
   | {
       type: 'probe';
@@ -28,6 +29,7 @@ export type Command =
 export type WorkerRequest = Command & { requestId: number; revision: number };
 export interface ReplyData {
   init: { backend: 'cpu' | 'webgpu'; fallback?: WorkerError };
+  syncProgress: { state: 'synced' };
   compile: { outputShapes: ShapePorts; metrics: GraphMetrics; diagnostics: WorkerError[] };
   probe: { shape: readonly number[]; values: number[] };
   evaluate: LevelResult;

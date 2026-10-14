@@ -1,8 +1,9 @@
 import type { GraphJSON } from './engine/graph';
-import { initialProgress, type Progress } from './engine/levels';
+import { evaluateLevel, initialProgress, type Level, type Progress } from './engine/levels';
+import { availableComponents, buildPlayerRegistry } from './levels/registry';
 import { browserLocale, isLocale, type Locale } from './i18n';
 
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
 export interface StorageLike {
@@ -76,11 +77,18 @@ export function isProgress(value: unknown): value is Progress {
       !strings(value.unlockedComponents) ||
       !strings(value.passed) ||
       !record(value.savedGraphs) ||
+      !record(value.passedSolutions) ||
       !record(value.bestScores)
     )
       return false;
     if (!value.passed.every((id) => (value.unlocked as string[]).includes(id))) return false;
     if (!Object.values(value.savedGraphs).every(isGraphJSON)) return false;
+    if (
+      !Object.entries(value.passedSolutions).every(
+        ([id, graph]) => (value.passed as string[]).includes(id) && isGraphJSON(graph),
+      )
+    )
+      return false;
     return Object.values(value.bestScores).every(
       (score) =>
         record(score) &&
@@ -94,7 +102,7 @@ export function isProgress(value: unknown): value is Progress {
   }
 }
 export function createInitialProgress(): Progress {
-  return initialProgress(['sigmoid']);
+  return initialProgress(['0-1']);
 }
 export function loadProgress(source: StorageSource = browserStorage): Progress {
   try {
@@ -108,6 +116,70 @@ export function loadProgress(source: StorageSource = browserStorage): Progress {
     /* Corrupt data, unavailable storage, and getter failures are recoverable. */
   }
   return createInitialProgress();
+}
+/** Load v2 synchronously elsewhere; App awaits this entry point to validate legacy solutions.
+ * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
+ * using verified reference circuits when old graphs are absent or no longer compatible.
+ */
+export async function loadProgressWithMigration(
+  levels: readonly Level[],
+  source: StorageSource = browserStorage,
+): Promise<Progress> {
+  let legacy: Progress;
+  try {
+    const raw = source()?.getItem(STORAGE_KEY);
+    if (!raw) return createInitialProgress();
+    const envelope: unknown = JSON.parse(raw);
+    if (!record(envelope)) return createInitialProgress();
+    if (envelope.version === STORAGE_VERSION) return loadProgress(source);
+    if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
+    const candidate = { ...envelope.progress, passedSolutions: {} };
+    if (!isProgress(candidate)) return createInitialProgress();
+    legacy = candidate;
+  } catch {
+    return createInitialProgress();
+  }
+  const mapId = (id: string) => {
+    if (levels.some((level) => level.id === id)) return id;
+    if (id === 'sigmoid' || id === 'derivative')
+      return (
+        levels.find((level) => level.titleKey === `levels.${id}.title`)?.id ??
+        (id === 'sigmoid' ? '0-5' : '1-2')
+      );
+    return id;
+  };
+  const known = new Set(levels.map((level) => level.id));
+  const progress = createInitialProgress();
+  progress.unlocked = [
+    ...new Set([...progress.unlocked, ...legacy.unlocked.map(mapId).filter((id) => known.has(id))]),
+  ];
+  for (const [id, graph] of Object.entries(legacy.savedGraphs)) {
+    if (known.has(mapId(id))) progress.savedGraphs[mapId(id)] = structuredClone(graph);
+  }
+  const passed = new Set(legacy.passed.map(mapId));
+  const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
+  for (const level of levels.slice(0, last + 1)) {
+    const saved = progress.savedGraphs[level.id];
+    for (const graph of [saved, level.referenceGraph]) {
+      if (!graph) continue;
+      const result = await evaluateLevel(
+        { ...level, available: availableComponents(level, progress) },
+        graph,
+        { registry: buildPlayerRegistry(levels, progress) },
+      );
+      if (!result.passed) continue;
+      progress.passed.push(level.id);
+      progress.passedSolutions[level.id] = structuredClone(graph);
+      progress.bestScores[level.id] = result.metrics;
+      progress.unlocked = [...new Set([...progress.unlocked, level.id, ...level.unlock])];
+      progress.unlockedComponents = [
+        ...new Set([...progress.unlockedComponents, ...(level.unlockComponents ?? [])]),
+      ];
+      break;
+    }
+  }
+  saveProgress(progress, source);
+  return progress;
 }
 export function saveProgress(progress: Progress, source: StorageSource = browserStorage): boolean {
   try {
@@ -128,7 +200,11 @@ export function loadLanguage(
     const raw = source()?.getItem(LANGUAGE_KEY);
     if (raw) {
       const envelope: unknown = JSON.parse(raw);
-      if (record(envelope) && envelope.version === STORAGE_VERSION && isLocale(envelope.language))
+      if (
+        record(envelope) &&
+        (envelope.version === 1 || envelope.version === STORAGE_VERSION) &&
+        isLocale(envelope.language)
+      )
         return envelope.language;
     }
   } catch {
@@ -182,7 +258,7 @@ export function createThrottledSave<T>(save: (value: T) => boolean | void, delay
 
 /** UI convenience facade; individual progress and language APIs remain independently usable. */
 export interface SaveData {
-  version: 1;
+  version: 2;
   progress: Progress;
   settings: { language: Locale };
 }

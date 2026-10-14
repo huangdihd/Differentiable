@@ -1,3 +1,4 @@
+import type { Progress } from '../engine/levels';
 import type { GraphEndpoint, GraphJSON } from '../engine/graph';
 import type {
   BackendPreference,
@@ -117,6 +118,13 @@ export class WorkerClient {
   }
   init(backend: BackendPreference = 'auto') {
     return this.send<'init'>({ type: 'init', backend });
+  }
+  /** Synchronization invalidates pending results and training, even without a graph edit. */
+  syncProgress(progress: Progress, revision = this.revision + 1) {
+    if (!Number.isSafeInteger(revision) || revision <= this.revision)
+      throw new WorkerClientError({ key: 'worker.invalid_revision', params: {} });
+    this.setRevision(revision);
+    return this.send<'syncProgress'>({ type: 'syncProgress', progress });
   }
   compile(levelId: string, graph: GraphJSON) {
     return this.send<'compile'>({ type: 'compile', levelId, graph });

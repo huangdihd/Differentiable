@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { GraphJSON, GraphNode } from './engine/graph';
 import { applyResult, type Level, type LevelResult, type Progress } from './engine/levels';
 import { parseExpression } from './engine/expression';
-import { createExampleRegistry } from './levels/examples';
-import { CHAPTERS, catalog, entryFor } from './levels/catalog';
+import { buildPlayerRegistry, availableComponents } from './levels/registry';
+import { CHAPTERS, catalog, entryFor, gameLevels } from './levels/catalog';
 import {
   connectionError,
   createEditorState,
@@ -25,11 +25,16 @@ import Canvas, { position, type CanvasHandle, type NodeValue } from './ui/Canvas
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
-import { loadProgress, loadLanguage, saveSave, createThrottledSave } from './storage';
+import {
+  loadProgress,
+  loadProgressWithMigration,
+  loadLanguage,
+  saveSave,
+  createThrottledSave,
+} from './storage';
 import './ui/theme.css';
 import './ui/layout.css';
 
-const registry = createExampleRegistry();
 type T = ReturnType<typeof createTranslator>;
 
 export default function App() {
@@ -41,11 +46,12 @@ export default function App() {
     () =>
       createThrottledSave(
         (value: { progress: Progress; settings: { language: Locale } }) =>
-          saveSave({ version: 1, ...value }),
+          saveSave({ version: 2, ...value }),
         400,
       ),
     [],
   );
+  const [loaded, setLoaded] = useState(false);
   const [level, setLevel] = useState<Level>();
   const [backend, setBackend] = useState('pending');
   const [failure, setFailure] = useState<WorkerError>();
@@ -56,19 +62,30 @@ export default function App() {
   useEffect(() => {
     const c = new WorkerClient();
     client.current = c;
-    c.init()
+    let active = true;
+    loadProgressWithMigration(gameLevels)
+      .then(async (progress) => {
+        if (!active) return undefined;
+        setSave((s) => ({ ...s, progress }));
+        setLoaded(true);
+        return c.init();
+      })
       .then((r) => {
+        if (!active || !r) return;
         setBackend(r.backend);
         setFallback(!!r.fallback);
       })
       .catch((e) => setFailure(e.detail ?? { key: 'worker.transport_error', params: {} }));
-    return () => c.dispose();
+    return () => {
+      active = false;
+      c.dispose();
+    };
   }, []);
   useEffect(() => {
     document.documentElement.lang = save.settings.language;
     document.title = level ? `${t(level.titleKey)} · ${t('app.title')}` : t('app.title');
-    saver.schedule(save);
-  }, [save, saver, level]);
+    if (loaded) saver.schedule(save);
+  }, [save, saver, level, loaded]);
   useEffect(() => {
     const flush = () => saver.flush();
     window.addEventListener('pagehide', flush);
@@ -259,6 +276,11 @@ function Editor({
   revision,
 }: EditorProps) {
   const entry = entryFor(level);
+  const registry = useMemo(
+    () => buildPlayerRegistry(gameLevels, progress),
+    [progress.passedSolutions, progress.unlockedComponents],
+  );
+  const available = availableComponents(level, progress);
   const [state, setState] = useState(() =>
     createEditorState(level, progress.savedGraphs[level.id]),
   );
@@ -290,8 +312,8 @@ function Editor({
     ),
   );
   const t = createTranslator(locale);
-  const latest = useRef({ progress, onProgress });
-  latest.current = { progress, onProgress };
+  const latest = useRef({ progress, onProgress, graph: state.graph });
+  latest.current = { progress, onProgress, graph: state.graph };
   const busy = training !== 'idle';
   const command = (cmd: EditorCommand) => {
     if (busy || inside.length) return;
@@ -306,12 +328,15 @@ function Editor({
           : { key: 'errors.unknown', params: {} };
     if (detail.key !== 'worker.stale_revision') setError(detail);
   };
+  const submittedGraph = useRef(state.graph);
   const finish = (r: LevelResult) => {
     setResult(r);
     setTraining('idle');
     if (r.passed) {
       setPreviousBest(latest.current.progress.bestScores[level.id]);
-      latest.current.onProgress(applyResult(latest.current.progress, level, r));
+      latest.current.onProgress(
+        applyResult(latest.current.progress, level, r, submittedGraph.current),
+      );
       setModal(true);
     }
     if (r.errorKey) setError(r.error ?? { key: r.errorKey, params: {} });
@@ -326,13 +351,18 @@ function Editor({
       } else finish(event.result);
     });
   }, [level, client]);
+  const lastGraph = useRef(state.graph);
   useEffect(() => {
     const c = client.current;
+    if (lastGraph.current !== state.graph) {
+      setResult(undefined);
+      setModal(false);
+    }
+    lastGraph.current = state.graph;
     revision.current++;
-    c?.setRevision(revision.current);
+    void c?.syncProgress(latest.current.progress, revision.current).catch(fail);
     setDiagnostics([]);
     setError(undefined);
-    setResult(undefined);
     latest.current.onProgress({
       ...latest.current.progress,
       savedGraphs: { ...latest.current.progress.savedGraphs, [level.id]: state.graph },
@@ -346,7 +376,7 @@ function Editor({
       250,
     );
     return () => clearTimeout(timer);
-  }, [state.graph]);
+  }, [state.graph, registry]);
   useEffect(
     () => () => {
       void client.current?.stop().catch(() => {});
@@ -482,6 +512,7 @@ function Editor({
     }
   };
   const run = async () => {
+    submittedGraph.current = structuredClone(state.graph);
     setError(undefined);
     setResult(undefined);
     try {
@@ -548,7 +579,7 @@ function Editor({
       );
       // Every available single-output component can be called by name, e.g. exp(x).
       const functions = Object.fromEntries(
-        level.available.flatMap((name) => {
+        available.flatMap((name) => {
           const def = registry.get(name);
           return def && def.inputs.length > 0 && def.outputs.length === 1
             ? [[name, { component: name, inputs: def.inputs, output: def.outputs[0] }]]
@@ -558,7 +589,7 @@ function Editor({
       const fragment = parseExpression(expression, {
         variables,
         functions,
-        availableComponents: level.available,
+        availableComponents: available,
       });
       const y = Math.max(...state.graph.nodes.map((n) => position(n).y), 0) + 160;
       command({
@@ -573,8 +604,13 @@ function Editor({
     }
   };
 
-  const playerComponents = level.available.filter((name) => !!registry.get(name)?.subgraph);
-  const primitives = level.available.filter((name) => !registry.get(name)?.subgraph);
+  const playerComponents = available.filter((name) => progress.unlockedComponents.includes(name));
+  const presets = available.filter(
+    (name) => !playerComponents.includes(name) && (level.presets ?? []).includes(name),
+  );
+  const primitives = available.filter(
+    (name) => !playerComponents.includes(name) && !presets.includes(name),
+  );
   const outputValue = values[state.graph.nodes.find((n) => n.component === 'output')?.id ?? ''];
   const canEdit = !busy && !inside.length;
   const onlyIO = state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
@@ -587,6 +623,12 @@ function Editor({
           <div className="level-id">LEVEL {entry.code}</div>
           <h1 className="level-title">{t(level.titleKey)}</h1>
           <p className="level-desc">{t(level.descriptionKey)}</p>
+          {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
+          {level.hintsKeys?.map((key) => (
+            <p className="hint" key={key}>
+              {t(key)}
+            </p>
+          ))}
         </div>
         <section className="section">
           <h2 className="label">{t('ui.primitives')}</h2>
@@ -619,8 +661,26 @@ function Editor({
               {(level.unlockComponents ?? []).map((name) => (
                 <div className="palette-item is-locked" key={name} title={t('ui.producedHere')}>
                   <span className="sym">{SYMBOLS[name] ?? '?'}</span>
-                  <span className="name">{t('ui.producedHere')}</span>
+                  <span className="name">
+                    {t(`components.${name}`)} · {t('ui.producedHere')}
+                  </span>
                 </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {presets.length > 0 && (
+          <section className="section">
+            <h2 className="label">{t('ui.presets')}</h2>
+            <div className="palette">
+              {presets.map((name) => (
+                <PaletteItem
+                  key={name}
+                  name={name}
+                  t={t}
+                  disabled={!canEdit}
+                  onPress={startPaletteDrag}
+                />
               ))}
             </div>
           </section>
@@ -658,6 +718,7 @@ function Editor({
       <section className="canvas-wrap">
         <Canvas
           ref={canvas}
+          registry={registry}
           viewport={state.viewport}
           onViewport={(viewport) =>
             setState((s) => editorReducer(s, { type: 'setViewport', viewport }, registry))
@@ -959,6 +1020,8 @@ function Editor({
           code={entry.code}
           title={t(level.titleKey)}
           unlocked={level.unlockComponents ?? []}
+          par={level.par}
+          features={level.unlockFeatures ?? []}
           metrics={result.metrics}
           previous={previousBest}
           onClose={() => setModal(false)}
@@ -1001,6 +1064,8 @@ function WinModal({
   code,
   title,
   unlocked,
+  par,
+  features,
   metrics,
   previous,
   onClose,
@@ -1011,6 +1076,8 @@ function WinModal({
   code: string;
   title: string;
   unlocked: readonly string[];
+  par?: number;
+  features: readonly string[];
   metrics: LevelResult['metrics'];
   previous?: LevelResult['metrics'];
   onClose: () => void;
@@ -1037,6 +1104,17 @@ function WinModal({
         ) : (
           <p className="muted">{t('ui.noUnlock')}</p>
         )}
+        {par !== undefined && (
+          <p className="hint">
+            {t('ui.par', { n: par })} ·{' '}
+            {t(metrics.expandedPrimitives <= par ? 'ui.parMet' : 'ui.parNotMet')}
+          </p>
+        )}
+        {features.map((key) => (
+          <p className="status status-pass" key={key}>
+            {t(key)}
+          </p>
+        ))}
         <table className="table score-table">
           <thead>
             <tr>

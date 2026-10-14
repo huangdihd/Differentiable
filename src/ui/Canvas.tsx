@@ -1,6 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import type { GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
-import { createExampleRegistry } from '../levels/examples';
+import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import {
   NODE_W,
@@ -12,7 +11,6 @@ import {
   type Point,
 } from './graph-geometry';
 
-const registry = createExampleRegistry();
 const IO = ['input', 'output'];
 
 /** Fallback position for callers outside the canvas (e.g. placing an inserted expression). */
@@ -39,6 +37,7 @@ export interface CanvasHandle {
   fit(): void;
 }
 export interface CanvasProps {
+  registry: ComponentRegistry;
   graph: GraphJSON;
   selected: string[];
   readonly?: boolean;
@@ -59,6 +58,7 @@ export interface CanvasProps {
 }
 
 const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
+  const registry = p.registry;
   const root = useRef<HTMLDivElement>(null);
   const view = p.viewport,
     setView = p.onViewport;
@@ -69,7 +69,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
   const stopTracking = useRef<(() => void) | null>(null);
   useEffect(() => () => stopTracking.current?.(), []);
 
-  const layout = useMemo(() => layoutGraph(p.graph, registry), [p.graph]);
+  const layout = useMemo(() => layoutGraph(p.graph, registry), [p.graph, registry]);
   const pos = (n: GraphNode): Point => preview[n.id] ?? layout.get(n.id) ?? { x: 0, y: 0 };
   const point = (x: number, y: number) => {
     const r = root.current!.getBoundingClientRect();

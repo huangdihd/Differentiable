@@ -1,6 +1,6 @@
 # Functional editor shell
 
-`App.tsx` connects the three existing example levels to the Worker. No tensor execution happens on the UI thread. `Canvas.tsx` only edits/displays JSON graphs. `Properties.tsx` handles node attributes; loss rendering reads `--accent` from the existing theme. `layout.css` contains layout rules only; `theme.css` is owned by the visual designer.
+`App.tsx` connects the formal chapter 0/1 catalog and XOR preview to the Worker. Interactive tensor execution happens in the Worker; one-time legacy save migration validates old circuits asynchronously before the editor becomes available. `Canvas.tsx` only edits/displays JSON graphs. `Properties.tsx` handles node attributes; loss rendering reads `--accent` from the existing theme. `layout.css` contains layout rules only; `theme.css` is owned by the visual designer.
 
 ## Controls
 
@@ -14,9 +14,9 @@
 
 ## State and persistence
 
-`src/editor/state.ts` is a pure command reducer with graph/selection/viewport, snapshots for undo/redo, deterministic IDs, internal clipboard and cycle/port validation. A node drag previews locally and commits one move command. Pan/zoom is reducer state but is not graph history. Progress uses the engine's pure `applyResult`, including its best-score ordering. Only passing results unlock levels/components.
+`src/editor/state.ts` is a pure command reducer with graph/selection/viewport, snapshots for undo/redo, deterministic IDs, internal clipboard and cycle/port validation. A node drag previews locally and commits one move command. Pan/zoom is reducer state but is not graph history. Progress uses the engine's pure `applyResult`, including its best-score ordering. Only passing results unlock levels/components. The exact submitted graph is saved independently of unfinished edits in `passedSolutions`; passing again replaces that implementation. The palette groups allowed primitives, previously built components and level presets, excluding forbidden components and the current lesson's output. Par and optional feature-unlock messages appear on completion.
 
-Graphs include positions in `node.ui`. `src/storage.ts` validates versioned localStorage data and catches unavailable/corrupt storage. A trailing throttle writes edits every 400ms, with a pagehide/unmount flush. A failed save does not crash the page; language persistence is attempted independently even when writing progress fails. Read-only component inspection also disables undo/redo on the parent graph. Probe requests discard results when the graph revision changes.
+Graphs include positions in `node.ui`. `src/storage.ts` validates versioned localStorage data and catches unavailable/corrupt storage. A trailing throttle writes edits every 400ms, with a pagehide/unmount flush. A failed save does not crash the page; language persistence is attempted independently even when writing progress fails. Read-only component inspection also disables undo/redo on the parent graph. Probe requests discard results when the graph or player-registry revision changes. The editor and canvas share `buildPlayerRegistry`; registry changes are sent to the Worker with `syncProgress` before compilation. Component inspection displays the player's passed graph, including nested implementations.
 
 ## Localization
 
@@ -26,4 +26,4 @@ Add `src/locales/<language>.json` with the same flat keys as English and registe
 
 ## Validation boundaries and remaining UI polish
 
-The environment cannot run a browser: builds and Node tests do not prove pointer interactions, accessibility or WebGPU behavior in an actual browser. Visual review is required. No motion has been added; rejected cycles show a translated error rather than a node shake because the supplied theme has no shake class. Large graphs do not have virtualization, minimap or fit-to-view controls. Inspecting shape-dependent generated subgraphs can fail without concrete input shape context; it reports an error instead of guessing shapes. Probe results currently show the first output port per node and a bounded numeric preview, not live training parameters. The three examples use vector/batch inputs, so scalar sliders only appear for a scalar interface.
+The environment cannot run a browser: builds and Node tests do not prove pointer interactions, accessibility or WebGPU behavior in an actual browser. Visual review is required. No motion has been added; rejected cycles show a translated error rather than a node shake because the supplied theme has no shake class. Large graphs do not have virtualization, minimap or fit-to-view controls. Inspecting shape-dependent generated subgraphs can fail without concrete input shape context; it reports an error instead of guessing shapes. Probe results currently show the first output port per node and a bounded numeric preview, not live training parameters. The formal scalar/derivative lessons use length-8 vector inputs; the XOR preview uses batches.
