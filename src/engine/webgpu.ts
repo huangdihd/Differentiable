@@ -2,6 +2,7 @@ import { type Backend, type Command, type Handle, type Shape, size } from './bac
 import type { Gpu, GpuBuffer, GpuDevice, GpuEncoder, GpuPipeline } from './gpu-api';
 import { kernel } from './webgpu-kernels';
 import { optimizerKernel } from './webgpu-optimizer';
+import { limitDispatch } from './webgpu-dispatch';
 
 export class BackendError extends Error {
   constructor(
@@ -52,7 +53,12 @@ export class WebGpuBackend implements Backend {
     const adapter = await gpu.requestAdapter();
     if (!adapter) throw new BackendError('engine.gpu.noAdapter');
     try {
-      return new WebGpuBackend(await adapter.requestDevice(), adapter.info ?? {});
+      // GPUAdapterInfo exposes its fields as prototype getters, which JSON.stringify skips.
+      const info = (adapter.info ?? {}) as Record<string, unknown>;
+      const adapterInfo = Object.fromEntries(
+        ['vendor', 'architecture', 'device', 'description'].map((key) => [key, info[key] ?? '']),
+      );
+      return new WebGpuBackend(await adapter.requestDevice(), adapterInfo);
     } catch (error) {
       throw new BackendError('engine.gpu.device', { message: String(error) });
     }
@@ -122,19 +128,16 @@ export class WebGpuBackend implements Backend {
         !(command.op === 'vjp' && command.attrs.op === 'gather')
       )
         continue;
-      const spec = optimizerKernel(command) ?? kernel(command);
-      if (
-        spec.workgroups.some(
-          (n) =>
-            n !== undefined &&
-            (!Number.isSafeInteger(n) ||
-              n > this.device.limits.maxComputeWorkgroupsPerDimension ||
-              n < 1),
-        )
-      )
+      const logical = optimizerKernel(command) ?? kernel(command);
+      let spec;
+      try {
+        spec = limitDispatch(logical, this.device.limits.maxComputeWorkgroupsPerDimension);
+      } catch (error) {
+        if (!(error instanceof RangeError)) throw error;
         throw new BackendError('engine.gpu.dispatchLimit', {
-          workgroups: spec.workgroups.join(','),
+          workgroups: logical.workgroups.join(','),
         });
+      }
       const buffers = [
         ...command.inputs.map((v) => this.get(v.handle)),
         this.get(command.output.handle),

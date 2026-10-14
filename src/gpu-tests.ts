@@ -52,6 +52,12 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
       [3, 7],
       [2, 3, 33],
       [2, 1],
+      ...(op === 'softmax' || op === 'layernorm'
+        ? [
+            [3, 1024],
+            [3, 1031],
+          ]
+        : []),
     ])
       fixtures.push({ op, shapes: [shape] });
   fixtures.push(
@@ -62,6 +68,20 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
     for (const axes of [[0, 2], [-1], []])
       for (const keepdims of [true, false])
         fixtures.push({ op, shapes: [[2, 3, 5]], attrs: { axes, keepdims } });
+  for (const op of ['sum', 'reduce_max'])
+    for (const width of [1024, 1031])
+      for (const keepdims of [true, false])
+        fixtures.push({ op, shapes: [[3, width]], attrs: { axes: [-1], keepdims } });
+  for (const op of ['sum', 'reduce_max'])
+    fixtures.push({ op, shapes: [[17, 3, 61]], attrs: { axes: [0, 2] } });
+  fixtures.push({
+    op: 'reduce_max',
+    shapes: [[3, 1031]],
+    attrs: { axes: [-1] },
+    data: [
+      Array.from({ length: 3 * 1031 }, (_, i) => (i % 1031 === 7 || i % 1031 === 900 ? 2 : 1)),
+    ],
+  });
   for (const shapes of [
     [
       [3, 7],
@@ -139,7 +159,11 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
       const expected = await execute(cpu),
         actual = await execute(gpu);
       actual.forEach((a, i) => close(a, expected[i], `${f.op} trial=${trial} result=${i}`));
-      if (f.op === 'gather')
+      if (
+        f.op === 'gather' ||
+        (['softmax', 'layernorm', 'sum', 'reduce_max'].includes(f.op) &&
+          f.shapes[0].at(-1)! >= 1024)
+      )
         for (let repeat = 0; repeat < 5; repeat++) {
           const again = await execute(gpu);
           again.forEach((a, i) => {
@@ -151,13 +175,73 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
             );
             assert(
               bits.every((bit, j) => bit === reference[j]),
-              'gather must be bitwise deterministic',
+              `${f.op} result=${i} must be bitwise deterministic`,
             );
           });
         }
       count++;
     }
-  await report('operations', { fixtures: count, randomVjpSeeds: true, gatherRepeatRuns: 5 });
+  await report('operations', {
+    fixtures: count,
+    randomVjpSeeds: true,
+    gatherRepeatRuns: 5,
+    longRowWidths: [1024, 1031],
+    longRowForwardAndVjpRepeatRuns: 5,
+  });
+}
+async function largeDispatches(cpu: CpuBackend, gpu: WebGpuBackend) {
+  // 64 lanes per serial kernel: this requires 65,537 original x workgroups.
+  // Width-one reductions avoid a >256 MiB long-row input; normalization separately
+  // exercises the parallel row kernel with 65,536 original x workgroups.
+  const length = 65536 * 64 + 1;
+  const fixtures: Fixture[] = [
+    { op: 'exp', shapes: [[length]] },
+    { op: 'sum', shapes: [[length, 1]], attrs: { axes: [-1] } },
+    { op: 'reduce_max', shapes: [[length, 1]], attrs: { axes: [-1] } },
+    { op: 'softmax', shapes: [[65536, 2]] },
+    { op: 'layernorm', shapes: [[65536, 2]] },
+    // The original z dispatch exceeds the limit, without costly large matrices.
+    {
+      op: 'matmul',
+      shapes: [
+        [65536, 1, 1],
+        [65536, 1, 1],
+      ],
+    },
+    { op: 'optimizer_sgd', shapes: [[length], [length]], attrs: { learningRate: 0.003 } },
+  ];
+  for (const f of fixtures) {
+    const attrs = f.attrs ?? {};
+    const shape = f.op === 'optimizer_sgd' ? f.shapes[0] : infer(f.op, f.shapes, attrs);
+    async function execute(backend: Backend) {
+      const inputs = f.shapes.map((s, input) =>
+        tensor(
+          Float32Array.from(
+            { length: size(s) },
+            (_, i) => (((i * 17 + input * 7) % 101) - 50) / 100,
+          ),
+          s,
+          backend,
+        ),
+      );
+      const output = tensor(new Float32Array(size(shape)), shape, backend);
+      try {
+        backend.submit([{ op: f.op, inputs, output, attrs }]);
+        return await output.read();
+      } finally {
+        [...inputs, output].forEach((t) => t.dispose());
+      }
+    }
+    const expected = await execute(cpu);
+    const actual = await execute(gpu);
+    close(actual, expected, `large dispatch ${f.op}`);
+    await report('large-dispatch', {
+      op: f.op,
+      shapes: f.shapes,
+      originalWorkgroups: ['softmax', 'layernorm', 'matmul'].includes(f.op) ? 65536 : 65537,
+      originalOversizedAxis: f.op === 'matmul' ? 'z' : 'x',
+    });
+  }
 }
 function model(backend: Backend, config: GptConfig) {
   const { graph, registry, shapes } = gptFixture(config);
@@ -275,12 +359,13 @@ async function memory(gpu: WebGpuBackend) {
   await gpu.flush();
   assert(gpu.stats.liveBuffers === baseline, 'GPT model/optimizer disposal leaked GPU buffers');
 }
-async function benchmark(cpu: CpuBackend, gpu: WebGpuBackend, config: GptConfig) {
+async function benchmark(cpu: CpuBackend | undefined, gpu: WebGpuBackend, config: GptConfig) {
   const results: Record<string, unknown> = {};
   for (const [name, backend] of [
     ['cpu', cpu],
     ['gpu', gpu],
   ] as const) {
+    if (!backend) continue;
     const m = model(backend, config);
     try {
       await m.session.run(1);
@@ -316,6 +401,7 @@ export async function run() {
   try {
     await report('adapter', { info: gpu.adapterInfo });
     await operations(cpu, gpu);
+    await largeDispatches(cpu, gpu);
     await compareGpt(cpu, gpu);
     await memory(gpu);
     for (const config of [
@@ -323,6 +409,7 @@ export async function run() {
       { B: 16, C: 128, D: 128, H: 4, V: 27, layers: 4 },
     ])
       await benchmark(cpu, gpu, config);
+    await benchmark(undefined, gpu, { B: 16, C: 256, D: 256, H: 8, V: 96, layers: 6 });
     await gpu.flush();
     assert(gpu.stats.liveBuffers === 0, 'GPU live buffers remain after tests');
     assert(cpu.liveBuffers === 0, 'CPU live buffers remain after tests');

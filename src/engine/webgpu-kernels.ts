@@ -38,6 +38,39 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     workgroups: [Math.max(1, Math.ceil(length / 64))] as [number],
   });
 
+  // Every lane participates, including lanes beyond the end of a row. The
+  // workgroup-uniform row guard is the only return before any barrier.
+  const rowKernel = (body: string, rows: number, extra = '') => ({
+    code: `${header}
+var<workgroup> scratch: array<f32, 64>;
+${extra}
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) local: vec3<u32>) {
+  let i = group.x;
+  let lane = local.x;
+  if (i >= ${u(rows)}) { return; }
+  ${body}
+}`,
+    workgroups: [Math.max(1, rows)] as [number],
+  });
+  const reduce = (name: string, length: number, expression: string, max = false) => `
+    var ${name}Partial = ${max ? 'bitcast<f32>(NEG_INF_BITS)' : '0.0'};
+    for (var r = lane; r < ${u(length)}; r += 64u) {
+      ${name}Partial = ${max ? `max(${name}Partial, ${expression})` : `${name}Partial + (${expression})`};
+    }
+    scratch[lane] = ${name}Partial;
+    workgroupBarrier();
+    for (var stride = 32u; stride > 0u; stride /= 2u) {
+      if (lane < stride) {
+        scratch[lane] = ${max ? 'max(scratch[lane], scratch[lane + stride])' : 'scratch[lane] + scratch[lane + stride]'};
+      }
+      workgroupBarrier();
+    }
+    let ${name} = scratch[0];
+    // Finish all reads before reusing scratch for the next statistic.
+    workgroupBarrier();
+  `;
+
   if (['add', 'mul', 'max', 'ge'].includes(op)) {
     const values = (index: string) => `let av = x0[${mapped(index, ys, a)}];
       let bv = x1[${mapped(index, ys, b)}];`;
@@ -92,6 +125,39 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     const fiber = broadcastFiber('i', a, reduced);
     if (vjp && op === 'sum') {
       return finish(`out[i] = ${g}[${mapped('i', a, reduced)}];`);
+    }
+    if (fiber.length >= 256) {
+      if (vjp) {
+        // Reduce the first matching flat reduction index, not a floating index:
+        // ties retain the CPU's first-winner semantics even for very long rows.
+        return rowKernel(
+          `
+          var first = 0xffffffffu;
+          for (var r = lane; r < ${u(fiber.length)}; r += 64u) {
+            if (x0[${fiber.index}] == ${y}[i]) { first = min(first, r); }
+          }
+          winners[lane] = first;
+          workgroupBarrier();
+          for (var stride = 32u; stride > 0u; stride /= 2u) {
+            if (lane < stride) { winners[lane] = min(winners[lane], winners[lane + stride]); }
+            workgroupBarrier();
+          }
+          let winner = winners[0];
+          for (var r = lane; r < ${u(fiber.length)}; r += 64u) {
+            out[${fiber.index}] = select(0.0, ${g}[i], r == winner);
+          }
+        `,
+          size(ys),
+          'var<workgroup> winners: array<u32, 64>;',
+        );
+      }
+      return rowKernel(
+        `
+        ${reduce('total', fiber.length, `x0[${fiber.index}]`, op === 'reduce_max')}
+        if (lane == 0u) { out[i] = total; }
+      `,
+        size(output.shape),
+      );
     }
     if (vjp) {
       // One invocation owns an entire reduction fiber: first equal maximum wins.
@@ -217,27 +283,16 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
       op === 'softmax'
         ? vjp
           ? ''
-          : `var mx = bitcast<f32>(NEG_INF_BITS);
-          for (var j = 0u; j < ${u(width)}; j++) { mx = max(mx, x0[start + j]); }`
-        : `var mean = 0.0;
-        for (var j = 0u; j < ${u(width)}; j++) { mean += x0[start + j]; }
-        mean /= ${f(width)};
-        var variance = 0.0;
-        for (var j = 0u; j < ${u(width)}; j++) {
-          let centered = x0[start + j] - mean;
-          variance += centered * centered;
-        }
-        let inv = 1.0 / sqrt(variance / ${f(width)} + ${f(Number(attrs.eps ?? 1e-5))});`;
+          : reduce('mx', width, 'x0[start + r]', true)
+        : `${reduce('sumX', width, 'x0[start + r]')}
+         let mean = sumX / ${f(width)};
+         ${reduce('variance', width, '(x0[start + r] - mean) * (x0[start + r] - mean)')}
+         let inv = 1.0 / sqrt(variance / ${f(width)} + ${f(Number(attrs.eps ?? 1e-5))});`;
     const totals = vjp
-      ? `var total = 0.0;
-        var dot = 0.0;
-        for (var j = 0u; j < ${u(width)}; j++) {
-          total += ${g}[start + j];
-          dot += ${g}[start + j] * ${y}[start + j];
-        }`
+      ? `${op === 'layernorm' ? reduce('total', width, `${g}[start + r]`) : ''}
+         ${reduce('dot', width, `${g}[start + r] * ${y}[start + r]`)}`
       : op === 'softmax'
-        ? `var total = 0.0;
-          for (var j = 0u; j < ${u(width)}; j++) { total += exp(x0[start + j] - mx); }`
+        ? reduce('total', width, 'exp(x0[start + r] - mx)')
         : '';
     const expression = vjp
       ? op === 'softmax'
@@ -246,15 +301,15 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
       : op === 'softmax'
         ? 'exp(x0[j] - mx) / total'
         : '(x0[j] - mean) * inv';
-    return finish(
+    return rowKernel(
       `let start = i * ${u(width)};
       ${stats}
       ${totals}
-      for (var c = 0u; c < ${u(width)}; c++) {
+      for (var c = lane; c < ${u(width)}; c += 64u) {
         let j = start + c;
         out[j] = ${expression};
       }`,
-      size(a) / width,
+      width ? size(a) / width : 0,
     );
   }
   throw new Error(`engine.op.unknown:${op}`);
