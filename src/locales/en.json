@@ -395,5 +395,12 @@
   "levels.1-6.hint2": "tanh′(x) = 1 − tanh(x)².",
   "levels.1-7.hint1": "The outer log(u) has derivative 1/u; the inner part is u = 1 + x².",
   "levels.1-7.hint2": "The inner derivative is 2x.",
-  "ui.showHint": "Show hint {n}"
+  "ui.showHint": "Show hint {n}",
+  "errors.invalid_fragment": "The pasted content isn't a valid set of components.",
+  "errors.invalid_port": "Those two ports can't be connected that way.",
+  "errors.invalid_position": "Can't place it there.",
+  "errors.missing_edge": "That wire no longer exists.",
+  "errors.movement_in_progress": "Finish dragging first.",
+  "errors.protected_node": "Inputs and outputs are fixed for this level and can't be deleted.",
+  "errors.unavailable_component": "That component isn't available in this level."
 }

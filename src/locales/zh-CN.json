@@ -392,5 +392,12 @@
   "levels.1-6.hint2": "tanh′(x) = 1 − tanh(x)²。",
   "levels.1-7.hint1": "外层 log(u) 的导数是 1/u，内层 u = 1 + x²。",
   "levels.1-7.hint2": "内层的导数是 2x。",
-  "ui.showHint": "看提示 {n}"
+  "ui.showHint": "看提示 {n}",
+  "errors.invalid_fragment": "粘贴的内容不是有效的元件。",
+  "errors.invalid_port": "这两个端口不能这样连。",
+  "errors.invalid_position": "放不到这个位置。",
+  "errors.missing_edge": "这条连线已经不存在了。",
+  "errors.movement_in_progress": "先松开正在拖动的元件。",
+  "errors.protected_node": "输入和输出是本关固定的，不能删除。",
+  "errors.unavailable_component": "这一关不能用这个元件。"
 }

@@ -286,7 +286,7 @@ function Editor({
   );
   const available = availableComponents(level, progress);
   const [state, setState] = useState(() =>
-    createEditorState(level, progress.savedGraphs[level.id]),
+    createEditorState(level, progress.savedGraphs[level.id], available),
   );
   const [diagnostics, setDiagnostics] = useState<WorkerError[]>([]);
   const [error, setError] = useState<WorkerError>();

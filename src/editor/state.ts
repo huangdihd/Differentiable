@@ -117,10 +117,12 @@ export function initialGraph(level: Level): GraphJSON {
 export function createEditorState(
   level: Level,
   graph: GraphJSON = initialGraph(level),
+  /** Palette list: level primitives plus player components (see availableComponents). */
+  available: readonly string[] = level.available,
 ): EditorState {
   return {
     graph: clone(graph),
-    available: [...level.available],
+    available: [...available],
     selection: [],
     nextId: 1,
     viewport: { x: 0, y: 0, zoom: 1 },

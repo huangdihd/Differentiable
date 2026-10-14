@@ -36,6 +36,14 @@ describe('editor graph commands', () => {
     expect(loaded.graph).not.toBe(s.graph);
     expect(s.graph.nodes.every((n) => Number.isFinite(nodePosition(n).x))).toBe(true);
   });
+  it('accepts player components passed in beyond the level primitives', () => {
+    expect(sigmoidLevel.available).not.toContain('matmul');
+    expect(add(initial(), 'matmul').error).toBe('unavailable_component');
+    const s = createEditorState(sigmoidLevel, undefined, [...sigmoidLevel.available, 'matmul']);
+    const next = add(s, 'matmul');
+    expect(next.error).toBeNull();
+    expect(next.graph.nodes.some((n) => n.component === 'matmul')).toBe(true);
+  });
   it('adds deterministically, undoes/redoes and clears the redo branch', () => {
     const s = initial(),
       a = add(s);
