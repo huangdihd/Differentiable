@@ -357,7 +357,7 @@
   "levels.1-6.description": "f(x) = tanh(x). Like sigmoid, its derivative can be written using tanh alone.",
   "levels.1-7.title": "Log chain rule",
   "levels.1-7.description": "f(x) = log(1 + x²). Combine the chain rule with what you have built so far. Next, functions will have more than one variable.",
-  "levels.features.autodiff": "Automatic differentiation unlocked",
+  "levels.features.autodiff": "Autodiff unlocked: the \"∂ Gradient graph\" button above the canvas shows how the engine differentiates",
   "levels.features.expression": "Expression box unlocked: type a formula to generate its parts",
   "ui.scalar": "scalar",
   "ui.verifying": "Checking · {n}/{count}",
@@ -480,5 +480,18 @@
   "backward.rule.param": "Parameter gradient",
   "backward.rule.broadcast": "Sum over broadcast axes",
   "ui.broadcast": "broadcast",
-  "ui.broadcastHelp": "The shapes differ: aligned from the last axis, length-1 or missing axes are copied to fill, then the op runs entry by entry."
+  "ui.broadcastHelp": "The shapes differ: aligned from the last axis, length-1 or missing axes are copied to fill, then the op runs entry by entry.",
+  "gradView.title": "Gradient graph",
+  "gradView.intro": "On top is your circuit; values flow left to right. Below is the mirror the engine draws from it: gradients start at the output and flow right to left, multiplied at each part by that part's own derivative (written on the wire). A value used several times receives several gradients, added at a \"+\". That is automatic differentiation, the same thing you built by hand in 1-10.",
+  "gradView.forward": "forward: values",
+  "gradView.backward": "backward: ∂{y}/∂·",
+  "gradView.sum": "gradients added",
+  "gradView.forwardBand": "forward →",
+  "gradView.backwardBand": "← backward (∂{y}/∂·)",
+  "gradView.expanded": "{name}: expanded",
+  "gradView.open": "Gradient graph",
+  "gradView.openHint": "See how the engine derives gradients from this graph",
+  "gradView.revealButton": "See how the engine does it",
+  "gradView.revealIntro": "This is the neuron you just did, f = σ(w·x + b). On top, the forward pass. Below, the backward pass the engine generates: start at f and multiply by each local derivative on the way back. It is exactly your s·(1 − s)·x; from now on the engine does it for you.",
+  "gradView.ruleMulB": "∂(a·b)/∂b = a"
 }

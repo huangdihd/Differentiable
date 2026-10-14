@@ -29,6 +29,8 @@ export interface LevelMetadata {
   referenceGraph?: GraphJSON;
   par?: number;
   unlockFeatures?: readonly string[];
+  /** Shown on completion as a gradient graph: "here is what you just did by hand". */
+  revealGraph?: GraphJSON;
   interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
   unlock: readonly string[];
   unlockComponents?: readonly string[];

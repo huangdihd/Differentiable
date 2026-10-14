@@ -71,6 +71,9 @@ export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index
       referenceGraph: formulaGraph(definition.formula, inputs),
       ...cases(8 + index, definition.positiveInputs, inputs, definition.thirdColumn),
       reference: definition.reference,
+      ...(index === definitions.length - 1
+        ? { revealGraph: formulaGraph('sigmoid(w * x + b)', inputs) }
+        : {}),
     },
     chapter0Levels,
   );

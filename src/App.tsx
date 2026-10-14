@@ -27,6 +27,8 @@ import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import { caseInputs, fullValues } from './ui/tensor-values';
 import TensorGrid from './ui/TensorGrid';
+import GradientView from './ui/GradientView';
+import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import {
@@ -299,6 +301,12 @@ function Editor({
   const [result, setResult] = useState<LevelResult>();
   const [running, setRunning] = useState(false);
   const [modal, setModal] = useState(false);
+  const [gradView, setGradView] = useState<{
+    graph: GraphJSON;
+    backward: BackwardGraph;
+    trace?: BackwardTrace;
+    intro?: string;
+  }>();
   const [previousBest, setPreviousBest] = useState<LevelResult['metrics']>();
   const [training, setTraining] = useState<'idle' | 'running' | 'paused'>('idle');
   const [report, setReport] = useState<TrainingReport>();
@@ -555,6 +563,28 @@ function Editor({
       clearTimeout(timer);
     };
   }, [state.graph, parsedInputs, diagnostics, busy, locale]);
+
+  const gradientWrt =
+    level.kind === 'derivative'
+      ? [level.derivativeInput ?? 'x']
+      : Object.keys(level.interface.inputs);
+  /** The engine's backward graph for `graph`, traced on the inputs in the live panel. */
+  const openGradientView = async (graph: GraphJSON, intro?: string) => {
+    const c = client.current;
+    if (!c) return;
+    const inputs =
+      level.kind === 'train'
+        ? undefined
+        : 'invalid' in parsedInputs
+          ? testCases[0]?.inputs
+          : (parsedInputs as Record<string, number[]>);
+    try {
+      const r = await c.backward(level.id, graph, inputs);
+      setGradView({ graph, backward: r.backward, trace: r.trace, intro });
+    } catch (e) {
+      fail(e);
+    }
+  };
 
   const selected = state.graph.nodes.find((n) => n.id === state.selection[0]);
   const display = inside.at(-1)?.graph ?? state.graph;
@@ -959,6 +989,19 @@ function Editor({
           >
             {t('ui.fit')}
           </button>
+          {expressionUnlocked && level.kind !== 'train' && (
+            <>
+              <span className="tool-sep" />
+              <button
+                className="tool-btn tool-wide tool-grad"
+                title={t('gradView.openHint')}
+                disabled={busy || !!inside.length || errors.some((e) => !e.soft)}
+                onClick={() => openGradientView(state.graph)}
+              >
+                ∂ {t('gradView.open')}
+              </button>
+            </>
+          )}
         </div>
         {inside.length > 0 && (
           <div className="canvas-crumb">
@@ -1295,6 +1338,28 @@ function Editor({
           previous={previousBest}
           onClose={() => setModal(false)}
           onExit={onExit}
+          onReveal={
+            level.revealGraph
+              ? () => {
+                  setModal(false);
+                  openGradientView(level.revealGraph!, t('gradView.revealIntro'));
+                }
+              : undefined
+          }
+        />
+      )}
+      {gradView && (
+        <GradientView
+          t={t}
+          graph={gradView.graph}
+          backward={gradView.backward}
+          trace={gradView.trace}
+          wrt={gradientWrt}
+          output={level.interface.output}
+          composite={(component) => !registry.get(component)?.primitive}
+          format={(n) => compact(locale, n)}
+          intro={gradView.intro}
+          onClose={() => setGradView(undefined)}
         />
       )}
     </main>
@@ -1339,6 +1404,7 @@ function WinModal({
   previous,
   onClose,
   onExit,
+  onReveal,
 }: {
   t: T;
   locale: Locale;
@@ -1351,6 +1417,7 @@ function WinModal({
   previous?: LevelResult['metrics'];
   onClose: () => void;
   onExit: () => void;
+  onReveal?: () => void;
 }) {
   const rows = ['topNodes', 'expandedPrimitives', 'parameterCount'] as const;
   return (
@@ -1384,6 +1451,11 @@ function WinModal({
             {t(key)}
           </p>
         ))}
+        {onReveal && (
+          <button className="btn btn-grad" onClick={onReveal}>
+            ∂ {t('gradView.revealButton')} →
+          </button>
+        )}
         <table className="table score-table">
           <thead>
             <tr>

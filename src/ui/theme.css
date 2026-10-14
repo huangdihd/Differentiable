@@ -30,6 +30,7 @@
   --good: #8ef0c0;
   --bad: #ff8fa3;
   --warn: #ffb86b;
+  --grad: #6fe3ff; /* backward flow: gradients */
 
   /* wires */
   --wire: #eaf1ff;
@@ -1114,4 +1115,201 @@ input[type='range'] {
 .node-broadcast-tag {
   color: var(--accent);
   letter-spacing: 0.04em;
+}
+
+/* gradient graph: forward on top (amber, →), its mirror below (cyan, ←) */
+.gv-back {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+  padding: 24px;
+}
+.gv {
+  width: min(1180px, 100%);
+  min-width: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  padding: 18px 20px 16px;
+}
+.gv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s3, 16px);
+}
+.gv-head h2 {
+  margin: 0 0 4px;
+  font-size: var(--fs-xl);
+}
+.gv-head .hint {
+  max-width: 72ch;
+  margin: 0;
+}
+.gv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.gv-key::before {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px dashed var(--accent);
+}
+.gv-key.is-backward::before {
+  border-top-color: var(--grad);
+}
+.gv-key.is-sum::before {
+  content: '+';
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--grad);
+  border-radius: 50%;
+  color: var(--grad);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 14px;
+  text-align: center;
+}
+.gv-scroll {
+  overflow: auto;
+  min-height: 0;
+  background: var(--bg) var(--grid);
+  background-size: var(--grid-size);
+  border: 1px solid var(--line);
+}
+.gv-stage {
+  position: relative;
+}
+.gv-wires {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+.gv-band {
+  position: absolute;
+  left: 28px;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.gv-band.is-backward {
+  color: var(--grad);
+}
+.gv-wire {
+  fill: none;
+  stroke-width: 2;
+  stroke-dasharray: 7 7;
+  animation: gv-flow 0.9s linear infinite;
+}
+.gv-wire.is-forward {
+  stroke: var(--accent);
+}
+.gv-wire.is-backward {
+  stroke: var(--grad);
+}
+.gv-head-forward {
+  fill: var(--accent);
+}
+.gv-head-backward {
+  fill: var(--grad);
+}
+@keyframes gv-flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gv-wire {
+    animation: none;
+  }
+}
+.gv-tie {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.gv-rule {
+  font-family: var(--mono);
+  font-size: 11px;
+  fill: var(--grad);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+}
+.gv-sum circle {
+  fill: var(--panel);
+  stroke: var(--grad);
+  stroke-width: 1.5;
+}
+.gv-sum text {
+  fill: var(--grad);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.gv-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  border: 1.5px solid var(--accent);
+  font-family: var(--mono);
+  overflow: hidden;
+}
+.gv-card.is-backward {
+  border-color: var(--grad);
+  background: color-mix(in srgb, var(--grad) 8%, var(--panel));
+}
+.gv-card.is-target {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--grad) 30%, transparent);
+}
+.gv-card.is-idle {
+  border-color: var(--line-strong);
+  opacity: 0.7;
+}
+.gv-card-label {
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.gv-card.is-forward .gv-card-label {
+  color: var(--accent);
+}
+.gv-card.is-backward .gv-card-label {
+  color: var(--grad);
+  font-size: 13px;
+}
+.gv-card-value {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-grad {
+  color: var(--grad);
+}
+.btn-grad {
+  margin-top: var(--s2);
+  border-color: var(--grad);
+  color: var(--grad);
 }
