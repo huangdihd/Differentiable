@@ -28,10 +28,9 @@ export function formulaGraph(formula: string, inputs: readonly string[] = ['x'])
       ]),
     ),
     functions: Object.fromEntries(
-      ['exp', 'log', 'neg', 'recip', 'sigmoid', 'tanh', 'relu', 'sqrt'].map((name) => [
-        name,
-        { component: name, inputs: ['x'] },
-      ]),
+      ['exp', 'log', 'neg', 'recip', 'sigmoid', 'tanh', 'relu', 'sqrt', 'dsigmoid', 'dtanh'].map(
+        (name) => [name, { component: name, inputs: ['x'] }],
+      ),
     ),
   });
   // Share repeated subexpressions (sigmoid(x) used twice is one node), so par is what a player

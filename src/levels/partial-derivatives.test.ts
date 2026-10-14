@@ -5,9 +5,35 @@ import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { formulaGraph, referenceRegistry } from './level-helpers';
 
-const registry = referenceRegistry(chapter0Levels);
+const registry = referenceRegistry([...chapter0Levels, ...chapter1Levels]);
 const lessons = chapter1Levels.slice(7);
-const earned = chapter0Levels.flatMap((level) => level.unlockComponents ?? []);
+const earned = [...chapter0Levels, ...chapter1Levels.slice(0, 7)].flatMap(
+  (level) => level.unlockComponents ?? [],
+);
+
+it('turns the σ′ and tanh′ derivations into parts that 1-10 reuses', async () => {
+  expect(chapter1Levels.map((level) => level.unlockComponents ?? [])).toEqual([
+    [],
+    [],
+    [],
+    [],
+    ['dsigmoid'],
+    ['dtanh'],
+    [],
+    [],
+    [],
+    [],
+  ]);
+  expect(lessons[2].referenceGraph!.nodes.some((n) => n.component === 'dsigmoid')).toBe(true);
+  // Deriving σ′ again by hand is still a correct answer, just a longer one.
+  const longhand = formulaGraph('sigmoid(w * x + b) * (1 + neg(sigmoid(w * x + b))) * x', [
+    'w',
+    'x',
+    'b',
+  ]);
+  const playable = { ...lessons[2], available: [...lessons[2].available, ...earned] };
+  expect((await evaluateLevel(playable, longhand, { registry })).passed).toBe(true);
+});
 
 it('moves the chapter-end tools to 1-10 and preserves the successor chain', () => {
   expect(chapter1Levels.slice(6).map((level) => level.unlock)).toEqual([

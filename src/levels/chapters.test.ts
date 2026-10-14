@@ -181,10 +181,13 @@ describe('formal chapter catalog', () => {
           level.generated!.generate(randomB, i),
         );
       // Simulate the palette supplied by progression; available itself is primitives only.
-      const preceding = chapter0Levels.slice(
-        0,
-        level.kind === 'derivative' ? 8 : chapter0Levels.indexOf(level),
-      );
+      const preceding =
+        level.kind === 'derivative'
+          ? [
+              ...chapter0Levels.slice(0, 8),
+              ...chapter1Levels.slice(0, chapter1Levels.indexOf(level)),
+            ]
+          : chapter0Levels.slice(0, chapter0Levels.indexOf(level));
       const available = [
         ...level.available,
         ...preceding.flatMap((item) => item.unlockComponents ?? []),

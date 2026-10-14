@@ -11,6 +11,8 @@ const tanh = (x: T.Tensor) => T.add(T.mul(c(x, 2), sigmoid(T.mul(c(x, 2), x))), 
 // reference is f, never f': the engine derives the numerical oracle by autodiff.
 const definitions: {
   formula: string;
+  /** The derivative the player builds here becomes a part for later levels. */
+  component?: string;
   positiveInputs?: string[];
   inputs?: string[];
   derivativeInput?: string;
@@ -21,8 +23,12 @@ const definitions: {
   { formula: 'exp(x) * (1 + x)', reference: ({ x }) => T.mul(x, T.exp(x)) },
   { formula: '3 * exp(3 * x)', reference: ({ x }) => T.exp(T.mul(c(x, 3), x)) },
   { formula: 'recip(x)', positiveInputs: ['x'], reference: ({ x }) => T.log(x) },
-  { formula: 'sigmoid(x) + neg(sigmoid(x) * sigmoid(x))', reference: ({ x }) => sigmoid(x) },
-  { formula: '1 + neg(tanh(x) * tanh(x))', reference: ({ x }) => tanh(x) },
+  {
+    formula: 'sigmoid(x) + neg(sigmoid(x) * sigmoid(x))',
+    component: 'dsigmoid',
+    reference: ({ x }) => sigmoid(x),
+  },
+  { formula: '1 + neg(tanh(x) * tanh(x))', component: 'dtanh', reference: ({ x }) => tanh(x) },
   { formula: '2 * x * recip(1 + x * x)', reference: ({ x }) => T.log(T.add(c(x, 1), T.mul(x, x))) },
   {
     formula: 'b + exp(a)',
@@ -37,7 +43,8 @@ const definitions: {
     reference: ({ a, b }) => T.mul(a, T.exp(T.mul(a, b))),
   },
   {
-    formula: 'sigmoid(w * x + b) * (1 + neg(sigmoid(w * x + b))) * x',
+    // σ′ was built in 1-5; here it is reused through the chain rule, not derived again.
+    formula: 'dsigmoid(w * x + b) * x',
     inputs: ['w', 'x', 'b'],
     derivativeInput: 'w',
     thirdColumn: [3, -1, 1, -0.5, 0.25, -1.5, 2, -2],
@@ -45,10 +52,11 @@ const definitions: {
   },
 ];
 
-export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index) => {
+export const chapter1Levels: ForwardLevel[] = [];
+for (const [index, definition] of definitions.entries()) {
   const id = `1-${index + 1}`;
   const inputs = definition.inputs ?? ['x'];
-  return withPar(
+  const level = withPar<ForwardLevel>(
     {
       id,
       chapter: '1',
@@ -68,6 +76,7 @@ export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index
           ? ['levels.features.autodiff', 'levels.features.expression']
           : [],
       derivativeInput: definition.derivativeInput ?? 'x',
+      ...(definition.component ? { unlockComponents: [definition.component] } : {}),
       referenceGraph: formulaGraph(definition.formula, inputs),
       ...cases(8 + index, definition.positiveInputs, inputs, definition.thirdColumn),
       reference: definition.reference,
@@ -75,6 +84,7 @@ export const chapter1Levels: ForwardLevel[] = definitions.map((definition, index
         ? { revealGraph: formulaGraph('sigmoid(w * x + b)', inputs) }
         : {}),
     },
-    chapter0Levels,
+    [...chapter0Levels, ...chapter1Levels],
   );
-});
+  chapter1Levels.push(level);
+}

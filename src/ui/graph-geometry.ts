@@ -31,6 +31,8 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   softmax: 'soft',
   layernorm: 'LN',
   mse: 'MSE',
+  dsigmoid: 'σ′',
+  dtanh: 'tanh′',
   cross_entropy: 'CE',
 };
 
