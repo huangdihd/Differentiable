@@ -3,12 +3,12 @@ import type { Tensor } from './tensor';
 
 export interface TrainingModel {
   parameters: Map<string, Tensor>;
-  execute(inputs: Record<string, Tensor>): Record<string, Tensor>;
+  execute(inputs: Record<string, Tensor>, trace?: Map<string, Tensor>): Record<string, Tensor>;
   releaseExecution?(outputs: Record<string, Tensor>, keep?: readonly Tensor[]): void;
 }
 export interface TrainingBatch {
   inputs: Record<string, Tensor>;
-  targets: Tensor;
+  targets?: Tensor;
 }
 /** Returns fresh, session-owned tensors for the zero-based optimizer step.
  * Called once per update, and for evaluation when no explicit evaluation batch is supplied.
@@ -19,7 +19,7 @@ export interface TrainingBatch {
 export type TrainingBatchFactory = (step: number) => TrainingBatch | Promise<TrainingBatch>;
 export type TrainingBatchSource = TrainingBatch | TrainingBatchFactory;
 function releaseBatch(batch: TrainingBatch): void {
-  new Set([...Object.values(batch.inputs), batch.targets]).forEach((t) => t.dispose());
+  new Set([...Object.values(batch.inputs), batch.targets]).forEach((t) => t?.dispose());
 }
 export interface OptimizerOptions {
   kind: 'sgd' | 'adam';
@@ -27,6 +27,18 @@ export interface OptimizerOptions {
   beta1?: number;
   beta2?: number;
   epsilon?: number;
+}
+/** Serializable, bounded node snapshot; size records the full element count. */
+export interface TrainingTraceValue {
+  shape: number[];
+  values: number[];
+  size: number;
+}
+export interface TrainingStepTrace extends TrainingReport {
+  forward: Record<string, TrainingTraceValue>;
+  gradient: Record<string, TrainingTraceValue>;
+  /** Values before/after the update, keyed by canvas parameter node ID. */
+  parameters: Record<string, { before: number[]; after: number[] }>;
 }
 export interface TrainingReport {
   step: number;
@@ -194,11 +206,17 @@ export class TrainingSession {
     this.optimizer.dispose();
   }
   private getLoss(outputs: Record<string, Tensor>, batch: TrainingBatch): Tensor {
+    if (!this.sessionOptions.lossOutput && !batch.targets)
+      throw new Error('training.missing_targets');
     const loss = this.sessionOptions.lossOutput
       ? outputs[this.sessionOptions.lossOutput]
-      : this.loss?.(outputs[this.output], batch.targets);
+      : this.loss?.(outputs[this.output], batch.targets!);
     if (!loss) throw new Error('training.missing_loss');
-    return loss;
+    return this.sessionOptions.lossOutput &&
+      loss.shape.length > 0 &&
+      loss.shape.reduce((a, b) => a * b, 1) === 1
+      ? T.reshape(loss, [])
+      : loss;
   }
   private cleanup(
     outputs: Record<string, Tensor>,
@@ -206,13 +224,94 @@ export class TrainingSession {
     batch: TrainingBatch,
     parameters: Tensor[],
   ): void {
-    const keep = [...parameters, ...Object.values(batch.inputs), batch.targets];
+    const keep = [
+      ...parameters,
+      ...Object.values(batch.inputs),
+      ...(batch.targets ? [batch.targets] : []),
+    ];
     try {
       if (loss) disposeLoss(loss, Object.values(outputs), keep);
       else disposeExecution(Object.values(outputs), keep);
     } finally {
       this.model.releaseExecution?.(outputs, keep);
     }
+  }
+  /** One live update. Forward values, gradients and loss precede the update; step is 1-based.
+   * GraphPlan supplies canvas-node probes without expanding composite internals.
+   */
+  async trainStepTrace(): Promise<TrainingStepTrace> {
+    const batch =
+      typeof this.batch === 'function' ? await this.batch(this.optimizer.step) : this.batch;
+    const probes = new Map<string, Tensor>();
+    let outputs: Record<string, Tensor> | undefined, loss: Tensor | undefined;
+    let parameters: Tensor[] = [],
+      gradients: Tensor[] = [];
+    const snapshot = async (tensor: Tensor): Promise<TrainingTraceValue> => {
+      const data = await tensor.read();
+      if (!data.every(Number.isFinite)) throw new Error('training.nonfinite');
+      return {
+        shape: [...tensor.shape],
+        values: Array.from(data.slice(0, 256)),
+        size: data.length,
+      };
+    };
+    try {
+      outputs = this.model.execute(batch.inputs, probes);
+      parameters = [...this.model.parameters.values()];
+      loss = this.getLoss(outputs, batch);
+      if (loss.shape.length !== 0) throw new Error('training.scalar_loss');
+      const value = (await loss.read())[0];
+      if (!Number.isFinite(value)) throw new Error('training.nonfinite');
+      const nodes = [...probes.entries()];
+      const ancestors = new Set<Tensor>();
+      const visit = (tensor: Tensor): void => {
+        if (ancestors.has(tensor)) return;
+        ancestors.add(tensor);
+        tensor.tape?.inputs.forEach(visit);
+      };
+      visit(loss);
+      // Deduplicate aliased output/input probes before requesting reverse-mode gradients.
+      const targets = [...new Set([...parameters, ...nodes.map(([, t]) => t)])];
+      gradients = await T.backward(loss, targets);
+      const byTensor = new Map(targets.map((t, i) => [t, gradients[i]]));
+      const trace: TrainingStepTrace = {
+        step: this.optimizer.step + 1,
+        loss: value,
+        forward: {},
+        gradient: {},
+        parameters: {},
+      };
+      for (const [id, tensor] of nodes) {
+        trace.forward[id] = await snapshot(tensor);
+        if (ancestors.has(tensor)) trace.gradient[id] = await snapshot(byTensor.get(tensor)!);
+      }
+      const parameterProbes = [...this.model.parameters].flatMap(([key, tensor]) => {
+        const id = decodeURIComponent(key);
+        return probes.get(id) === tensor ? [{ key, id, tensor }] : [];
+      });
+      for (const { id, tensor } of parameterProbes)
+        trace.parameters[id] = { before: Array.from(await tensor.read()), after: [] };
+      await this.optimizer.update(
+        this.model.parameters,
+        parameters.map((p) => byTensor.get(p)!),
+      );
+      for (const { key, id } of parameterProbes)
+        trace.parameters[id].after = Array.from(await this.model.parameters.get(key)!.read());
+      for (const parameter of Object.values(trace.parameters))
+        if (!parameter.after.every(Number.isFinite)) throw new Error('training.nonfinite');
+      return trace;
+    } finally {
+      gradients.forEach((g) => g.dispose());
+      try {
+        if (outputs) this.cleanup(outputs, loss, batch, parameters);
+      } finally {
+        if (typeof this.batch === 'function') releaseBatch(batch);
+      }
+    }
+  }
+  /** Alias for worker callers. */
+  stepTrace(): Promise<TrainingStepTrace> {
+    return this.trainStepTrace();
   }
   /** Resumes this session's parameter and optimizer state, yielding to the UI regularly. */
   async run(
@@ -278,6 +377,7 @@ export class TrainingSession {
       }
       const report: TrainingReport = { step: this.optimizer.step, loss: value };
       if (this.sessionOptions.accuracy ?? !this.sessionOptions.lossOutput) {
+        if (!batch.targets) throw new Error('training.missing_targets');
         const prediction = outputs[this.output];
         const actual = await prediction.read(),
           expected = await batch.targets.read();

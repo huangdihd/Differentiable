@@ -3,6 +3,7 @@ import { graphMetrics } from '../engine/levels';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
+import { chapter3Levels, chapter3ForwardLevels } from './chapter3';
 import { xorLevel, xorSolution } from './examples';
 import { referenceRegistry } from './level-helpers';
 
@@ -20,6 +21,7 @@ export const gameLevels: Level[] = [
   ...chapter0Levels,
   ...chapter1Levels,
   ...chapter2Levels,
+  ...chapter3Levels,
   {
     ...xorLevel,
     available: [
@@ -40,7 +42,12 @@ export const gameLevels: Level[] = [
     referenceGraph: xorSolution,
     par: graphMetrics(
       xorSolution,
-      referenceRegistry([...chapter0Levels, ...chapter1Levels, ...chapter2Levels]),
+      referenceRegistry([
+        ...chapter0Levels,
+        ...chapter1Levels,
+        ...chapter2Levels,
+        ...chapter3ForwardLevels,
+      ]),
     ).expandedPrimitives,
   },
 ];
@@ -48,7 +55,7 @@ export const gameLevels: Level[] = [
 export const catalog: CatalogEntry[] = gameLevels.map((level) => ({
   level,
   chapter: level.id === 'xor' ? 3 : Number(level.id.split('-')[0]),
-  code: level.id === 'xor' ? '3-4' : level.id,
+  code: level.id === 'xor' ? '3-5' : level.id,
 }));
 
 export function entryFor(level: Level): CatalogEntry {

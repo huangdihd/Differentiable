@@ -141,11 +141,17 @@ export class WorkerClient {
   backward(levelId: string, graph: GraphJSON, inputs?: Record<string, number[]>) {
     return this.send<'backward'>({ type: 'backward', levelId, graph, inputs });
   }
-  evaluate(levelId: string, graph: GraphJSON) {
-    return this.send<'evaluate'>({ type: 'evaluate', levelId, graph });
+  evaluate(levelId: string, graph: GraphJSON, learningRate?: number) {
+    return this.send<'evaluate'>({ type: 'evaluate', levelId, graph, learningRate });
   }
-  start(levelId: string, graph: GraphJSON) {
-    return this.send<'start'>({ type: 'start', levelId, graph });
+  start(levelId: string, graph: GraphJSON, learningRate?: number) {
+    return this.send<'start'>({ type: 'start', levelId, graph, learningRate });
+  }
+  trainStep(levelId: string, graph: GraphJSON, learningRate?: number) {
+    return this.send<'trainStep'>({ type: 'trainStep', levelId, graph, learningRate });
+  }
+  trainReset() {
+    return this.send<'trainReset'>({ type: 'trainReset' });
   }
   pause() {
     return this.send<'pause'>({ type: 'pause' });

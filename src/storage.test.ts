@@ -41,6 +41,37 @@ const graph: GraphJSON = {
 };
 afterEach(() => vi.useRealTimers());
 describe('storage', () => {
+  it('validates and roundtrips optional per-level training settings', () => {
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      trainingSettings: { '3-4': { learningRate: 0.2 }, xor: { learningRate: 0.01 } },
+    };
+    expect(isProgress(createInitialProgress())).toBe(true);
+    expect(saveProgress(progress, source)).toBe(true);
+    expect(loadProgress(source)).toEqual(progress);
+    for (const learningRate of [0, -1, NaN, Infinity, '0.1', null]) {
+      expect(isProgress({ ...progress, trainingSettings: { '3-4': { learningRate } } })).toBe(
+        false,
+      );
+    }
+    for (const trainingSettings of [null, [], { '': { learningRate: 0.1 } }, { '3-4': {} }]) {
+      expect(isProgress({ ...progress, trainingSettings })).toBe(false);
+    }
+  });
+  it('unlocks chapter three for old graduates without removing the XOR unlock', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['2-8', 'xor'],
+      passed: ['2-8'],
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const restored = await loadProgressWithMigration(gameLevels, source);
+    expect(restored.unlocked).toContain('3-1');
+    expect(restored.unlocked).toContain('xor');
+  });
   it('gates expressions for new players, graduates and grandfathered players', () => {
     const fresh = createInitialProgress();
     expect(isExpressionUnlocked(fresh, chapter1Levels)).toBe(false);
@@ -107,6 +138,7 @@ describe('storage', () => {
       ...createInitialProgress(),
       unlocked: oldIds,
       passed: oldIds,
+      trainingSettings: { '2-6': { learningRate: 0.2 } },
       unlockedComponents: ['2-2', 'sigmoid'],
       savedGraphs: Object.fromEntries(oldIds.map((id, i) => [id, graphs[i]])),
       passedSolutions: Object.fromEntries(oldIds.map((id, i) => [id, graphs[i]])),
@@ -124,6 +156,7 @@ describe('storage', () => {
       ...progress,
       unlocked: [...newIds, '2-6'],
       passed: newIds,
+      trainingSettings: { '2-8': { learningRate: 0.2 } },
       unlockedComponents: ['2-2', 'sigmoid', 'tanh'],
       savedGraphs: Object.fromEntries(newIds.map((id, i) => [id, graphs[i]])),
       passedSolutions: Object.fromEntries(newIds.map((id, i) => [id, graphs[i]])),

@@ -103,7 +103,7 @@ describe('backward graph', () => {
                 ]),
               ),
             );
-            new Set([...Object.values(batch.inputs), batch.targets]).forEach((x) => x.dispose());
+            new Set([...Object.values(batch.inputs), batch.targets]).forEach((x) => x?.dispose());
           }
           for (const preferNative of [true, false]) {
             const options = {

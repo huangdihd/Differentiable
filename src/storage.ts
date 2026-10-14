@@ -81,6 +81,19 @@ export function isProgress(value: unknown): value is Progress {
       !record(value.bestScores)
     )
       return false;
+    if (
+      value.trainingSettings !== undefined &&
+      (!record(value.trainingSettings) ||
+        !Object.entries(value.trainingSettings).every(
+          ([id, settings]) =>
+            text(id) &&
+            record(settings) &&
+            typeof settings.learningRate === 'number' &&
+            Number.isFinite(settings.learningRate) &&
+            settings.learningRate > 0,
+        ))
+    )
+      return false;
     if (!value.passed.every((id) => (value.unlocked as string[]).includes(id))) return false;
     if (!Object.values(value.savedGraphs).every(isGraphJSON)) return false;
     if (
@@ -148,6 +161,7 @@ function migrateChapter2(progress: Progress): Progress {
     savedGraphs: mapKeys(progress.savedGraphs),
     passedSolutions: mapKeys(progress.passedSolutions),
     bestScores: mapKeys(progress.bestScores),
+    ...(progress.trainingSettings ? { trainingSettings: mapKeys(progress.trainingSettings) } : {}),
   };
 }
 
@@ -207,6 +221,13 @@ export async function loadProgressWithMigration(
   ];
   for (const [id, graph] of Object.entries(legacy.savedGraphs)) {
     if (known.has(mapId(id))) progress.savedGraphs[mapId(id)] = structuredClone(graph);
+  }
+  if (legacy.trainingSettings) {
+    progress.trainingSettings = Object.fromEntries(
+      Object.entries(legacy.trainingSettings)
+        .filter(([id]) => known.has(mapId(id)))
+        .map(([id, settings]) => [mapId(id), { ...settings }]),
+    );
   }
   const passed = new Set(legacy.passed.map(mapId));
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);

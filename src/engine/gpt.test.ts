@@ -227,7 +227,7 @@ it('trains a nested GraphJSON GPT with fresh Adam batches and matches primitive 
         totalLoss += (await session.evaluate(batch)).loss;
         batches++;
       } finally {
-        new Set([...Object.values(batch.inputs), batch.targets]).forEach((t) => t.dispose());
+        new Set([...Object.values(batch.inputs), batch.targets]).forEach((t) => t?.dispose());
       }
     }
     return totalLoss / batches;
@@ -315,7 +315,7 @@ it('trains a nested GraphJSON GPT with fresh Adam batches and matches primitive 
   } finally {
     pure?.dispose();
     native.dispose();
-    new Set([...Object.values(evaluation.inputs), evaluation.targets]).forEach((t) => t.dispose());
+    new Set([...Object.values(evaluation.inputs), evaluation.targets]).forEach((t) => t?.dispose());
   }
   expect(backend.liveBuffers).toBe(0);
 }, 60_000);

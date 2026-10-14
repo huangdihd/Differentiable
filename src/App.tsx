@@ -363,7 +363,7 @@ function Editor({
       })
       .finally(() => {
         Object.values(batch.inputs).forEach((v) => v.dispose());
-        batch.targets.dispose();
+        batch.targets?.dispose();
       });
     return () => {
       alive = false;

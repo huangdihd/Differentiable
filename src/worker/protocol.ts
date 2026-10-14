@@ -1,7 +1,7 @@
 import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
-import type { TrainingReport } from '../engine/training';
+import type { TrainingReport, TrainingSession } from '../engine/training';
 
 export interface WorkerError {
   key: string;
@@ -27,8 +27,10 @@ export type Command =
       graph: GraphJSON;
       inputs?: Record<string, number[]>;
     }
-  | { type: 'evaluate'; levelId: string; graph: GraphJSON }
-  | { type: 'start'; levelId: string; graph: GraphJSON }
+  | { type: 'evaluate'; levelId: string; graph: GraphJSON; learningRate?: number }
+  | { type: 'start'; levelId: string; graph: GraphJSON; learningRate?: number }
+  | { type: 'trainStep'; levelId: string; graph: GraphJSON; learningRate?: number }
+  | { type: 'trainReset' }
   | { type: 'cancel' }
   | { type: 'pause' }
   | { type: 'resume' }
@@ -45,6 +47,8 @@ export interface ReplyData {
   };
   evaluate: LevelResult;
   start: { state: 'running' };
+  trainStep: Awaited<ReturnType<TrainingSession['stepTrace']>>;
+  trainReset: { state: 'reset' };
   cancel: { state: 'stopped' };
   pause: { state: 'paused' };
   resume: { state: 'running' };

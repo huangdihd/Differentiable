@@ -16,7 +16,9 @@ const unsubscribe = client.subscribe((event) => {
   if (event.type === 'progress') console.log(event.report);
   if (event.type === 'result') console.log(event.result);
 });
-await client.start('xor', trainingGraph); // acknowledgement, NOT final result
+const step = await client.trainStep('xor', trainingGraph, learningRate); // one optimizer update
+await client.trainReset(); // discard only the independent step session
+await client.start('xor', trainingGraph, learningRate); // acknowledgement, NOT final result
 await client.pause();
 await client.resume();
 await client.stop();
@@ -25,7 +27,7 @@ client.dispose();
 ```
 
 Use formal `gameLevels` IDs from `levels/catalog` and serializable `GraphJSON`.
-Level callbacks and the player component registry stay inside the worker. Forward/derivative evaluation uses `evaluate`; training uses `start`.
+Level callbacks and the player component registry stay inside the worker. Forward/derivative evaluation uses `evaluate`; interactive continuous training uses `start`. `evaluate(levelId, graph, learningRate?)` also supports bounded training evaluation, returning a final result directly (without streaming progress).
 `compile` returns output shapes, graph metrics, and structured diagnostics.
 `probe` returns shape/values from a fresh seeded execution, not live training
 parameters. It adds a collision-free output to a copied graph and releases the
@@ -62,6 +64,34 @@ old events; it also sends a `cancel` request immediately so the runtime discards
 training even when no compile/evaluate follows. Cancellation is serialized after any
 in-flight step, releases paused sessions too, and emits no final result. `dispose` terminates the worker immediately. Errors reject with
 `WorkerClientError.detail` (`key`, `params`, optional node/port), never player prose.
+
+`trainStep(levelId, graph, learningRate?)` maintains an independent seeded session and
+performs exactly one optimizer update. Its reply contains `step`, the pre-update `loss`,
+pre-update `forward` and `gradient` node maps, and `parameters`. Forward/gradient values
+have `{ shape, values, size }`; `values` is limited to 256 elements and `size` records the
+full tensor length. Parameters are `Record<canvasParamId, { before: number[], after: number[] }>`
+with full arrays, not snapshots; each `after` equals the next step's `before`.
+Consecutive calls retain parameters and optimizer state. Changing the effective learning
+rate updates the existing optimizer options without resetting the step count or parameters.
+Changing the graph or level rebuilds this session; revision changes,
+progress synchronization, cancellation, starting continuous training, and disposal
+release it. `trainReset()` returns `{ state: 'reset' }`, even without a step session;
+the next step starts from the seeded initialization. Step replies never award a pass.
+Both step and reset reject with `worker.training_busy` while a continuous session exists,
+including while paused. Training evaluation also rejects while that session exists.
+
+The optional numeric `learningRate` on `start`, `evaluate` and `trainStep` follows the
+level's declared tuning bounds: finite values are clamped, missing/nonfinite values
+use the declared default, and non-tunable levels ignore the override. The source level
+and caller graph are never modified.
+
+For tunable levels, `start` measures the initial loss before any updates. A nonfinite
+training loss or a step loss greater than ten times the initial loss ends training
+with `levels.train_diverged`. Exhausting the level's step budget (60 for `3-4`)
+without meeting its thresholds yields `levels.train_slow`. Structured errors expose
+`params.loss` for interpolation (Infinity when the engine rejects nonfinite computation
+before returning a report). Slow classification does not apply to manual stop or
+non-tunable levels. `evaluate` uses the engine's corresponding classification rules.
 
 Training preserves parameters and Adam moments across pause/resume. Control
 requests are serialized between optimizer steps; paused sessions allocate no new

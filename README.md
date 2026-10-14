@@ -1,6 +1,6 @@
 # Differentiable
 
-A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–2 and an XOR training preview. `demos/` is untouched reference material, not application source.
+A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–2, four gradient-descent lessons and an XOR training preview. `demos/` is untouched reference material, not application source.
 
 ## Development
 
@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons and eight tensor lessons unlock sequentially, followed by the XOR training preview (3-4). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and four gradient-descent lessons unlock sequentially, followed by the XOR training preview (3-5, stable ID `xor`). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -31,10 +31,25 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `graph.ts`: versioned JSON graphs, named ports, recursive component expansion, concrete shape inference and reusable execution plans. Node `ui` data is opaque to the engine. Component and error identifiers are keys, not translated text.
 - `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for future visualization. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
-- `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named scalar graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
-- `src/levels/`: chapter 0/1/2 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
+- `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named single-element graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
+- `src/levels/`: chapter 0/1/2/3 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
+
+### Gradient-descent lessons and saves
+
+The route after 2-8 is 3-1 → 3-2 → 3-3 → 3-4 → `xor` (displayed as 3-5).
+MSE is the player's saved subgraph, not a native kernel. Lesson 3-4 predicts
+`w*x+b` from zero-initialized scalar parameters and uses the graph's `loss` output
+(shape `[1]`); batches need no separate targets when `lossOutput` is set.
+`TrainLevel.tunable.learningRate` declares min/max/default; evaluation and worker
+training clamp an explicit rate to that range and otherwise use the default.
+
+Save v3 optionally includes `trainingSettings: Record<levelId, { learningRate: number }>`.
+Rates must be finite and positive. Older saves remain valid; loading unions new
+successors with existing unlocks, so completing 2-8 unlocks 3-1 without removing
+an already-unlocked XOR. UI code should persist its chosen rate in this field and
+pass it to worker training requests; no learning-rate UI is added in this step.
 
 ### Symbolic backward graphs
 
@@ -90,6 +105,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage and chapters 0–2 are included; chapters 3 onward remain upcoming except the XOR preview. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–2 and the first four chapter-3 lessons are included. Chapter 3 teaches a scalar update, vector gradients, a player-built MSE component and 60-step linear regression with a tunable learning rate. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Later learning lessons and chapters 4 onward remain upcoming except the XOR preview. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

@@ -130,11 +130,13 @@ export class GraphPlan {
     private readonly steps: Step[],
     private readonly storage: Map<string, StorageSpec>,
     private readonly options: CompileOptions,
+    private readonly probes: Map<string, string> = new Map(),
   ) {
     this.options = { ...options, backend: options.backend ?? T.defaultBackend };
     this.parameters = options.parameters ?? new Map();
   }
-  execute(inputs: TensorPorts): TensorPorts {
+  execute(inputs: TensorPorts, trace?: Map<string, Tensor>): TensorPorts {
+    trace?.clear();
     if (this.disposed) throw new GraphError('disposed_plan');
     const values = new Map<string, Tensor>();
     for (const [name, id] of Object.entries(this.inputs)) {
@@ -213,6 +215,7 @@ export class GraphPlan {
       const result = Object.fromEntries(
         Object.entries(this.outputs).map(([name, id]) => [name, values.get(id)!]),
       );
+      for (const [node, id] of this.probes) trace?.set(node, values.get(id)!);
       this.executions.set(result, allocated);
       return result;
     } catch (error) {
@@ -252,6 +255,7 @@ export class GraphPlan {
 export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): GraphPlan {
   const registry = options.registry ?? createDefaultRegistry();
   const steps: Step[] = [];
+  const probes = new Map<string, string>();
   const storage = new Map<string, StorageSpec>();
   const shapes = new Map<string, Shape>();
   const externalInputs: Record<string, string> = Object.create(null);
@@ -446,6 +450,10 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               component: def.name,
             });
         }
+        if (!prefix) {
+          const first = node.component === 'output' ? args.x : out[ports(node).outputs[0]];
+          if (first !== undefined) probes.set(node.id, first);
+        }
         visiting.delete(node.id);
         resolved.set(node.id, out);
         return out;
@@ -468,6 +476,7 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
     steps,
     storage,
     options,
+    probes,
   );
 }
 

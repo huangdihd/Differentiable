@@ -60,6 +60,7 @@ export interface TrainLevel extends LevelMetadata {
   seed: number;
   steps: number;
   optimizer: OptimizerOptions;
+  tunable?: { learningRate: { min: number; max: number; default: number } };
   dataset: (random: Random) => TrainingBatch;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
@@ -114,12 +115,20 @@ export function graphMetrics(
   visit(graph, []);
   return { topNodes: graph.nodes.length, expandedPrimitives, parameterCount };
 }
+/** Only declared tunables can override the level's optimizer configuration. */
+export function trainingLearningRate(level: TrainLevel, requested?: number): number {
+  const range = level.tunable?.learningRate;
+  if (!range) return level.optimizer.learningRate;
+  const value = requested !== undefined && Number.isFinite(requested) ? requested : range.default;
+  return Math.min(range.max, Math.max(range.min, value));
+}
 /** Tests compile and execute the actual user graph, never a solution-specific evaluator. */
 export async function evaluateLevel(
   level: Level,
   graph: GraphJSON,
   options: {
     registry?: ComponentRegistry;
+    learningRate?: number;
     onReport?: (report: TrainingReport) => void;
     signal?: AbortSignal;
   } = {},
@@ -152,7 +161,10 @@ export async function evaluateLevel(
           plan,
           batch,
           crossEntropy,
-          level.optimizer,
+          {
+            ...level.optimizer,
+            learningRate: trainingLearningRate(level, options.learningRate),
+          },
           level.interface.output,
           {
             lossOutput: level.lossOutput,
@@ -160,13 +172,33 @@ export async function evaluateLevel(
             accuracy: level.threshold.accuracy !== undefined,
           },
         );
-        result.training = await session.run(level.steps, options);
+        const initial = await session.evaluate();
+        const checkDiverged = (report: TrainingReport) => {
+          if (level.tunable && (!Number.isFinite(report.loss) || report.loss > initial.loss * 10))
+            throw new Error('levels.train_diverged');
+        };
+        result.training = await session.run(level.steps, {
+          ...options,
+          reportEvery: 1,
+          onReport: (report) => {
+            checkDiverged(report);
+            options.onReport?.(report);
+          },
+        });
+        checkDiverged(result.training);
         result.passed =
           result.training.loss < level.threshold.loss &&
           (level.threshold.accuracy === undefined ||
             result.training.accuracy! >= level.threshold.accuracy);
+        if (!result.passed && level.tunable) {
+          result.errorKey = 'levels.train_slow';
+          result.error = { key: result.errorKey, params: { loss: result.training.loss } };
+        }
         result.tests.push({
           id: 'evaluation',
+          ...(result.errorKey
+            ? { errorKey: result.errorKey, errorParams: result.error?.params }
+            : {}),
           passed: result.passed,
           actual: [
             result.training.loss,
@@ -186,7 +218,7 @@ export async function evaluateLevel(
             ? [...Object.values(evaluationBatch.inputs), evaluationBatch.targets]
             : []),
         ]);
-        tensors.forEach((x) => x.dispose());
+        tensors.forEach((x) => x?.dispose());
       }
     } else {
       const groups = [
@@ -289,7 +321,13 @@ export async function evaluateLevel(
     if (error instanceof GraphError) {
       result.errorKey = error.key;
       result.error = { key: error.key, node: error.node, port: error.port, params: error.params };
-    } else result.errorKey = error instanceof Error ? error.message : 'levels.execution_error';
+    } else {
+      result.errorKey = error instanceof Error ? error.message : 'levels.execution_error';
+      if (level.kind === 'train' && result.errorKey === 'training.nonfinite')
+        result.errorKey = 'levels.train_diverged';
+      if (result.errorKey === 'levels.train_diverged')
+        result.error = { key: result.errorKey, params: {} };
+    }
   } finally {
     plan?.dispose();
   }
@@ -302,6 +340,7 @@ export interface Progress {
   savedGraphs: Record<string, GraphJSON>;
   passedSolutions: Record<string, GraphJSON>;
   bestScores: Record<string, GraphMetrics>;
+  trainingSettings?: Record<string, { learningRate: number }>;
 }
 export const initialProgress = (
   levels: readonly string[],

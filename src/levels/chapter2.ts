@@ -214,7 +214,7 @@ for (const [index, definition] of definitions.entries()) {
         ],
         forbidden: definition.producesComponent === false ? [] : [definition.name],
         interface: { inputs: definition.shapes[0], output: 'y', outputShape: definition.output },
-        unlock: [index === definitions.length - 1 ? 'xor' : `2-${index + 2}`],
+        unlock: [index === definitions.length - 1 ? '3-1' : `2-${index + 2}`],
         ...(definition.producesComponent === false ? {} : { unlockComponents: [definition.name] }),
         referenceGraph: answer(definition.name),
         ...fixtures(definition.fixtureIndex, definition.shapes[0], definition.name),

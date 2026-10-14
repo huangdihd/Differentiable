@@ -277,7 +277,7 @@ describe('tensor curriculum', () => {
       expect(result.passed, level.id).toBe(true);
       progress = applyResult(progress, level, result, level.referenceGraph!);
     }
-    expect(progress.unlocked).toContain('xor');
+    expect(progress.unlocked).toContain('3-4');
     expect(availableComponents(gameLevels.at(-1)!, progress)).toEqual(
       expect.arrayContaining(['matmul', 'softmax']),
     );

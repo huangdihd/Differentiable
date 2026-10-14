@@ -90,7 +90,7 @@ describe('optimizers and resumable training', () => {
     for (const x of [a, b]) {
       x.session.dispose();
       x.plan.dispose();
-      x.batch.targets.dispose();
+      x.batch.targets?.dispose();
       Object.values(x.batch.inputs).forEach((t) => t.dispose());
     }
   });
@@ -122,7 +122,10 @@ describe('loss-only evaluation and component progression', () => {
     };
     const a = await evaluateLevel(level, graph),
       b = await evaluateLevel(level, graph);
+    // Legacy, non-tunable levels report unmet thresholds without a training error.
     expect(a.errorKey).toBeUndefined();
+    expect(a.error).toBeUndefined();
+    expect(a.tests[0].errorKey).toBeUndefined();
     expect(a.passed).toBe(false);
     expect(a.training?.loss).toBe(3);
     expect(a.training?.accuracy).toBeUndefined();

@@ -40,11 +40,11 @@ it('owns fresh async batches, preserves fixed evaluation tensors and resumes fac
     expect(steps).toEqual([0, 1, 2]);
     expect(final.step).toBe(3);
     expect(final.loss).toBeLessThan(initial.loss);
-    expect(await evaluation.targets.read()).toEqual(new Float32Array([2]));
+    expect(await evaluation.targets!.read()).toEqual(new Float32Array([2]));
     session.dispose();
     expect(f.backend.liveBuffers).toBe(2);
   } finally {
-    evaluation.targets.dispose();
+    evaluation.targets?.dispose();
     f.parameters.forEach((t) => t.dispose());
   }
   expect(f.backend.liveBuffers).toBe(0);
@@ -130,10 +130,10 @@ it('borrows fixed training and explicit evaluation batches', async () => {
   try {
     await session.run(2);
     await session.evaluate(batch);
-    expect(await batch.targets.read()).toEqual(new Float32Array([2]));
+    expect(await batch.targets!.read()).toEqual(new Float32Array([2]));
     expect(f.backend.liveBuffers).toBe(2);
   } finally {
-    batch.targets.dispose();
+    batch.targets?.dispose();
     f.parameters.forEach((t) => t.dispose());
   }
   expect(f.backend.liveBuffers).toBe(0);

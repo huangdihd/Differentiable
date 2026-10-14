@@ -30,6 +30,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   matmul: '@',
   softmax: 'soft',
   layernorm: 'LN',
+  mse: 'MSE',
 };
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */
