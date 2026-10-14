@@ -1,3 +1,4 @@
+import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
 import type { TrainingReport } from '../engine/training';
@@ -20,6 +21,12 @@ export type Command =
       endpoint: GraphEndpoint;
       inputs: Record<string, number[]>;
     }
+  | {
+      type: 'backward';
+      levelId: string;
+      graph: GraphJSON;
+      inputs?: Record<string, number[]>;
+    }
   | { type: 'evaluate'; levelId: string; graph: GraphJSON }
   | { type: 'start'; levelId: string; graph: GraphJSON }
   | { type: 'cancel' }
@@ -32,6 +39,10 @@ export interface ReplyData {
   syncProgress: { state: 'synced' };
   compile: { outputShapes: ShapePorts; metrics: GraphMetrics; diagnostics: WorkerError[] };
   probe: { shape: readonly number[]; values: number[] };
+  backward: {
+    backward: ReturnType<typeof buildBackwardGraph>;
+    trace?: Awaited<ReturnType<typeof traceBackward>>;
+  };
   evaluate: LevelResult;
   start: { state: 'running' };
   cancel: { state: 'stopped' };

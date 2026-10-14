@@ -10,6 +10,7 @@ await client.syncProgress(progress, 1); // Progress includes passedSolutions
 client.setRevision(2); // monotonically increasing; bump on graph or level edits
 const compiled = await client.compile(level.id, graph);
 const probe = await client.probe(level.id, graph, { node: 'neg', port: 'out' }, inputs);
+const { backward, trace } = await client.backward(level.id, graph, inputs);
 const result = await client.evaluate(level.id, graph);
 const unsubscribe = client.subscribe((event) => {
   if (event.type === 'progress') console.log(event.report);
@@ -29,6 +30,16 @@ Level callbacks and the player component registry stay inside the worker. Forwar
 `probe` returns shape/values from a fresh seeded execution, not live training
 parameters. It adds a collision-free output to a copied graph and releases the
 execution, inputs, and plan after readback.
+
+`backward(levelId, graph, inputs?)` returns `{ backward, trace? }`. `backward`
+contains the generated primitive graph and node `roles`, all serializable.
+The differentiation targets are the derivative level's `derivativeInput` when
+declared, otherwise all level inputs. The selected output is
+`level.interface.output`. Supplying inputs requests a numeric trace; omitting them
+only builds the read-only graph. Registry/availability come from current progress;
+source graphs and player progress are not modified. Traces use CPU with fixed-seed
+parameter initialization, not parameters copied from live training. Errors and revision
+filtering follow the usual RPC rules.
 
 `syncProgress(progress: Progress, revision?: number)` returns
 `Promise<{ state: 'synced' }>`. Call it after `init`, before loading/evaluating a

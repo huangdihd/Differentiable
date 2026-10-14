@@ -137,6 +137,10 @@ export class WorkerClient {
   ) {
     return this.send<'probe'>({ type: 'probe', levelId, graph, endpoint, inputs });
   }
+  /** Read-only backward graph; supplying inputs also requests a numeric trace. */
+  backward(levelId: string, graph: GraphJSON, inputs?: Record<string, number[]>) {
+    return this.send<'backward'>({ type: 'backward', levelId, graph, inputs });
+  }
   evaluate(levelId: string, graph: GraphJSON) {
     return this.send<'evaluate'>({ type: 'evaluate', levelId, graph });
   }

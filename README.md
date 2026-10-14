@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, seven derivative lessons and six tensor lessons unlock sequentially, followed by the XOR training preview (3-4). Passing a lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons and six tensor lessons unlock sequentially, followed by the XOR training preview (3-4). Passing a lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -29,11 +29,30 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `cpu.ts`: reference kernels and VJPs. Custom kernels can register both forward and VJP handlers.
 - `tensor.ts`: backend-independent first-order reverse autodiff. `backward(y, inputs)` computes gradients of `sum(y)`; `ge` and gather indices have zero gradients. Tied `max` chooses its first operand; tied `reduce_max` chooses the first element in row-major reduction order.
 - `graph.ts`: versioned JSON graphs, named ports, recursive component expansion, concrete shape inference and reusable execution plans. Node `ui` data is opaque to the engine. Component and error identifiers are keys, not translated text.
+- `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for future visualization. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
 - `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named scalar graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
 - `src/levels/`: chapter 0/1/2 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v2 separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
+
+### Symbolic backward graphs
+
+`buildBackwardGraph(graph, { registry, availableComponents?, inputShapes, output, wrt })`
+returns `{ graph, roles }` without executing tensors. `output` names a forward output;
+`wrt` names inputs. The resulting ordinary GraphJSON keeps forward outputs and adds
+`grad_<name>` outputs, seeded with ones for non-scalar outputs. Roles identify forward,
+backward, seed and explicit fan-out accumulation nodes; backward rule labels are i18n keys.
+Composite internals use readable `instance/internal` paths (numeric suffixes resolve ID
+collisions), with instance paths recorded in `origin`.
+
+`await traceBackward(graph, { ...options, inputs })` returns `forward` and `gradient`
+maps keyed by forward node ID, each value `{ shape, values }`. It probes the generated
+graph in a fresh CPU execution with deterministic parameter initialization, then releases
+all tensors. It does not observe live training parameters. Comparisons stop gradients;
+max/reduce_max ties match the CPU rules. Unsupported primitives such as gather/arange
+report `backward_unsupported`. This is a data API only; gradient views and animations
+are not implemented here.
 
 ### Tensor chapter checks
 

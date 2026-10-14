@@ -1,3 +1,4 @@
+import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import { createBackend } from '../engine/backend-selection';
 import { CpuBackend } from '../engine/cpu';
 import { BackendError } from '../engine/webgpu';
@@ -262,6 +263,24 @@ export class WorkerRuntime {
         if (result.errorKey && !/^[a-z0-9_.]+$/.test(result.errorKey))
           result.errorKey = 'worker.execution_error';
         this.reply(request, result);
+        return;
+      }
+      if (request.type === 'backward') {
+        const options = {
+          registry: this.registry,
+          availableComponents: level.available,
+          inputShapes: level.interface.inputs,
+          output: level.interface.output,
+          wrt:
+            level.kind === 'derivative' && level.derivativeInput
+              ? [level.derivativeInput]
+              : Object.keys(level.interface.inputs),
+        };
+        const backward = buildBackwardGraph(request.graph, options);
+        const trace = request.inputs
+          ? await traceBackward(request.graph, { ...options, inputs: request.inputs })
+          : undefined;
+        this.reply(request, { backward, ...(trace === undefined ? {} : { trace }) });
         return;
       }
       let graph = request.graph;

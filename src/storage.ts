@@ -101,6 +101,18 @@ export function isProgress(value: unknown): value is Progress {
     return false;
   }
 }
+/** Preserve the expression tool earned before chapter 1 gained extra lessons. */
+export function isExpressionUnlocked(progress: Progress, levels: readonly Level[]): boolean {
+  return (
+    progress.unlocked.includes('2-1') ||
+    levels.some(
+      (level) =>
+        progress.passed.includes(level.id) &&
+        level.unlockFeatures?.includes('levels.features.expression'),
+    )
+  );
+}
+
 export function createInitialProgress(): Progress {
   return initialProgress(['0-1']);
 }

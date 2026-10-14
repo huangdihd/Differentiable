@@ -1,3 +1,5 @@
+import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
+import type { GraphJSON } from '../engine/graph';
 import { gameLevels } from '../levels/catalog';
 import { initialProgress } from '../engine/levels';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -110,6 +112,87 @@ describe('worker runtime protocol', () => {
         inputs: { x: [-4, -1, 0, 1, 4] },
       }),
     ).toMatchObject({ data: { shape: [5], values: [4, 1, -0, -1, -4] } });
+  });
+  it('returns serializable backward graphs and optional traces without mutating the graph', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    const before = structuredClone(derivativeSolution);
+    const options = {
+      registry: createExampleRegistry(),
+      availableComponents: derivativeLevel.available,
+      inputShapes: derivativeLevel.interface.inputs,
+      output: derivativeLevel.interface.output,
+      wrt: ['x'],
+    };
+    const backward = buildBackwardGraph(derivativeSolution, options);
+    expect(
+      await h.send({ type: 'backward', levelId: 'derivative', graph: derivativeSolution }),
+    ).toMatchObject({ type: 'reply', command: 'backward', data: { backward } });
+    const inputs = { x: [-2, -1, 0, 1, 2] };
+    const trace = await traceBackward(derivativeSolution, { ...options, inputs });
+    for (let i = 0; i < 3; i++)
+      expect(
+        await h.send({
+          type: 'backward',
+          levelId: 'derivative',
+          graph: derivativeSolution,
+          inputs,
+        }),
+      ).toMatchObject({ type: 'reply', data: { backward, trace } });
+    expect(derivativeSolution).toEqual(before);
+  });
+  it('selects derivativeInput only for derivative levels and all inputs otherwise', async () => {
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'a', component: 'input', attrs: { name: 'a' } },
+        { id: 'b', component: 'input', attrs: { name: 'b' } },
+        { id: 'sum', component: 'add' },
+        { id: 'out', component: 'output', attrs: { name: 'chosen' } },
+      ],
+      edges: [
+        { from: { node: 'a', port: 'out' }, to: { node: 'sum', port: 'a' } },
+        { from: { node: 'b', port: 'out' }, to: { node: 'sum', port: 'b' } },
+        { from: { node: 'sum', port: 'out' }, to: { node: 'out', port: 'x' } },
+      ],
+    };
+    for (const kind of ['forward', 'derivative'] as const) {
+      const level = {
+        ...derivativeLevel,
+        kind,
+        derivativeInput: 'b',
+        interface: { inputs: { a: [], b: [] }, output: 'chosen', outputShape: [] },
+      };
+      const h = harness([level]);
+      await h.send({ type: 'init', backend: 'cpu' });
+      const expected = buildBackwardGraph(graph, {
+        registry: createExampleRegistry(),
+        availableComponents: level.available,
+        inputShapes: level.interface.inputs,
+        output: 'chosen',
+        wrt: kind === 'derivative' ? ['b'] : ['a', 'b'],
+      });
+      expect(await h.send({ type: 'backward', levelId: level.id, graph })).toMatchObject({
+        type: 'reply',
+        data: { backward: expected },
+      });
+    }
+  });
+  it('rejects invalid backward graphs, missing trace inputs and stale revisions', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    for (const command of [
+      { type: 'backward', levelId: 'missing', graph: derivativeSolution },
+      { type: 'backward', levelId: 'derivative', graph: { ...derivativeSolution, edges: [] } },
+      { type: 'backward', levelId: 'derivative', graph: derivativeSolution, inputs: {} },
+    ] satisfies Command[])
+      expect(await h.send(command, 1)).toMatchObject({
+        type: 'error',
+        error: { key: expect.any(String), params: expect.any(Object) },
+      });
+    expect(
+      await h.send({ type: 'backward', levelId: 'derivative', graph: derivativeSolution }, 0),
+    ).toMatchObject({ type: 'error', error: { key: 'worker.stale_revision' } });
   });
   it('evaluates actual forward and derivative graphs and rejects old revisions', async () => {
     const h = harness();
@@ -322,7 +405,14 @@ it('typed client matches IDs, rejects stale pending calls and filters training e
     terminate: () => {},
   };
   const client = new WorkerClient(transport);
-  const pending = client.compile('sigmoid', sigmoidSolution);
+  const pending = client.backward('sigmoid', sigmoidSolution, { x: [-4, -1, 0, 1, 4] });
+  expect(requests.at(-1)).toMatchObject({
+    type: 'backward',
+    levelId: 'sigmoid',
+    graph: sigmoidSolution,
+    inputs: { x: [-4, -1, 0, 1, 4] },
+    revision: 0,
+  });
   const rejected = expect(pending).rejects.toMatchObject({
     detail: { key: 'worker.stale_revision' },
   });

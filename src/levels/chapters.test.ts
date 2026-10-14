@@ -14,10 +14,10 @@ const registry = referenceRegistry([...chapter0Levels, ...chapter1Levels, ...cha
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 
 describe('formal chapter catalog', () => {
-  it('contains twenty-one sequential lessons and the preserved XOR challenge', () => {
+  it('contains twenty-four sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
-      ...Array.from({ length: 7 }, (_, i) => `1-${i + 1}`),
+      ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
       ...Array.from({ length: 6 }, (_, i) => `2-${i + 1}`),
       'xor',
     ]);
@@ -55,7 +55,12 @@ describe('formal chapter catalog', () => {
       ['0-8', ['sqrt']],
     ]);
     for (const level of formalLevels) {
-      const names = ['0-2', '0-4'].includes(level.id) ? ['a', 'b'] : ['x'];
+      const names =
+        level.id === '1-10'
+          ? ['w', 'x', 'b']
+          : ['0-2', '0-4', '1-8', '1-9'].includes(level.id)
+            ? ['a', 'b']
+            : ['x'];
       expect(level.interface).toEqual({
         inputs: Object.fromEntries(names.map((name) => [name, []])),
         output: 'y',
@@ -91,7 +96,7 @@ describe('formal chapter catalog', () => {
 
   // Independent scalar mathematics anchors the curriculum, not just agreement
   // between two graphs that could encode the same wrong lesson.
-  const functions: Record<string, (x: number, b: number) => number> = {
+  const functions: Record<string, (x: number, b: number, bias: number) => number> = {
     '0-1': (x) => -x,
     '0-2': (a, b) => a - b,
     '0-3': (x) => 1 / x,
@@ -107,8 +112,11 @@ describe('formal chapter catalog', () => {
     '1-5': (x) => 1 / (1 + Math.exp(-x)),
     '1-6': Math.tanh,
     '1-7': (x) => Math.log(1 + x * x),
+    '1-8': (a, b) => a * b + Math.exp(a),
+    '1-9': (a, b) => a * Math.exp(a * b),
+    '1-10': (w, x, b) => 1 / (1 + Math.exp(-(w * x + b))),
   };
-  const derivatives: Record<string, (x: number) => number> = {
+  const derivatives: Record<string, (x: number, b: number, bias: number) => number> = {
     '1-1': (x) => 2 * x,
     '1-2': (x) => Math.exp(x) * (1 + x),
     '1-3': (x) => 3 * Math.exp(3 * x),
@@ -119,6 +127,12 @@ describe('formal chapter catalog', () => {
     },
     '1-6': (x) => 1 - Math.tanh(x) ** 2,
     '1-7': (x) => (2 * x) / (1 + x * x),
+    '1-8': (a, b) => b + Math.exp(a),
+    '1-9': (a, b) => a * a * Math.exp(a * b),
+    '1-10': (w, x, b) => {
+      const s = 1 / (1 + Math.exp(-(w * x + b)));
+      return s * (1 - s) * x;
+    },
   };
   for (const level of formalLevels) {
     it(`${level.id}: reference is the specified f, with the specified derivative`, async () => {
@@ -131,14 +145,16 @@ describe('formal chapter catalog', () => {
         let gradient: T.Tensor | undefined;
         try {
           expect(output.shape).toEqual([]);
-          const x = (data.x ?? data.a)[0];
+          const x = (data.w ?? data.x ?? data.a)[0];
+          const second = (data.w ? data.x : data.b)?.[0] ?? 0;
+          const bias = data.b?.[0] ?? 0;
           const [actual] = await output.read();
-          const expected = functions[level.id](x, data.b?.[0] ?? 0);
+          const expected = functions[level.id](x, second, bias);
           expect(Math.abs(actual - expected)).toBeLessThan(1e-5 * Math.max(1, Math.abs(expected)));
           if (level.kind === 'derivative') {
-            [gradient] = await T.backward(output, [inputs.x]);
+            [gradient] = await T.backward(output, [inputs[level.derivativeInput ?? 'x']]);
             const [value] = await gradient.read();
-            const slope = derivatives[level.id](x);
+            const slope = derivatives[level.id](x, second, bias);
             expect(Math.abs(value - slope)).toBeLessThan(1e-5 * Math.max(1, Math.abs(slope)));
           }
         } finally {

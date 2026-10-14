@@ -1069,3 +1069,30 @@ input[type='range'] {
 .tensor-grid td.err {
   color: var(--bad);
 }
+
+/* expected answer under the live output */
+.probe-expected {
+  position: relative;
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+.probe-expected .probe-name {
+  color: var(--muted);
+}
+.probe-verdict {
+  position: absolute;
+  top: var(--s2);
+  right: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+.probe-verdict.ok {
+  color: var(--good);
+}
+.probe-verdict.off {
+  color: var(--bad);
+}
+.tensor-grid td.off {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 16%, transparent);
+}

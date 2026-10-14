@@ -27,9 +27,11 @@ import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import { caseInputs, fullValues } from './ui/tensor-values';
 import TensorGrid from './ui/TensorGrid';
+import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import {
   loadProgress,
+  isExpressionUnlocked,
   loadProgressWithMigration,
   loadLanguage,
   saveSave,
@@ -260,7 +262,8 @@ const STEP_MS = 420;
 function compact(locale: Locale, n: number) {
   if (!Number.isFinite(n)) return Number.isNaN(n) ? 'NaN' : n > 0 ? '∞' : '−∞';
   if (n !== 0 && (Math.abs(n) >= 1e5 || Math.abs(n) < 1e-3)) return n.toExponential(2);
-  return formatNumber(locale, n, { maximumSignificantDigits: 4 });
+  // -0 (e.g. 0 · −1.5) is the same number; showing a sign there only invites questions.
+  return formatNumber(locale, n === 0 ? 0 : n, { maximumSignificantDigits: 4 });
 }
 function listText(locale: Locale, values: number[], max = 5) {
   return (
@@ -479,6 +482,21 @@ function Editor({
     }
   }, [inputs, level]);
 
+  // The answer for the same inputs, so the player can compare without running the tests.
+  const [expected, setExpected] = useState<{ shape: number[]; values: number[] }>();
+  useEffect(() => {
+    setExpected(undefined);
+    if (level.kind === 'train' || 'invalid' in parsedInputs) return;
+    let cancelled = false;
+    expectedOutput(level, parsedInputs as Record<string, number[]>).then(
+      (r) => !cancelled && setExpected(r),
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [level, parsedInputs]);
+
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
   useEffect(() => {
     if (!probing || busy || 'invalid' in parsedInputs) {
@@ -692,6 +710,13 @@ function Editor({
     (name) => !playerComponents.includes(name) && !presets.includes(name),
   );
   const outputValue = values[state.graph.nodes.find((n) => n.component === 'output')?.id ?? ''];
+  const outputActual = outputValue?.shape && {
+    shape: outputValue.shape,
+    values: outputValue.title
+      .replace(/^\[[^\]]*\]\s*/, '')
+      .split(', ')
+      .map(Number),
+  };
   const canEdit = !busy && !inside.length;
   // The empty-canvas hint is for the very first look only: any edit (even wiring x straight to y)
   // or any history at all hides it for good.
@@ -701,10 +726,7 @@ function Editor({
     state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
   const threshold = level.kind === 'train' ? level.threshold.loss : undefined;
   // The expression box is a tool you earn at the end of chapter 1; early levels are about wiring.
-  const expressionUnlocked = gameLevels.some(
-    (l) =>
-      l.unlockFeatures?.includes('levels.features.expression') && progress.passed.includes(l.id),
-  );
+  const expressionUnlocked = isExpressionUnlocked(progress, gameLevels);
   const ioShapes = Object.fromEntries(
     state.graph.nodes.flatMap((n) =>
       n.component === 'input'
@@ -1073,10 +1095,10 @@ function Editor({
                 <TensorGrid
                   label={level.interface.output}
                   shape={outputValue.shape}
-                  values={outputValue.title
-                    .replace(/^\[[^\]]*\]\s*/, '')
-                    .split(', ')
-                    .map(Number)}
+                  values={outputActual!.values}
+                  off={
+                    expected && outputActual ? offIndices(level, outputActual, expected) : undefined
+                  }
                   format={(n) => compact(locale, n)}
                 />
               ) : (
@@ -1085,6 +1107,34 @@ function Editor({
                 </span>
               )}
             </div>
+            {expected && (
+              <div
+                className={`probe-out probe-expected${expected.shape.length ? ' is-tensor' : ''}`}
+              >
+                <span className="probe-name">
+                  {t('ui.expected')} {level.interface.output} =
+                </span>
+                {expected.shape.length ? (
+                  <TensorGrid
+                    label={t('ui.expected')}
+                    shape={expected.shape}
+                    values={expected.values}
+                    format={(n) => compact(locale, n)}
+                  />
+                ) : (
+                  <span className="mono" title={fullValues(expected.values)}>
+                    {compact(locale, expected.values[0])}
+                  </span>
+                )}
+                {outputActual && (
+                  <span
+                    className={`probe-verdict ${matchesExpected(level, outputActual, expected) ? 'ok' : 'off'}`}
+                  >
+                    {matchesExpected(level, outputActual, expected) ? '✓' : '≠'}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
           </section>
         )}

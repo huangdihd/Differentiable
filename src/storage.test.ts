@@ -4,6 +4,7 @@ import {
   createThrottledSave,
   isGraphJSON,
   isProgress,
+  isExpressionUnlocked,
   LANGUAGE_KEY,
   loadLanguage,
   loadProgress,
@@ -40,6 +41,22 @@ const graph: GraphJSON = {
 };
 afterEach(() => vi.useRealTimers());
 describe('storage', () => {
+  it('gates expressions for new players, graduates and grandfathered players', () => {
+    const fresh = createInitialProgress();
+    expect(isExpressionUnlocked(fresh, chapter1Levels)).toBe(false);
+    expect(
+      isExpressionUnlocked({ ...fresh, passed: ['1-7'], unlocked: ['1-7', '1-8'] }, chapter1Levels),
+    ).toBe(false);
+    expect(isExpressionUnlocked({ ...fresh, passed: ['1-10'] }, chapter1Levels)).toBe(true);
+    expect(
+      isExpressionUnlocked({ ...fresh, passed: ['1-7'], unlocked: ['2-1'] }, chapter1Levels),
+    ).toBe(true);
+    expect(
+      isExpressionUnlocked({ ...fresh, passed: ['custom'] }, [
+        { ...chapter1Levels[0], id: 'custom', unlockFeatures: ['levels.features.expression'] },
+      ]),
+    ).toBe(true);
+  });
   it('roundtrips versioned progress with a fresh chapter-zero initial state', () => {
     const { source } = memory();
     const progress = loadProgress(source);
@@ -52,17 +69,17 @@ describe('storage', () => {
   });
   it('refreshes catalog unlocks in old v2 saves without changing passed circuits or edits', async () => {
     const { source } = memory();
-    const lesson = { ...chapter1Levels.at(-1)!, unlock: ['2-1'] };
+    const lesson = chapter1Levels.find((level) => level.id === '1-7')!;
     const progress = {
       ...createInitialProgress(),
-      unlocked: ['0-1', '1-7', 'xor'],
+      unlocked: ['0-1', '1-7', '2-1', '2-2', 'xor'],
       passed: ['1-7'],
       passedSolutions: { '1-7': graph },
       savedGraphs: { '1-7': graph },
     };
     saveProgress(progress, source);
     const restored = await loadProgressWithMigration([lesson], source);
-    expect(restored.unlocked).toContain('2-1');
+    expect(restored.unlocked).toEqual([...progress.unlocked, '1-8']);
     expect(restored.unlocked).toContain('xor');
     expect(restored.passed).toEqual(progress.passed);
     expect(restored.passedSolutions).toEqual(progress.passedSolutions);
