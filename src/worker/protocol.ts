@@ -1,0 +1,50 @@
+import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
+import type { GraphMetrics, LevelResult } from '../engine/levels';
+import type { TrainingReport } from '../engine/training';
+
+export interface WorkerError {
+  key: string;
+  params: Record<string, unknown>;
+  node?: string;
+  port?: string;
+}
+export type BackendPreference = 'auto' | 'cpu' | 'webgpu';
+export type Command =
+  | { type: 'init'; backend?: BackendPreference }
+  | { type: 'compile'; levelId: string; graph: GraphJSON }
+  | {
+      type: 'probe';
+      levelId: string;
+      graph: GraphJSON;
+      endpoint: GraphEndpoint;
+      inputs: Record<string, number[]>;
+    }
+  | { type: 'evaluate'; levelId: string; graph: GraphJSON }
+  | { type: 'start'; levelId: string; graph: GraphJSON }
+  | { type: 'cancel' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'stop' };
+export type WorkerRequest = Command & { requestId: number; revision: number };
+export interface ReplyData {
+  init: { backend: 'cpu' | 'webgpu'; fallback?: WorkerError };
+  compile: { outputShapes: ShapePorts; metrics: GraphMetrics; diagnostics: WorkerError[] };
+  probe: { shape: readonly number[]; values: number[] };
+  evaluate: LevelResult;
+  start: { state: 'running' };
+  cancel: { state: 'stopped' };
+  pause: { state: 'paused' };
+  resume: { state: 'running' };
+  stop: { state: 'stopped' };
+}
+export type WorkerResponse =
+  | {
+      type: 'reply';
+      requestId: number;
+      revision: number;
+      command: Command['type'];
+      data: ReplyData[Command['type']];
+    }
+  | { type: 'error'; requestId: number; revision: number; error: WorkerError }
+  | { type: 'progress'; requestId: number; revision: number; report: TrainingReport }
+  | { type: 'result'; requestId: number; revision: number; result: LevelResult };

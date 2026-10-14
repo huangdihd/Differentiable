@@ -1,6 +1,6 @@
 # Differentiable
 
-A neural-network construction game. This first increment contains a CPU reference engine and tests; the React entry point is intentionally an empty placeholder. `demos/` is untouched reference material, not application source.
+A neural-network construction game. Includes the tensor engines and a functional React editor shell for three example levels. `demos/` is untouched reference material, not application source.
 
 ## Development
 
@@ -18,6 +18,10 @@ npm run format
 ```
 
 Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT feasibility test takes roughly 5 seconds on the development machine and enforces a 60-second budget.
+
+## Editor shell
+
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. The existing sigmoid → derivative → XOR examples unlock sequentially. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -61,6 +65,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-No editor, localization runtime, storage persistence or production level content is included. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime and versioned local storage are included; production level content is not. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

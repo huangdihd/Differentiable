@@ -1,0 +1,39 @@
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(300px, 1fr) 300px;
+  height: calc(100vh - var(--topbar-h));
+}
+.graph-world {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.graph-world .node,
+.graph-world .wire-hit {
+  pointer-events: auto;
+}
+.wires {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+.level-list {
+  max-width: 900px;
+  margin: auto;
+  padding: var(--s5);
+}
+.level-list .btn {
+  width: 100%;
+  justify-content: space-between;
+  margin-bottom: var(--s3);
+}
+.property-fields {
+  display: grid;
+  gap: var(--s2);
+}
+.loss-chart {
+  width: 100%;
+  height: 140px;
+}

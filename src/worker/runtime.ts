@@ -1,0 +1,357 @@
+import { createBackend } from '../engine/backend-selection';
+import { CpuBackend } from '../engine/cpu';
+import { BackendError } from '../engine/webgpu';
+import { compileGraph, GraphError, type GraphPlan, type TensorPorts } from '../engine/graph';
+import {
+  evaluateLevel,
+  graphMetrics,
+  type Level,
+  type LevelResult,
+  type TrainLevel,
+} from '../engine/levels';
+import { Random } from '../engine/random';
+import * as T from '../engine/tensor';
+import {
+  crossEntropy,
+  TrainingSession,
+  type TrainingBatch,
+  type TrainingReport,
+} from '../engine/training';
+import { createExampleRegistry, exampleLevels } from '../levels/examples';
+import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
+
+/** Never send exception prose or stack traces across the player-facing boundary. */
+export function workerError(error: unknown): WorkerError {
+  if (error instanceof GraphError) {
+    const { message: _message, ...params } = error.params;
+    return { key: error.key, node: error.node, port: error.port, params };
+  }
+  if (error instanceof BackendError) return { key: error.key, params: error.params };
+  const key =
+    error instanceof Error && /^(engine|training|levels|worker)\.[a-z0-9_.]+$/.test(error.message)
+      ? error.message
+      : 'worker.execution_error';
+  return { key, params: {} };
+}
+interface Run {
+  request: WorkerRequest;
+  level: TrainLevel;
+  plan: GraphPlan;
+  session: TrainingSession;
+  batches: TrainingBatch[];
+  result: LevelResult;
+  paused: boolean;
+}
+/** Node-testable message handler. One runtime per worker; engine default backend is process-local. */
+export class WorkerRuntime {
+  private registry = createExampleRegistry();
+  private initialized = false;
+  private disposed = false;
+  private revision = -1;
+  private queue: Promise<void> = Promise.resolve();
+  private run?: Run;
+  private timer?: ReturnType<typeof setTimeout>;
+  private timerGeneration = 0;
+  constructor(
+    private emit: (message: WorkerResponse) => void,
+    private levels: readonly Level[] = exampleLevels,
+  ) {}
+  handle(request: WorkerRequest): Promise<void> {
+    const task = this.queue.then(() => this.dispatch(request));
+    this.queue = task.catch(() => {});
+    return task;
+  }
+  private reply(request: WorkerRequest, data: ReplyData[keyof ReplyData]) {
+    this.emit({
+      type: 'reply',
+      requestId: request.requestId,
+      revision: request.revision,
+      command: request.type,
+      data,
+    });
+  }
+  private release() {
+    this.timerGeneration++;
+    clearTimeout(this.timer);
+    const run = this.run;
+    this.run = undefined;
+    if (!run) return;
+    run.session.dispose();
+    run.plan.dispose();
+    new Set(run.batches.flatMap((b) => [...Object.values(b.inputs), b.targets])).forEach((t) =>
+      t.dispose(),
+    );
+  }
+  /** Await pending work before releasing owned tensors. */
+  async dispose() {
+    this.disposed = true;
+    await this.queue;
+    this.release();
+  }
+  private schedule() {
+    const run = this.run;
+    const generation = ++this.timerGeneration;
+    this.timer = setTimeout(() => {
+      this.queue = this.queue
+        .then(() => {
+          if (!this.disposed && this.run === run && generation === this.timerGeneration)
+            return this.tick();
+        })
+        .catch(() => {});
+    }, 0);
+  }
+  private async tick() {
+    const run = this.run;
+    if (!run || run.paused) return;
+    try {
+      const report = await run.session.run(1);
+      this.emit({
+        type: 'progress',
+        requestId: run.request.requestId,
+        revision: run.request.revision,
+        report,
+      });
+      if (report.step >= run.level.steps) {
+        this.finish(run, report, true);
+        this.release();
+      } else this.schedule();
+    } catch (error) {
+      run.result.error = workerError(error);
+      run.result.errorKey = run.result.error.key;
+      this.emit({
+        type: 'result',
+        requestId: run.request.requestId,
+        revision: run.request.revision,
+        result: run.result,
+      });
+      this.release();
+    }
+  }
+  private finish(run: Run, report: TrainingReport, completed: boolean) {
+    const { threshold } = run.level;
+    const passed =
+      completed &&
+      report.loss < threshold.loss &&
+      (threshold.accuracy === undefined || (report.accuracy ?? -Infinity) >= threshold.accuracy);
+    Object.assign(run.result, {
+      training: report,
+      passed,
+      tests: [
+        {
+          id: 'evaluation',
+          passed,
+          actual: [report.loss, ...(report.accuracy === undefined ? [] : [report.accuracy])],
+          expected: [
+            threshold.loss,
+            ...(threshold.accuracy === undefined ? [] : [threshold.accuracy]),
+          ],
+        },
+      ],
+    });
+    this.emit({
+      type: 'result',
+      requestId: run.request.requestId,
+      revision: run.request.revision,
+      result: run.result,
+    });
+  }
+  private async dispatch(request: WorkerRequest) {
+    try {
+      if (this.disposed) throw new Error('worker.disposed');
+      if (
+        !Number.isSafeInteger(request.requestId) ||
+        !Number.isSafeInteger(request.revision) ||
+        request.revision < 0
+      )
+        throw new Error('worker.invalid_request');
+      if (request.revision < this.revision) throw new Error('worker.stale_revision');
+      if (request.revision > this.revision) {
+        this.release();
+        this.revision = request.revision;
+      }
+      if (request.type === 'init') {
+        if (this.initialized) throw new Error('worker.already_initialized');
+        const selection =
+          request.backend === 'cpu'
+            ? { backend: new CpuBackend(), kind: 'cpu' as const }
+            : await createBackend();
+        T.setDefaultBackend(selection.backend);
+        this.initialized = true;
+        this.reply(request, {
+          backend: selection.kind,
+          ...('fallbackReason' in selection
+            ? { fallback: { key: 'worker.cpu_fallback', params: {} } }
+            : {}),
+        });
+        return;
+      }
+      if (request.type === 'cancel') {
+        this.release();
+        this.reply(request, { state: 'stopped' });
+        return;
+      }
+      if (!this.initialized) throw new Error('worker.not_initialized');
+      if (request.type === 'pause' || request.type === 'resume' || request.type === 'stop') {
+        const run = this.run;
+        if (!run) throw new Error('worker.no_training');
+        if (request.type === 'stop') {
+          try {
+            this.finish(run, await run.session.evaluate(), false);
+          } finally {
+            this.release();
+          }
+          this.reply(request, { state: 'stopped' });
+        } else if (request.type === 'pause') {
+          run.paused = true;
+          this.timerGeneration++;
+          clearTimeout(this.timer);
+          this.reply(request, { state: 'paused' });
+        } else {
+          if (run.paused) {
+            run.paused = false;
+            this.schedule();
+          }
+          this.reply(request, { state: 'running' });
+        }
+        return;
+      }
+      const level = this.levels.find((l) => l.id === request.levelId);
+      if (!level) throw new Error('worker.unknown_level');
+      if (request.type === 'evaluate') {
+        if (level.kind === 'train') throw new Error('worker.use_training');
+        const result = await evaluateLevel(level, request.graph, { registry: this.registry });
+        if (result.error)
+          result.error = workerError(
+            new GraphError(
+              result.error.key,
+              result.error.node,
+              result.error.port,
+              result.error.params,
+            ),
+          );
+        if (result.errorKey && !/^[a-z0-9_.]+$/.test(result.errorKey))
+          result.errorKey = 'worker.execution_error';
+        this.reply(request, result);
+        return;
+      }
+      let graph = request.graph;
+      let probeName = '__worker_probe';
+      if (request.type === 'probe') {
+        while (graph.nodes.some((n) => n.id === probeName || n.attrs?.name === probeName))
+          probeName += '_';
+        graph = {
+          ...graph,
+          nodes: [
+            ...graph.nodes,
+            { id: probeName, component: 'output', attrs: { name: probeName } },
+          ],
+          edges: [...graph.edges, { from: request.endpoint, to: { node: probeName, port: 'x' } }],
+        };
+      }
+      let plan: GraphPlan;
+      try {
+        plan = compileGraph(graph, {
+          registry: this.registry,
+          inputShapes: level.interface.inputs,
+          availableComponents: level.available,
+          random: new Random(level.kind === 'train' ? level.seed : 1),
+        });
+        if (
+          JSON.stringify(plan.outputShapes[level.interface.output]) !==
+          JSON.stringify(level.interface.outputShape)
+        ) {
+          plan.dispose();
+          throw new Error('levels.output_shape');
+        }
+      } catch (error) {
+        if (request.type !== 'compile') throw error;
+        this.reply(request, {
+          outputShapes: {},
+          metrics: { topNodes: graph.nodes.length, expandedPrimitives: 0, parameterCount: 0 },
+          diagnostics: [workerError(error)],
+        });
+        return;
+      }
+      let retained = false;
+      try {
+        if (request.type === 'compile')
+          this.reply(request, {
+            outputShapes: plan.outputShapes,
+            metrics: graphMetrics(graph, this.registry),
+            diagnostics: [],
+          });
+        else if (request.type === 'probe') {
+          const inputs: TensorPorts = {};
+          let outputs: TensorPorts | undefined;
+          try {
+            for (const [name, shape] of Object.entries(level.interface.inputs)) {
+              if (!request.inputs[name]) throw new Error('worker.missing_input');
+              inputs[name] = T.tensor(request.inputs[name], shape);
+            }
+            outputs = plan.execute(inputs);
+            const value = outputs[probeName];
+            this.reply(request, { shape: value.shape, values: Array.from(await value.read()) });
+          } finally {
+            if (outputs) plan.releaseExecution(outputs);
+            Object.values(inputs).forEach((t) => t.dispose());
+          }
+        } else if (request.type === 'start') {
+          if (level.kind !== 'train') throw new Error('worker.not_training_level');
+          if (!Number.isSafeInteger(level.steps) || level.steps < 1)
+            throw new Error('training.steps');
+          this.release();
+          const metrics = graphMetrics(graph, this.registry);
+          const batches: TrainingBatch[] = [];
+          try {
+            batches.push(level.dataset(new Random(level.seed)));
+            if (level.evaluationDataset)
+              batches.push(level.evaluationDataset(new Random(level.seed + 1)));
+            const session = new TrainingSession(
+              plan,
+              batches[0],
+              crossEntropy,
+              level.optimizer,
+              level.interface.output,
+              {
+                evaluationBatch: batches[1],
+                lossOutput: level.lossOutput,
+                accuracy: level.threshold.accuracy !== undefined,
+              },
+            );
+            this.run = {
+              request,
+              level,
+              plan,
+              session,
+              batches,
+              paused: false,
+              result: {
+                levelId: level.id,
+                passed: false,
+                tests: [],
+                metrics,
+              },
+            };
+            retained = true;
+            this.reply(request, { state: 'running' });
+            this.schedule();
+          } finally {
+            if (!retained)
+              new Set(batches.flatMap((b) => [...Object.values(b.inputs), b.targets])).forEach(
+                (t) => t.dispose(),
+              );
+          }
+        }
+      } finally {
+        if (!retained) plan.dispose();
+      }
+    } catch (error) {
+      this.emit({
+        type: 'error',
+        requestId: request.requestId,
+        revision: request.revision,
+        error: workerError(error),
+      });
+    }
+  }
+}

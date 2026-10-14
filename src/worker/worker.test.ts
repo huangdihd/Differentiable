@@ -1,0 +1,255 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { derivativeSolution, sigmoidSolution, xorLevel, xorSolution } from '../levels/examples';
+import { WorkerRuntime, workerError } from './runtime';
+import { WorkerClient, type WorkerTransport } from './client';
+import type { Command, WorkerRequest, WorkerResponse } from './protocol';
+
+const runtimes: WorkerRuntime[] = [];
+afterEach(async () => {
+  await Promise.all(runtimes.splice(0).map((r) => r.dispose()));
+});
+function harness(levels?: ConstructorParameters<typeof WorkerRuntime>[1]) {
+  const messages: WorkerResponse[] = [];
+  const runtime = new WorkerRuntime((m) => messages.push(structuredClone(m)), levels);
+  runtimes.push(runtime);
+  let requestId = 0;
+  return {
+    runtime,
+    messages,
+    async send(command: Command, revision = 0) {
+      await runtime.handle({ ...command, revision, requestId: ++requestId });
+      return messages.at(-1)!;
+    },
+  };
+}
+async function until(check: () => boolean) {
+  for (let i = 0; i < 300 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
+  expect(check()).toBe(true);
+}
+describe('worker runtime protocol', () => {
+  it('requires init and falls back to CPU in Node', async () => {
+    const h = harness();
+    expect(await h.send({ type: 'pause' })).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.not_initialized', params: {} },
+    });
+    expect(await h.send({ type: 'init' })).toMatchObject({
+      type: 'reply',
+      data: { backend: 'cpu', fallback: { key: 'worker.cpu_fallback' } },
+    });
+  });
+  it('compiles with structured diagnostics and probes augmented graphs without mutation', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    expect(
+      await h.send({ type: 'compile', levelId: 'sigmoid', graph: sigmoidSolution }),
+    ).toMatchObject({ data: { diagnostics: [], outputShapes: { y: [5] } } });
+    const graph = structuredClone(sigmoidSolution);
+    graph.edges = [];
+    expect(await h.send({ type: 'compile', levelId: 'sigmoid', graph })).toMatchObject({
+      data: { diagnostics: [{ key: expect.any(String), params: expect.any(Object) }] },
+    });
+    const before = structuredClone(sigmoidSolution);
+    for (let i = 0; i < 3; i++) {
+      expect(
+        await h.send({
+          type: 'probe',
+          levelId: 'sigmoid',
+          graph: sigmoidSolution,
+          endpoint: { node: 'neg', port: 'out' },
+          inputs: { x: [-4, -1, 0, 1, 4] },
+        }),
+      ).toMatchObject({ data: { shape: [5], values: [4, 1, -0, -1, -4] } });
+    }
+    expect(sigmoidSolution).toEqual(before);
+  });
+  it('evaluates actual forward and derivative graphs and rejects old revisions', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    for (const [levelId, graph] of [
+      ['sigmoid', sigmoidSolution],
+      ['derivative', derivativeSolution],
+    ] as const) {
+      expect(await h.send({ type: 'evaluate', levelId, graph }, 2)).toMatchObject({
+        revision: 2,
+        data: { levelId, passed: true },
+      });
+    }
+    expect(await h.send({ type: 'pause' }, 1)).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.stale_revision' },
+    });
+  });
+  it('pauses and resumes the same optimizer, emits progress and final LevelResult', async () => {
+    const h = harness([{ ...xorLevel, steps: 5 }]);
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await until(() => h.messages.some((m) => m.type === 'progress'));
+    await h.send({ type: 'pause' });
+    const count = h.messages.filter((m) => m.type === 'progress').length;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(h.messages.filter((m) => m.type === 'progress')).toHaveLength(count);
+    await h.send({ type: 'resume' });
+    await until(() => h.messages.some((m) => m.type === 'result'));
+    const reports = h.messages.filter((m) => m.type === 'progress');
+    expect(reports.map((m) => m.report.step)).toEqual([1, 2, 3, 4, 5]);
+    expect(h.messages.find((m) => m.type === 'result')).toMatchObject({
+      requestId: 2,
+      revision: 0,
+      result: { levelId: 'xor', training: { step: 5 }, tests: [{ id: 'evaluation' }] },
+    });
+  });
+  it('stop returns a nonpassing final result and releases training', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await h.send({ type: 'pause' });
+    expect(await h.send({ type: 'stop' })).toMatchObject({ data: { state: 'stopped' } });
+    expect(h.messages.find((m) => m.type === 'result')).toMatchObject({
+      result: { passed: false, training: { step: 0 } },
+    });
+    expect(await h.send({ type: 'resume' })).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.no_training' },
+    });
+  });
+  it('cancels paused training on revision change without evaluating it', async () => {
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await h.send({ type: 'pause' });
+    expect(await h.send({ type: 'cancel' }, 1)).toMatchObject({
+      type: 'reply',
+      data: { state: 'stopped' },
+      revision: 1,
+    });
+    expect(await h.send({ type: 'resume' }, 1)).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.no_training' },
+    });
+    expect(h.messages.some((m) => m.type === 'result')).toBe(false);
+  });
+  it('releases training when stop evaluation fails', async () => {
+    const h = harness([{ ...xorLevel, lossOutput: 'missing' }]);
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await h.send({ type: 'pause' });
+    expect(await h.send({ type: 'stop' })).toMatchObject({
+      type: 'error',
+      error: { key: 'training.missing_loss' },
+    });
+    expect(await h.send({ type: 'resume' })).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.no_training' },
+    });
+  });
+  it('reports failed training and rejects requests after disposal', async () => {
+    const h = harness([{ ...xorLevel, lossOutput: 'missing' }]);
+    await h.send({ type: 'init', backend: 'cpu' });
+    await h.send({ type: 'start', levelId: 'xor', graph: xorSolution });
+    await until(() => h.messages.some((m) => m.type === 'result'));
+    expect(h.messages.find((m) => m.type === 'result')).toMatchObject({
+      result: { passed: false, errorKey: 'training.missing_loss' },
+    });
+    await h.runtime.dispose();
+    expect(await h.send({ type: 'resume' })).toMatchObject({
+      type: 'error',
+      error: { key: 'worker.disposed' },
+    });
+  });
+  it('does not leak arbitrary exception prose', () => {
+    expect(workerError(new Error('private exception text'))).toEqual({
+      key: 'worker.execution_error',
+      params: {},
+    });
+  });
+});
+it('typed client matches IDs, rejects stale pending calls and filters training events', async () => {
+  const requests: WorkerRequest[] = [];
+  let listener: ((event: MessageEvent<WorkerResponse>) => void) | undefined;
+  const transport: WorkerTransport = {
+    postMessage: (m) => {
+      requests.push(m);
+    },
+    addEventListener: (_, fn) => {
+      listener = fn;
+    },
+    removeEventListener: () => {
+      listener = undefined;
+    },
+    terminate: () => {},
+  };
+  const client = new WorkerClient(transport);
+  const pending = client.compile('sigmoid', sigmoidSolution);
+  const rejected = expect(pending).rejects.toMatchObject({
+    detail: { key: 'worker.stale_revision' },
+  });
+  client.setRevision(1);
+  expect(requests.at(-1)).toMatchObject({ type: 'cancel', revision: 1 });
+  await rejected;
+  const events: WorkerResponse[] = [];
+  client.subscribe((e) => events.push(e));
+  const start = client.start('xor', xorSolution);
+  const request = requests.at(-1)!;
+  const emit = (data: WorkerResponse) => listener!({ data } as MessageEvent<WorkerResponse>);
+  emit({
+    type: 'reply',
+    requestId: request.requestId,
+    revision: 1,
+    command: 'start',
+    data: { state: 'running' },
+  });
+  await expect(start).resolves.toEqual({ state: 'running' });
+  emit({
+    type: 'progress',
+    requestId: request.requestId,
+    revision: 0,
+    report: { step: 1, loss: 1 },
+  });
+  emit({
+    type: 'progress',
+    requestId: request.requestId + 1,
+    revision: 1,
+    report: { step: 1, loss: 1 },
+  });
+  expect(events).toHaveLength(0);
+  emit({
+    type: 'progress',
+    requestId: request.requestId,
+    revision: 1,
+    report: { step: 1, loss: 1 },
+  });
+  expect(events).toHaveLength(1);
+  const replacement = client.start('xor', xorSolution);
+  const replacementRejected = expect(replacement).rejects.toMatchObject({
+    detail: { key: 'worker.execution_error' },
+  });
+  emit({
+    type: 'error',
+    requestId: requests.at(-1)!.requestId,
+    revision: 1,
+    error: { key: 'worker.execution_error', params: {} },
+  });
+  await replacementRejected;
+  emit({
+    type: 'progress',
+    requestId: request.requestId,
+    revision: 1,
+    report: { step: 2, loss: 0.5 },
+  });
+  expect(events).toHaveLength(2);
+  const compile = client.compile('sigmoid', sigmoidSolution);
+  const invalidReply = expect(compile).rejects.toMatchObject({
+    detail: { key: 'worker.invalid_reply' },
+  });
+  emit({
+    type: 'reply',
+    requestId: requests.at(-1)!.requestId,
+    revision: 1,
+    command: 'pause',
+    data: { state: 'paused' },
+  });
+  await invalidReply;
+  client.dispose();
+  await expect(client.pause()).rejects.toMatchObject({ detail: { key: 'worker.disposed' } });
+});
