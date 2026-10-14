@@ -7,7 +7,7 @@ const level = (id: string) => gameLevels.find((l) => l.id === id) as ForwardLeve
 
 describe('expected output in the live panel', () => {
   it('shows f for forward levels', async () => {
-    const r = await expectedOutput(level('2-3'), { a: [1, 2, 3, 4], b: [1, 0, -1] });
+    const r = await expectedOutput(level('2-4'), { a: [1, 2, 3, 4], b: [1, 0, -1] });
     expect(r.shape).toEqual([4, 3]);
     expect(r.values.slice(0, 6)).toEqual([1, 0, -1, 2, 0, -2]);
   });

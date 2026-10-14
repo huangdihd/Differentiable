@@ -536,6 +536,14 @@ function reshapeShape(s: Shape, attrs: Attributes): number[] {
   return target;
 }
 function permutation(a: Attributes, rank: number): number[] {
+  // Axis pairs swap dimensions; legacy permutations still default to rank reversal.
+  if ('axes' in a) {
+    if (!Array.isArray(a.axes) || a.axes.length !== 2) throw new GraphError('invalid_axes');
+    const [first, second] = axes(a, rank);
+    const p = Array.from({ length: rank }, (_, i) => i);
+    [p[first], p[second]] = [p[second], p[first]];
+    return p;
+  }
   const p = a.perm ?? Array.from({ length: rank }, (_, i) => rank - i - 1);
   if (
     !Array.isArray(p) ||

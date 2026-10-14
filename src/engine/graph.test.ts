@@ -516,3 +516,78 @@ describe('shape-independent standard answers', () => {
     },
   );
 });
+
+describe('transpose axis pairs', () => {
+  const graph = (attrs: Record<string, unknown>, shape = [2, 3, 4]): GraphJSON => ({
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x', shape } },
+      { id: 't', component: 'transpose', attrs },
+      { id: 'o', component: 'output', attrs: { name: 'out' } },
+    ],
+    edges: [edge('x', 't'), edge('t', 'o')],
+  });
+  it.each([
+    [1, 2],
+    [-2, -1],
+    [1, -1],
+  ])('swaps axes %j with perm priority and gradients', async (...axes) => {
+    const plan = compileGraph(graph({ axes, perm: 'ignored' }));
+    expect(plan.outputShapes.out).toEqual([2, 4, 3]);
+    const data = Array.from({ length: 24 }, (_, i) => i + 1);
+    const x = tensor(data, [2, 3, 4]);
+    const outputs = plan.execute({ x });
+    const expected = [0, 1].flatMap((b) =>
+      [0, 1, 2, 3].flatMap((k) => [0, 1, 2].map((j) => data[b * 12 + j * 4 + k])),
+    );
+    expect(Array.from(await outputs.out.read())).toEqual(expected);
+    const weighted = mul(outputs.out, outputs.out);
+    const loss = sum(weighted, [0, 1, 2]);
+    const [gradient] = await backward(loss, [x]);
+    expect(gradient.shape).toEqual([2, 3, 4]);
+    expect(Array.from(await gradient.read())).toEqual(data.map((v) => 2 * v));
+    gradient.dispose();
+    loss.dispose();
+    weighted.dispose();
+    plan.releaseExecution(outputs);
+    plan.dispose();
+    x.dispose();
+  });
+  it.each([
+    undefined,
+    null,
+    '0,1',
+    [],
+    [0],
+    [0, 1, 2],
+    [0, 0],
+    [0, -3],
+    [0, 3],
+    [-4, 0],
+    [0, 0.5],
+    [0, NaN],
+    [0, Infinity],
+    [0, '1'],
+  ])('rejects invalid axes %j', (axes) => {
+    expect(safeCompileGraph(graph({ axes, perm: [0, 1, 2] }))).toMatchObject({
+      ok: false,
+      errors: [{ key: 'invalid_axes', node: 't' }],
+    });
+  });
+  it('preserves default reversal, legacy permutations, and zero-sized dimensions', () => {
+    for (const [attrs, shape, expected] of [
+      [{}, [2, 3, 4], [4, 3, 2]],
+      [{ perm: [1, 2, 0] }, [2, 3, 4], [3, 4, 2]],
+      [{ axes: [-2, -1] }, [2, 0, 4], [2, 4, 0]],
+    ] as [Record<string, unknown>, number[], number[]][]) {
+      const plan = compileGraph(graph(attrs, shape));
+      expect(plan.outputShapes.out).toEqual(expected);
+      plan.dispose();
+    }
+    for (const shape of [[], [3]])
+      expect(safeCompileGraph(graph({ axes: [-2, -1] }, shape))).toMatchObject({
+        ok: false,
+        errors: [{ key: 'invalid_axes' }],
+      });
+  });
+});

@@ -1096,3 +1096,22 @@ input[type='range'] {
   color: var(--bad);
   background: color-mix(in srgb, var(--bad) 16%, transparent);
 }
+
+/* broadcast note under element-wise nodes */
+.node-broadcast {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px var(--s2) 4px;
+  border-top: 1px dashed var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node-broadcast-tag {
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}

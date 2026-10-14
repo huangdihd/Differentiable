@@ -16,7 +16,7 @@ export function defaults(component: string): Attributes {
     case 'reshape':
       return { shape: [-1] };
     case 'transpose':
-      return { perm: [1, 0] };
+      return { axes: [-2, -1] };
     case 'arange':
       return { n: 5 };
     default:
@@ -29,7 +29,7 @@ const fields: Record<string, string[]> = {
   sum: ['axes', 'keepdims'],
   reduce_max: ['axes', 'keepdims'],
   reshape: ['shape'],
-  transpose: ['perm'],
+  transpose: ['axes', 'perm'],
   unsqueeze: ['axis'],
   arange: ['n'],
 };
@@ -81,7 +81,12 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
             !Number.isSafeInteger(numbers.reduce((size, n) => size * Math.max(1, n), 1)))
         )
           throw Error();
-        if (key === 'axes' && new Set(numbers).size !== numbers.length) throw Error();
+        if (
+          key === 'axes' &&
+          (new Set(numbers).size !== numbers.length ||
+            (component === 'transpose' && numbers.length !== 2))
+        )
+          throw Error();
         if (
           key === 'perm' &&
           (new Set(numbers).size !== numbers.length ||

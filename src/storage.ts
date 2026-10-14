@@ -3,7 +3,7 @@ import { evaluateLevel, initialProgress, type Level, type Progress } from './eng
 import { availableComponents, buildPlayerRegistry } from './levels/registry';
 import { browserLocale, isLocale, type Locale } from './i18n';
 
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
 export interface StorageLike {
@@ -129,7 +129,29 @@ export function loadProgress(source: StorageSource = browserStorage): Progress {
   }
   return createInitialProgress();
 }
-/** Load v2 synchronously elsewhere; App awaits this entry point to validate legacy solutions.
+/** Remap level IDs only: graph component names and unlocked components are stable. */
+function migrateChapter2(progress: Progress): Progress {
+  const ids: Record<string, string> = {
+    '2-2': '2-3',
+    '2-3': '2-4',
+    '2-4': '2-5',
+    '2-5': '2-7',
+    '2-6': '2-8',
+  };
+  const mapId = (id: string) => (Object.hasOwn(ids, id) ? ids[id] : id);
+  const mapKeys = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).map(([id, value]) => [mapId(id), value]));
+  return {
+    ...progress,
+    unlocked: [...new Set(progress.unlocked.map(mapId))],
+    passed: [...new Set(progress.passed.map(mapId))],
+    savedGraphs: mapKeys(progress.savedGraphs),
+    passedSolutions: mapKeys(progress.passedSolutions),
+    bestScores: mapKeys(progress.bestScores),
+  };
+}
+
+/** Load current saves synchronously elsewhere; App awaits this entry point to validate legacy solutions.
  * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
  * using verified reference circuits when old graphs are absent or no longer compatible.
  */
@@ -143,11 +165,13 @@ export async function loadProgressWithMigration(
     if (!raw) return createInitialProgress();
     const envelope: unknown = JSON.parse(raw);
     if (!record(envelope)) return createInitialProgress();
-    if (envelope.version === STORAGE_VERSION) {
-      const progress = loadProgress(source);
+    if (envelope.version === STORAGE_VERSION || envelope.version === 2) {
+      if (!isProgress(envelope.progress)) return createInitialProgress();
+      const progress =
+        envelope.version === 2 ? migrateChapter2(envelope.progress) : envelope.progress;
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
-      return {
+      const restored = {
         ...progress,
         unlocked: [...new Set([...progress.unlocked, ...passedLevels.flatMap((l) => l.unlock)])],
         unlockedComponents: [
@@ -157,11 +181,13 @@ export async function loadProgressWithMigration(
           ]),
         ],
       };
+      if (envelope.version === 2) saveProgress(restored, source);
+      return restored;
     }
     if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
     const candidate = { ...envelope.progress, passedSolutions: {} };
     if (!isProgress(candidate)) return createInitialProgress();
-    legacy = candidate;
+    legacy = migrateChapter2(candidate);
   } catch {
     return createInitialProgress();
   }
@@ -228,7 +254,9 @@ export function loadLanguage(
       const envelope: unknown = JSON.parse(raw);
       if (
         record(envelope) &&
-        (envelope.version === 1 || envelope.version === STORAGE_VERSION) &&
+        (envelope.version === 1 ||
+          envelope.version === 2 ||
+          envelope.version === STORAGE_VERSION) &&
         isLocale(envelope.language)
       )
         return envelope.language;
@@ -284,7 +312,7 @@ export function createThrottledSave<T>(save: (value: T) => boolean | void, delay
 
 /** UI convenience facade; individual progress and language APIs remain independently usable. */
 export interface SaveData {
-  version: 2;
+  version: typeof STORAGE_VERSION;
   progress: Progress;
   settings: { language: Locale };
 }

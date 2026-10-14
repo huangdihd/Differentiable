@@ -12,6 +12,7 @@ import {
 } from './graph-geometry';
 
 const IO = ['input', 'output'];
+const BROADCASTING = new Set(['add', 'mul', 'max', 'ge']);
 
 /** `[]` reads as "scalar"; anything else as `[4×2]`. */
 export function shapeText(shape: readonly number[], t: CanvasProps['t']): string {
@@ -413,6 +414,24 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 )}
                 <span className="node-value">{value?.text ?? '—'}</span>
               </div>
+              {(() => {
+                // Element-wise ops with mismatched operand shapes: say out loud that broadcasting
+                // stretched them, so [4×1]·[1×3] → [4×3] doesn't look like a matrix product.
+                if (!BROADCASTING.has(n.component) || !value?.shape) return null;
+                const operands = ['a', 'b'].map((port) => {
+                  const edge = p.graph.edges.find((e) => e.to.node === n.id && e.to.port === port);
+                  return edge && p.values?.[edge.from.node]?.shape;
+                });
+                if (operands.some((s) => !s) || operands[0]!.join() === operands[1]!.join())
+                  return null;
+                const dims = (s: readonly number[]) => (s.length ? s.join('×') : p.t('ui.scalar'));
+                return (
+                  <div className="node-broadcast" title={p.t('ui.broadcastHelp')}>
+                    <span className="node-broadcast-tag">{p.t('ui.broadcast')}</span>
+                    {dims(operands[0]!)} · {dims(operands[1]!)} → {dims(value.shape)}
+                  </div>
+                );
+              })()}
               {(['inputs', 'outputs'] as const).map((side) => {
                 const list = ports(n, side);
                 return list.map((port, i) => {

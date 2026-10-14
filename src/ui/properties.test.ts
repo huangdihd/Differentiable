@@ -6,6 +6,7 @@ describe('property field validation', () => {
     expect(defaults('sum')).toEqual({ axes: [-1], keepdims: true });
     expect(defaults('reduce_max')).toEqual({ axes: [-1], keepdims: true });
     expect(defaults('unsqueeze')).toEqual({ axis: -1 });
+    expect(defaults('transpose')).toEqual({ axes: [-2, -1] });
     expect(defaults('param')).toEqual({ shape: [2, 2], init: 'normal', scale: 1 });
   });
   it('accepts negative integer unsqueeze axes but rejects incomplete or fractional axes', () => {
@@ -54,6 +55,21 @@ describe('property field validation', () => {
     expect(validateProperties('sum', { axes: '1,1' }).errors.axes).toBe('ui.invalidShape');
     expect(validateProperties('transpose', { perm: '1,0' }).errors).toEqual({});
     expect(validateProperties('transpose', { perm: '2,0' }).errors.perm).toBe('ui.invalidShape');
+  });
+  it('validates transpose pairs and preserves legacy permutation edits', () => {
+    expect(validateProperties('transpose', { axes: '-2,-1' })).toEqual({
+      attrs: { axes: [-2, -1] },
+      errors: {},
+    });
+    for (const axes of ['[]', '1', '0,1,2', '1,1', '0,1.5', 'null'])
+      expect(validateProperties('transpose', { axes }).errors.axes).toBe('ui.invalidShape');
+    expect(
+      validateProperties('transpose', { perm: '1,2,0' }, { perm: [2, 0, 1], custom: true }),
+    ).toEqual({ attrs: { perm: [1, 2, 0], custom: true }, errors: {} });
+    expect(validateProperties('transpose', { axes: '-2,-1', perm: '1,2,0' }).attrs).toEqual({
+      axes: [-2, -1],
+      perm: [1, 2, 0],
+    });
   });
   it('removes blank optional attributes and preserves unrelated attributes', () => {
     expect(

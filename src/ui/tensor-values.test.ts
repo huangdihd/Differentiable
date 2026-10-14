@@ -34,11 +34,11 @@ describe('read-only tensor values', () => {
     expect(caseInputs(inputs)).toEqual({ a: '1, 2', b: '3, 4' });
     expect(inputs).toEqual({ a: [1, 2], b: [3, 4] });
   });
-  it('defines exactly six localized chapter-two lessons, each with two hints', () => {
+  it('defines exactly eight localized chapter-two lessons, each with two hints', () => {
     for (const locale of [en, zh]) {
       const keys = Object.keys(locale).filter((key) => key.startsWith('levels.2-'));
-      expect(keys).toHaveLength(24);
-      for (let i = 1; i <= 6; i++)
+      expect(keys).toHaveLength(32);
+      for (let i = 1; i <= 8; i++)
         for (const field of ['title', 'description', 'hint1', 'hint2'])
           expect(keys).toContain(`levels.2-${i}.${field}`);
       expect(locale).not.toHaveProperty('components.broadcast');

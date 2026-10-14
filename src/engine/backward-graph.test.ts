@@ -230,6 +230,45 @@ describe('primitive VJPs and structural contracts', () => {
     ['transpose', { perm: [1, 0] }],
   ] as const)
     it(op, () => checkPrimitive(op, { x: [2, 3] }, { x: [1, 2, 3, 4, 5, 6] }, attrs));
+  it.each([
+    [1, 2],
+    [-2, -1],
+    [1, -1],
+  ])('transpose axis pair %j is its own VJP', async (...axes) => {
+    const shapes = { x: [2, 3, 4] };
+    const attrs = { axes, perm: [1, 2, 0] };
+    await checkPrimitive(
+      'transpose',
+      shapes,
+      { x: Array.from({ length: 24 }, (_, i) => i + 1) },
+      attrs,
+    );
+    const graph = primitive('transpose', shapes, attrs);
+    graph.nodes.push({ id: 'square', component: 'mul' });
+    graph.edges.pop();
+    graph.edges.push(
+      { from: { node: 'op', port: 'out' }, to: { node: 'square', port: 'a' } },
+      { from: { node: 'op', port: 'out' }, to: { node: 'square', port: 'b' } },
+      { from: { node: 'square', port: 'out' }, to: { node: 'out', port: 'x' } },
+    );
+    const opts = { inputShapes: shapes, output: 'y', wrt: ['x'] };
+    const built = buildBackwardGraph(graph, opts);
+    const swaps = built.graph.nodes.filter((n) => n.component === 'transpose' && n.id !== 'op');
+    expect(swaps).toHaveLength(1);
+    expect(swaps[0].attrs).toEqual({ axes });
+    const data = Array.from({ length: 24 }, (_, i) => i + 1);
+    const trace = await traceBackward(graph, { ...opts, inputs: { x: data } });
+    expect(trace.gradient.x.values).toEqual(data.map((v) => 2 * v));
+  });
+  it('preserves legacy non-self-inverse and default transpose VJPs', async () => {
+    for (const attrs of [{}, { perm: [1, 2, 0] }])
+      await checkPrimitive(
+        'transpose',
+        { x: [2, 3, 4] },
+        { x: Array.from({ length: 24 }, (_, i) => i) },
+        attrs,
+      );
+  });
   for (const op of ['softmax', 'layernorm'])
     it(`${op}: native composite expansion`, async () => {
       await checkPrimitive(op, { x: [2, 3] }, { x: [1, 2, 3, -2, 1, 4] });

@@ -24,11 +24,18 @@ function answer(kind: string): GraphJSON {
   const binary = (id: string, op: string, a: string, b: string) => node(id, op, { a, b });
   const constant = (id: string, value: number) => node(id, 'const', {}, { value });
   let result: string;
-  if (['dot', 'outer', 'matmul'].includes(kind)) {
+  if (['dot', 'outer', 'matmul', 'matmul_transposed'].includes(kind)) {
     node('a', 'input', {}, { name: 'a' });
     node('b', 'input', {}, { name: 'b' });
     if (kind === 'dot')
       result = unary('result', 'sum', binary('products', 'mul', 'a', 'b'), { axes: [-1] });
+    else if (kind === 'matmul_transposed')
+      result = binary(
+        'result',
+        'matmul',
+        'a',
+        unary('transposed', 'transpose', 'b', { axes: [-2, -1] }),
+      );
     else if (kind === 'outer')
       result = binary(
         'result',
@@ -46,7 +53,11 @@ function answer(kind: string): GraphJSON {
     node('x', 'input', {}, { name: 'x' });
     const reduce = (id: string, op: string, x: string) =>
       unary(id, op, x, { axes: [-1], keepdims: true });
-    if (kind === 'mean') {
+    if (kind === 'broadcast') {
+      node('s', 'input', {}, { name: 's' });
+      node('b', 'input', {}, { name: 'b' });
+      result = binary('result', 'add', binary('scaled', 'mul', 'x', 's'), 'b');
+    } else if (kind === 'mean') {
       const ones = binary(
         'ones',
         'add',
@@ -71,12 +82,16 @@ function answer(kind: string): GraphJSON {
 
 const definitions: {
   name: string;
+  /** Stable fixture identity: numbering changes must not change existing seeds. */
+  fixtureIndex: number;
+  producesComponent?: false;
   shapes: ShapePorts[];
   output: number[];
   reference: ForwardLevel['reference'];
 }[] = [
   {
     name: 'dot',
+    fixtureIndex: 0,
     shapes: [
       { a: [6], b: [6] },
       { a: [3], b: [3] },
@@ -85,7 +100,20 @@ const definitions: {
     reference: ({ a, b }) => T.sum(T.mul(a, b), [-1]),
   },
   {
+    name: 'broadcast',
+    fixtureIndex: 6,
+    producesComponent: false,
+    shapes: [
+      { x: [4, 3], s: [4, 1], b: [3] },
+      { x: [2, 5], s: [2, 1], b: [5] },
+      { x: [3, 1], s: [3, 1], b: [4] },
+    ],
+    output: [4, 3],
+    reference: ({ x, s, b }) => T.add(T.mul(x, s), b),
+  },
+  {
     name: 'mean',
+    fixtureIndex: 1,
     shapes: [{ x: [4, 6] }, { x: [3, 5] }, { x: [2, 3, 4] }],
     output: [4, 1],
     reference: ({ x }) =>
@@ -93,6 +121,7 @@ const definitions: {
   },
   {
     name: 'outer',
+    fixtureIndex: 2,
     shapes: [
       { a: [4], b: [3] },
       { a: [2], b: [5] },
@@ -102,6 +131,7 @@ const definitions: {
   },
   {
     name: 'matmul',
+    fixtureIndex: 3,
     shapes: [
       { a: [4, 3], b: [3, 5] },
       { a: [2, 6], b: [6, 3] },
@@ -111,13 +141,34 @@ const definitions: {
     reference: ({ a, b }) => T.matmul(a, b),
   },
   {
+    name: 'matmul_transposed',
+    fixtureIndex: 7,
+    producesComponent: false,
+    shapes: [
+      { a: [4, 3], b: [5, 3] },
+      { a: [2, 6], b: [3, 6] },
+      { a: [2, 4, 3], b: [2, 5, 3] },
+    ],
+    output: [4, 5],
+    reference: ({ a, b }) => {
+      const perm = b.shape.map((_, i) => i);
+      [perm[perm.length - 2], perm[perm.length - 1]] = [
+        perm[perm.length - 1],
+        perm[perm.length - 2],
+      ];
+      return T.matmul(a, T.transpose(b, perm));
+    },
+  },
+  {
     name: 'softmax',
+    fixtureIndex: 4,
     shapes: [{ x: [4, 6] }, { x: [3, 5] }],
     output: [4, 6],
     reference: ({ x }) => T.softmax(x),
   },
   {
     name: 'layernorm',
+    fixtureIndex: 5,
     shapes: [{ x: [4, 8] }, { x: [3, 5] }],
     output: [4, 8],
     reference: ({ x }) => T.layernorm(x),
@@ -153,16 +204,23 @@ for (const [index, definition] of definitions.entries()) {
         titleKey: `levels.${id}.title`,
         descriptionKey: `levels.${id}.description`,
         hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
-        available: [...scalarPrimitives, 'max', 'sum', 'unsqueeze', 'reduce_max'],
-        forbidden: [definition.name],
+        available: [
+          ...scalarPrimitives,
+          'max',
+          'sum',
+          'unsqueeze',
+          'reduce_max',
+          ...(index >= 5 ? ['transpose'] : []),
+        ],
+        forbidden: definition.producesComponent === false ? [] : [definition.name],
         interface: { inputs: definition.shapes[0], output: 'y', outputShape: definition.output },
-        unlock: [index === 5 ? 'xor' : `2-${index + 2}`],
-        unlockComponents: [definition.name],
+        unlock: [index === definitions.length - 1 ? 'xor' : `2-${index + 2}`],
+        ...(definition.producesComponent === false ? {} : { unlockComponents: [definition.name] }),
         referenceGraph: answer(definition.name),
-        ...fixtures(index, definition.shapes[0], definition.name),
+        ...fixtures(definition.fixtureIndex, definition.shapes[0], definition.name),
         shapeVariants: definition.shapes.slice(1).map((inputs, variant) => ({
           inputs,
-          ...fixtures(20 + index * 3 + variant, inputs, definition.name),
+          ...fixtures(20 + definition.fixtureIndex * 3 + variant, inputs, definition.name),
         })),
         reference: definition.reference,
         // Expanded mean/div use log/exp; cancellation on constant rows amplifies f32 error.

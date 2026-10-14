@@ -67,7 +67,7 @@ describe('storage', () => {
     expect(loadProgress(source)).toEqual(progress);
     expect(createInitialProgress().savedGraphs).toEqual({});
   });
-  it('refreshes catalog unlocks in old v2 saves without changing passed circuits or edits', async () => {
+  it('refreshes catalog unlocks in current saves without changing passed circuits or edits', async () => {
     const { source } = memory();
     const lesson = chapter1Levels.find((level) => level.id === '1-7')!;
     const progress = {
@@ -88,6 +88,77 @@ describe('storage', () => {
     expect(await loadProgressWithMigration([lesson], source)).toEqual(restored);
     saveProgress(createInitialProgress(), source);
     expect((await loadProgressWithMigration([lesson], source)).unlocked).not.toContain('2-1');
+  });
+  it('remaps all chapter-two progress fields once before refreshing unlocks', async () => {
+    const { source, data } = memory();
+    const oldIds = ['2-1', '2-2', '2-3', '2-4', '2-5', '2-6', 'custom'];
+    const newIds = ['2-1', '2-3', '2-4', '2-5', '2-7', '2-8', 'custom'];
+    const graphs = oldIds.map((id) => ({
+      ...graph,
+      nodes: [{ id, component: '2-2' }],
+      edges: [],
+    }));
+    const scores = oldIds.map((_, index) => ({
+      topNodes: index,
+      expandedPrimitives: index,
+      parameterCount: index,
+    }));
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: oldIds,
+      passed: oldIds,
+      unlockedComponents: ['2-2', 'sigmoid'],
+      savedGraphs: Object.fromEntries(oldIds.map((id, i) => [id, graphs[i]])),
+      passedSolutions: Object.fromEntries(oldIds.map((id, i) => [id, graphs[i]])),
+      bestScores: Object.fromEntries(oldIds.map((id, i) => [id, scores[i]])),
+    };
+    const lesson = {
+      ...chapter1Levels[0],
+      id: '2-3',
+      unlock: ['2-4', '2-6'],
+      unlockComponents: ['tanh'],
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 2, progress }));
+    const restored = await loadProgressWithMigration([lesson], source);
+    expect(restored).toEqual({
+      ...progress,
+      unlocked: [...newIds, '2-6'],
+      passed: newIds,
+      unlockedComponents: ['2-2', 'sigmoid', 'tanh'],
+      savedGraphs: Object.fromEntries(newIds.map((id, i) => [id, graphs[i]])),
+      passedSolutions: Object.fromEntries(newIds.map((id, i) => [id, graphs[i]])),
+      bestScores: Object.fromEntries(newIds.map((id, i) => [id, scores[i]])),
+    });
+    expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(STORAGE_VERSION);
+    expect(loadProgress(source)).toEqual(restored);
+    expect(await loadProgressWithMigration([lesson], source)).toEqual(restored);
+  });
+  it('leaves current chapter-two numbering unchanged', async () => {
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['2-2', '2-3', '2-4', '2-5', '2-6'],
+      passed: ['2-2'],
+      savedGraphs: { '2-2': graph },
+      passedSolutions: { '2-2': graph },
+      bestScores: { '2-2': { topNodes: 2, expandedPrimitives: 0, parameterCount: 0 } },
+    };
+    saveProgress(progress, source);
+    expect(await loadProgressWithMigration([], source)).toEqual(progress);
+  });
+  it('preserves partial old 2-2 work under 2-3 without crediting a pass', async () => {
+    const { source, data } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['2-2'],
+      savedGraphs: { '2-2': graph },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 2, progress }));
+    expect(await loadProgressWithMigration([], source)).toEqual({
+      ...progress,
+      unlocked: ['2-3'],
+      savedGraphs: { '2-3': graph },
+    });
   });
   it('rejects corrupt, wrong-version and deeply invalid stored values', () => {
     const { data, source } = memory();
@@ -138,7 +209,7 @@ describe('storage', () => {
       expect(result.passedSolutions['0-4']).toEqual(reference);
       expect(result.unlockedComponents).toEqual(['identity']);
       expect(result.unlocked).toContain('1-1');
-      expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(2);
+      expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(STORAGE_VERSION);
       expect(loadProgress(source)).toEqual(result);
     }
     data.set(
@@ -179,8 +250,10 @@ describe('storage', () => {
   });
   it('keeps legacy language preferences during the version upgrade', () => {
     const { data, source } = memory();
-    data.set(LANGUAGE_KEY, JSON.stringify({ version: 1, language: 'en' }));
-    expect(loadLanguage(source, 'zh-CN')).toBe('en');
+    for (const version of [1, 2]) {
+      data.set(LANGUAGE_KEY, JSON.stringify({ version, language: 'en' }));
+      expect(loadLanguage(source, 'zh-CN')).toBe('en');
+    }
   });
   it('validates graph structure and recursive JSON without requiring a complete circuit', () => {
     expect(isGraphJSON(graph)).toBe(true);

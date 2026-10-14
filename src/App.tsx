@@ -30,6 +30,7 @@ import TensorGrid from './ui/TensorGrid';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import {
+  STORAGE_VERSION,
   loadProgress,
   isExpressionUnlocked,
   loadProgressWithMigration,
@@ -51,7 +52,7 @@ export default function App() {
     () =>
       createThrottledSave(
         (value: { progress: Progress; settings: { language: Locale } }) =>
-          saveSave({ version: 2, ...value }),
+          saveSave({ version: STORAGE_VERSION, ...value }),
         400,
       ),
     [],

@@ -6,12 +6,23 @@ import { chapter2Levels } from './chapter2';
 
 it('preserves every original chapter 0/1/2 par and fixed/seeded case', () => {
   expect(chapter1Levels.slice(0, 7).map((level) => level.par)).toEqual([1, 3, 3, 3, 9, 11, 7]);
-  const levels = [...chapter0Levels, ...chapter1Levels.slice(0, 7), ...chapter2Levels];
+  const levels = [
+    ...chapter0Levels,
+    ...chapter1Levels.slice(0, 7),
+    ...chapter2Levels.filter((level) => level.unlockComponents),
+  ];
   expect(
     levels.map((level) => {
       const random = new Random(level.generated!.seed);
       return {
-        id: level.id,
+        // Compare old lessons against their original IDs without rewriting the snapshot.
+        id:
+          (
+            { '2-3': '2-2', '2-4': '2-3', '2-5': '2-4', '2-7': '2-5', '2-8': '2-6' } as Record<
+              string,
+              string
+            >
+          )[level.id] ?? level.id,
         par: level.par,
         fixed: level.fixed,
         seed: level.generated!.seed,

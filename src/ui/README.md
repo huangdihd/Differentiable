@@ -13,7 +13,7 @@
 - Tests/probes and training run in a module Worker. Training edits are locked until stopped or completed; pause retains optimizer state.
 - Live values keeps scalar inputs editable and displays tensor fixtures read-only with previous/next case controls. Tensor nodes show shape, a short preview, and complete values in a tooltip. Shape-variant failures name the tested input shapes in the results table.
 - Sum and reduce-max start with axis −1 and Keep dimensions enabled. Unsqueeze starts at axis −1; its axis editor accepts negative integers (valid range is checked against the input rank during compilation).
-- Loading an existing v2 save refreshes unlocks from already-passed lessons, so newly added catalog successors become available without replaying those lessons.
+- Loading an existing v2 save migrates chapter-2 IDs to the eight-lesson route and persists v3. Loading progress then refreshes unlocks from already-passed lessons, so new successors become available without replaying. New transpose nodes swap axes −2 and −1; legacy full permutations remain editable.
 
 ## State and persistence
 

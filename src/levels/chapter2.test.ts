@@ -8,7 +8,7 @@ import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { availableComponents, buildPlayerRegistry } from './registry';
-import { referenceRegistry } from './level-helpers';
+import { referenceRegistry, tensorCases } from './level-helpers';
 
 const preceding = [...chapter0Levels, ...chapter1Levels];
 const registry = referenceRegistry([...preceding, ...chapter2Levels]);
@@ -18,10 +18,33 @@ const available = (index: number) =>
   );
 
 describe('tensor curriculum', () => {
-  it('preserves the six tensor interfaces and restricted primitive palette', () => {
-    expect(chapter2Levels.map((level) => level.unlockComponents)).toEqual(
-      ['dot', 'mean', 'outer', 'matmul', 'softmax', 'layernorm'].map((name) => [name]),
-    );
+  it('preserves every original shape-variant fixture and seed after renumbering', () => {
+    const original = chapter2Levels.filter((level) => level.unlockComponents);
+    original.forEach((level, index) => {
+      level.shapeVariants!.forEach((variant, v) => {
+        const before = tensorCases(20 + index * 3 + v, variant.inputs);
+        expect(variant.fixed.filter((test) => test.id !== 'large-logits')).toEqual(before.fixed);
+        expect(variant.generated!.seed).toBe(before.generated.seed);
+        const actualRandom = new Random(variant.generated!.seed);
+        const oldRandom = new Random(before.generated.seed);
+        for (let i = 0; i < before.generated.count; i++)
+          expect(variant.generated!.generate(actualRandom, i)).toEqual(
+            before.generated.generate(oldRandom, i),
+          );
+      });
+    });
+  });
+  it('preserves the original tensor interfaces and restricted primitive palette', () => {
+    expect(chapter2Levels.map((level) => level.unlockComponents)).toEqual([
+      ['dot'],
+      undefined,
+      ['mean'],
+      ['outer'],
+      ['matmul'],
+      undefined,
+      ['softmax'],
+      ['layernorm'],
+    ]);
     expect(
       chapter2Levels.map((level) => [
         level.interface.inputs,
@@ -30,6 +53,14 @@ describe('tensor curriculum', () => {
       ]),
     ).toEqual([
       [{ a: [6], b: [6] }, [], [{ a: [3], b: [3] }]],
+      [
+        { x: [4, 3], s: [4, 1], b: [3] },
+        [4, 3],
+        [
+          { x: [2, 5], s: [2, 1], b: [5] },
+          { x: [3, 1], s: [3, 1], b: [4] },
+        ],
+      ],
       [{ x: [4, 6] }, [4, 1], [{ x: [3, 5] }, { x: [2, 3, 4] }]],
       [{ a: [4], b: [3] }, [4, 3], [{ a: [2], b: [5] }]],
       [
@@ -40,23 +71,42 @@ describe('tensor curriculum', () => {
           { a: [2, 4, 3], b: [3, 5] },
         ],
       ],
+      [
+        { a: [4, 3], b: [5, 3] },
+        [4, 5],
+        [
+          { a: [2, 6], b: [3, 6] },
+          { a: [2, 4, 3], b: [2, 5, 3] },
+        ],
+      ],
       [{ x: [4, 6] }, [4, 6], [{ x: [3, 5] }]],
       [{ x: [4, 8] }, [4, 8], [{ x: [3, 5] }]],
     ]);
     for (const level of chapter2Levels) {
       expect([...level.available].sort()).toEqual(
-        ['const', 'add', 'mul', 'exp', 'log', 'max', 'sum', 'reduce_max', 'unsqueeze'].sort(),
+        [
+          'const',
+          'add',
+          'mul',
+          'exp',
+          'log',
+          'max',
+          'sum',
+          'reduce_max',
+          'unsqueeze',
+          ...(Number(level.id.slice(2)) >= 6 ? ['transpose'] : []),
+        ].sort(),
       );
       expect(level.rtol).toBe(1e-4);
-      expect(level.atol).toBe(level.id === '2-6' ? 1e-3 : 1e-4);
+      expect(level.atol).toBe(level.id === '2-8' ? 1e-3 : 1e-4);
     }
     expect(
-      chapter2Levels[2].referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
+      chapter2Levels[3].referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
     ).toEqual({ axis: 0 });
     expect(preceding.map((level) => level.par)).toEqual([
       1, 2, 3, 4, 6, 8, 1, 3, 1, 3, 3, 3, 9, 11, 7, 2, 4, 12,
     ]);
-    expect(chapter2Levels.map((level) => level.par)).toEqual([2, 8, 3, 4, 9, 27]);
+    expect(chapter2Levels.map((level) => level.par)).toEqual([2, 2, 8, 3, 4, 5, 9, 27]);
   });
 
   for (const [name, index] of [
@@ -68,7 +118,8 @@ describe('tensor curriculum', () => {
     ['unstable softmax', 4],
   ] as const) {
     it(`rejects ${name}`, async () => {
-      const level = chapter2Levels[index];
+      const currentIndex = [0, 2, 3, 4, 6, 7][index];
+      const level = chapter2Levels[currentIndex];
       const graph = structuredClone(level.referenceGraph!);
       if (index === 0) {
         graph.edges.find((edge) => edge.to.node === 'output')!.from.node = 'products';
@@ -92,7 +143,7 @@ describe('tensor curriculum', () => {
         graph.edges.find((edge) => edge.to.node === 'weights')!.from.node = 'x';
       }
       const result = await evaluateLevel(
-        { ...level, available: [...level.available, ...available(index)] },
+        { ...level, available: [...level.available, ...available(currentIndex)] },
         graph,
         { registry },
       );
@@ -114,6 +165,37 @@ describe('tensor curriculum', () => {
         expect(result.tests.some((test) => test.id.includes('large-logits') && !test.passed)).toBe(
           true,
         );
+      }
+    });
+  }
+
+  for (const mistake of ['omit-b', 'omit-s', 'no-transpose', 'fixed-perm']) {
+    it(`rejects ${mistake}`, async () => {
+      const index = mistake.startsWith('omit') ? 1 : 5;
+      const level = chapter2Levels[index];
+      const graph = structuredClone(level.referenceGraph!);
+      if (mistake === 'omit-b')
+        graph.edges.find((edge) => edge.to.node === 'output')!.from.node = 'scaled';
+      else if (mistake === 'omit-s')
+        graph.edges.find((edge) => edge.to.node === 'result' && edge.to.port === 'a')!.from.node =
+          'x';
+      else if (mistake === 'no-transpose')
+        graph.edges.find((edge) => edge.to.node === 'result' && edge.to.port === 'b')!.from.node =
+          'b';
+      else graph.nodes.find((node) => node.id === 'transposed')!.attrs = { perm: [1, 0] };
+      const result = await evaluateLevel(
+        { ...level, available: [...level.available, ...available(index)] },
+        graph,
+        { registry },
+      );
+      expect(result.passed).toBe(false);
+      if (mistake === 'fixed-perm') {
+        expect(
+          result.tests.filter((test) => !test.id.startsWith('shape-')).every((test) => test.passed),
+        ).toBe(true);
+        const failures = result.tests.filter((test) => !test.passed);
+        expect(failures.length).toBeGreaterThan(0);
+        expect(failures.every((test) => test.errorKey === 'levels.shape_variant')).toBe(true);
       }
     });
   }

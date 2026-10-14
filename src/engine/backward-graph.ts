@@ -282,6 +282,10 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
         send('x', () => reshape(grad, shapes[a.x]));
         break;
       case 'transpose': {
+        if (n.attrs && 'axes' in n.attrs) {
+          send('x', () => unary('transpose', grad, { axes: n.attrs!.axes }));
+          break;
+        }
         const perm =
           (n.attrs?.perm as number[] | undefined) ?? shapes[a.x].map((_, i, s) => s.length - i - 1);
         send('x', () => unary('transpose', grad, { perm: perm.map((_, i) => perm.indexOf(i)) }));
