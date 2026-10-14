@@ -1406,3 +1406,76 @@ input[type='range'] {
     animation: none;
   }
 }
+
+/* ---------- training data plot, optimizer switch ---------- */
+.data-plot {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 260 / 180;
+  max-height: 200px;
+  display: block;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+.plot-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.plot-point {
+  fill: var(--text);
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+.plot-point.is-class-0 {
+  fill: var(--accent);
+}
+.plot-point.is-class-1 {
+  fill: var(--grad);
+}
+.plot-point.is-class-2 {
+  fill: var(--good);
+}
+.plot-point.is-class-3 {
+  fill: var(--warn);
+}
+/* Misclassified: the true colour, ringed in red. */
+.plot-point.is-wrong {
+  stroke: var(--bad);
+  stroke-width: 1.6;
+}
+.plot-fit {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.opt-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+}
+.seg-btn {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  cursor: pointer;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--line-strong);
+}
+.seg-btn.is-on {
+  background: var(--accent);
+  color: var(--bg);
+}
+.seg-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

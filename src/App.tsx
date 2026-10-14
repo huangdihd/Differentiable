@@ -25,6 +25,7 @@ import Canvas, { position, shapeText, type CanvasHandle, type NodeValue } from '
 import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
+import DataPlot, { type PlotData } from './ui/DataPlot';
 import { caseInputs, fullValues } from './ui/tensor-values';
 import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
@@ -322,6 +323,49 @@ function Editor({
   const learningRate = tunable
     ? (progress.trainingSettings?.[level.id]?.learningRate ?? tunable.default)
     : undefined;
+  const optimizers = level.kind === 'train' ? level.tunable?.optimizer : undefined;
+  const savedOptimizer = progress.trainingSettings?.[level.id]?.optimizer;
+  const optimizer = optimizers
+    ? savedOptimizer && optimizers.includes(savedOptimizer)
+      ? savedOptimizer
+      : optimizers[0]
+    : undefined;
+  // The training data, for the plot beside the loss chart.
+  const [plotBase, setPlotBase] = useState<PlotData>();
+  useEffect(() => {
+    setPlotBase(undefined);
+    if (level.kind !== 'train') return;
+    let cancelled = false;
+    const batch = level.dataset(new Random(level.seed));
+    const x = batch.inputs.x,
+      t = batch.inputs.t ?? batch.targets;
+    void (async () => {
+      try {
+        if (!x || !t) return;
+        const xs = Array.from(await x.read()),
+          ts = Array.from(await t.read());
+        if (cancelled) return;
+        if (x.shape.length === 1 && t.shape.join() === x.shape.join())
+          setPlotBase({ kind: 'regression', x: xs, t: ts });
+        else if (x.shape.length === 2 && x.shape[1] === 2 && t.shape.length === 2) {
+          const classes = t.shape[1];
+          setPlotBase({
+            kind: 'classes',
+            points: Array.from({ length: x.shape[0] }, (_, i) => [xs[2 * i], xs[2 * i + 1]]),
+            label: Array.from({ length: t.shape[0] }, (_, i) =>
+              argmax(ts.slice(i * classes, (i + 1) * classes)),
+            ),
+          });
+        }
+      } finally {
+        Object.values(batch.inputs).forEach((v) => v.dispose());
+        batch.targets?.dispose();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [level]);
   const [values, setValues] = useState<Record<string, NodeValue>>({});
   const [expression, setExpression] = useState('');
   const [inside, setInside] = useState<{ name: string; graph: GraphJSON }[]>([]);
@@ -585,13 +629,13 @@ function Editor({
     setResult(undefined);
     const token = ++stepToken.current;
     try {
-      const trace = await c.trainStep(level.id, state.graph, learningRate);
+      const trace = await c.trainStep(level.id, state.graph, learningRate, optimizer);
       if (token !== stepToken.current) return;
       // The worker restarts the session when the graph changed; so does the chart.
       const fresh = stepGraph.current !== state.graph || trace.step === 1;
       stepGraph.current = state.graph;
       setLosses((a) => (fresh ? [trace.loss] : [...a, trace.loss]));
-      setReport({ step: trace.step, loss: trace.loss });
+      setReport({ step: trace.step, loss: trace.loss, accuracy: trace.accuracy });
       for (const phase of ['forward', 'backward', 'update'] as const) {
         if (token !== stepToken.current) return;
         setStepFlow({ trace, phase });
@@ -609,14 +653,25 @@ function Editor({
     stepGraph.current = undefined;
     void client.current?.trainReset().catch(fail);
   };
-  const setLearningRate = (lr: number) =>
+  const saveTraining = (settings: { learningRate?: number; optimizer?: 'sgd' | 'adam' }) =>
     latest.current.onProgress({
       ...latest.current.progress,
       trainingSettings: {
         ...latest.current.progress.trainingSettings,
-        [level.id]: { learningRate: lr },
+        [level.id]: {
+          learningRate: learningRate ?? 0.01,
+          ...(optimizer ? { optimizer } : {}),
+          ...settings,
+        },
       },
     });
+  const setLearningRate = (lr: number) => saveTraining({ learningRate: lr });
+  // A different optimizer starts a fresh session in the worker; start the chart over too.
+  const setOptimizer = (kind: 'sgd' | 'adam') => {
+    if (kind === optimizer) return;
+    saveTraining({ optimizer: kind });
+    resetSteps();
+  };
   const traceText = (v: { values: number[]; size: number }) =>
     v.size === 1 ? compact(locale, v.values[0]) : listText(locale, v.values, 2);
   const flowValues = useMemo(() => {
@@ -639,6 +694,31 @@ function Editor({
     }
     return next;
   }, [stepFlow?.trace, state.graph, locale]);
+  const plot = useMemo((): PlotData | undefined => {
+    if (!plotBase || !stepFlow) return plotBase;
+    const { forward } = stepFlow.trace;
+    if (plotBase.kind === 'regression') {
+      // The prediction is whatever feeds the loss's p port.
+      const edge = state.graph.edges.find(
+        (e) =>
+          e.to.port === 'p' &&
+          state.graph.nodes.find((n) => n.id === e.to.node)?.component === 'mse',
+      );
+      const p = edge && forward[edge.from.node];
+      return p && p.size === plotBase.x.length ? { ...plotBase, p: p.values } : plotBase;
+    }
+    const out = state.graph.nodes.find((n) => n.component === 'output');
+    const source = out && state.graph.edges.find((e) => e.to.node === out.id)?.from.node;
+    const y = (out && forward[out.id]) ?? (source ? forward[source] : undefined);
+    const n = plotBase.points.length;
+    if (!y || y.size !== y.values.length || y.shape.length !== 2 || y.shape[0] !== n)
+      return plotBase;
+    const c = y.shape[1];
+    return {
+      ...plotBase,
+      predicted: Array.from({ length: n }, (_, i) => argmax(y.values.slice(i * c, (i + 1) * c))),
+    };
+  }, [plotBase, stepFlow?.trace, state.graph]);
   const flow = stepFlow && {
     phase: stepFlow.phase,
     // Data and constants are not learned; their gradients would only be noise here.
@@ -727,7 +807,7 @@ function Editor({
         stepToken.current++;
         setStepFlow(undefined);
         setTraining('running');
-        await client.current?.start(level.id, state.graph, learningRate);
+        await client.current?.start(level.id, state.graph, learningRate, optimizer);
       } else {
         setRunning(true);
         const r = await client.current?.evaluate(level.id, state.graph);
@@ -1295,6 +1375,26 @@ function Editor({
           </div>
           {level.kind === 'train' && (
             <>
+              {plot && <DataPlot data={plot} label={t('ui.data')} />}
+              {optimizers && optimizers.length > 1 && (
+                <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
+                  <span className="label">{t('ui.optimizer')}</span>
+                  <div className="seg">
+                    {optimizers.map((kind) => (
+                      <button
+                        key={kind}
+                        role="radio"
+                        aria-checked={kind === optimizer}
+                        className={`seg-btn${kind === optimizer ? ' is-on' : ''}`}
+                        disabled={busy}
+                        onClick={() => setOptimizer(kind)}
+                      >
+                        {t(`ui.optimizer.${kind}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {tunable && learningRate !== undefined && (
                 <label className="lr-control">
                   <span className="lr-control-head">
@@ -1640,4 +1740,10 @@ function WinModal({
       </section>
     </div>
   );
+}
+
+function argmax(values: readonly number[]): number {
+  let best = 0;
+  for (let i = 1; i < values.length; i++) if (values[i] > values[best]) best = i;
+  return best;
 }

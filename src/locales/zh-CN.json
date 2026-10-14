@@ -544,5 +544,6 @@
   "levels.train_accuracy": "步数用完了，损失已经够低，但准确率只有 {accuracy}，还没达到目标。",
   "ui.optimizer": "优化器",
   "ui.optimizer.sgd": "SGD",
-  "ui.optimizer.adam": "Adam"
+  "ui.optimizer.adam": "Adam",
+  "ui.data": "训练数据"
 }

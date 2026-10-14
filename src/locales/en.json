@@ -547,5 +547,6 @@
   "levels.train_accuracy": "The step budget is exhausted. Loss is low enough, but accuracy is only {accuracy}, below the target.",
   "ui.optimizer": "Optimizer",
   "ui.optimizer.sgd": "SGD",
-  "ui.optimizer.adam": "Adam"
+  "ui.optimizer.adam": "Adam",
+  "ui.data": "Training data"
 }
