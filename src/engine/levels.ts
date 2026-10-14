@@ -134,9 +134,10 @@ export async function evaluateLevel(
     if (level.kind === 'train') {
       const batch = level.dataset(new Random(level.seed));
       let evaluationBatch: TrainingBatch | undefined;
+      let session: TrainingSession | undefined;
       try {
         evaluationBatch = level.evaluationDataset?.(new Random(level.seed + 1));
-        const session = new TrainingSession(
+        session = new TrainingSession(
           plan,
           batch,
           crossEntropy,
@@ -166,6 +167,7 @@ export async function evaluateLevel(
           ],
         });
       } finally {
+        session?.dispose();
         const tensors = new Set([
           ...Object.values(batch.inputs),
           batch.targets,

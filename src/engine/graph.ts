@@ -131,6 +131,7 @@ export class GraphPlan {
     private readonly storage: Map<string, StorageSpec>,
     private readonly options: CompileOptions,
   ) {
+    this.options = { ...options, backend: options.backend ?? T.defaultBackend };
     this.parameters = options.parameters ?? new Map();
   }
   execute(inputs: TensorPorts): TensorPorts {

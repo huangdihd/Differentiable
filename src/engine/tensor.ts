@@ -1,6 +1,10 @@
 import { type Backend, type Value, type Shape, type Attributes, infer, size } from './backend';
 import { CpuBackend } from './cpu';
-export const defaultBackend = new CpuBackend();
+/** Set once before constructing a game; existing tensors keep their backend. */
+export let defaultBackend: Backend = new CpuBackend();
+export function setDefaultBackend(backend: Backend): void {
+  defaultBackend = backend;
+}
 interface Tape {
   op: string;
   inputs: Tensor[];

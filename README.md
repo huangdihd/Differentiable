@@ -41,8 +41,26 @@ Native matmul supports rank >= 2 and broadcast batch dimensions; softmax and lay
 
 The GPT test builds a complete GraphJSON model with nested registered linear, affine-normalization, three-head causal-attention, MLP and Transformer-block components. Its two blocks have independently scoped parameters. `TrainingSession` trains with native kernels for 100 seeded Adam steps using fresh batches from a contiguous 2,548-character public-domain Alice in Wonderland excerpt. An 80/20 positional split keeps validation text out of training; held-out loss is averaged over deterministic batches covering the validation suffix (the final partial batch overlaps) and must beat both full-corpus and validation unigram entropy. The trained parameters are then shared with a `preferNative: false` plan to compare logits, loss and every parameter gradient. This is a small numerical/generalization feasibility test, not a quality language model.
 
-## Future GPU work / current limits
+## WebGPU and backend selection
 
-No WebGPU implementation, editor, localization runtime, storage persistence or production level content is included. Backend `submit` accepts command batches; eager execution currently sends individual commands, so a GPU implementation should queue them and fuse/flush at synchronization boundaries. Allocation/release must be fence-aware. CPU optimizer updates currently read parameters and gradients back; GPU-resident optimizer kernels and moments will be needed for practical accelerator training. Error reporting for asynchronous shader faults, device loss, dispatch limits and f32 reduction tolerances still need GPU-specific treatment. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput.
+`createBackend()` from `src/engine/backend-selection.ts` asynchronously returns `{ backend, kind, fallbackReason? }`. Call `setDefaultBackend(backend)` from `tensor.ts` once **before** creating a game's graphs or datasets. Default arguments then use this backend, compiled plans capture it, and existing tensors retain their original backend. Mixed-backend operations are rejected. Explicit backend arguments remain available for concurrent independent games/tests. Node defaults to CPU. Creation failures fall back to CPU with a reason; failures during GPU execution are not silently retried on CPU.
+
+`WebGpuBackend.create()` requires a real adapter and never falls back. Shape-specialized WGSL covers the built-in forward/VJP operations; matmul and both adjoints use 16×16 shared-memory tiles. Gather adjoints assign one invocation to each table-gradient element and scan indices in input order (no floating-point atomics). Commands share encoders, submitted on read/flush or every 512 dispatches to bound encoder retention. Released buffers are reused only after queue completion, with a bounded per-size pool. `stats` exposes live/pool counts and allocated storage bytes. Call `dispose()` on the backend at game shutdown. GPU errors expose `BackendError.key` and `params`; invalid GPU gather indices are reported asynchronously at read/flush. Device loss poisons subsequent operations.
+
+SGD/Adam updates and Adam moments execute on either backend without readback. Call `TrainingSession.dispose()` (or standalone `Optimizer.dispose()`) to release moments when finished; model and batch ownership is unchanged. `reportEvery` in session/run options defaults to 10; the final update also reports. Evaluation always synchronizes. Resumable training requires keeping the session alive.
+
+```sh
+npm run test:gpu
+# Optional installed browser override:
+CHROME_PATH=/path/to/chrome npm run test:gpu
+```
+
+The dependency-free runner starts its own Vite server and installed headless Chrome, uses an OS temporary profile, and cleans both up. Missing adapters, browser launch failures and timeouts fail the command rather than skipping. It reports adapter/browser information, forward/VJP comparisons, deterministic gather, GPT comparisons, memory checks and the requested small/medium CPU/GPU benchmarks. Default timeout is 30 minutes (`GPU_TEST_TIMEOUT_MS`). Primitive comparisons use `2e-4 + 2e-3*abs(reference)` to accommodate f32 reduction order and transcendental differences; GPT losses use `1e-4 + 1e-3*abs(reference)`, with wider gradient/parameter tolerances for accumulated error. These thresholds still require validation on actual adapters.
+
+**Current validation limitation:** Chrome crashes in this development sandbox before adapter acquisition (`bootstrap_check_in … Permission denied (1100)`, SIGSEGV); disabling crash reporting did not help. GPU shaders, numerical parity, memory stability and performance have therefore not yet been validated on hardware. No speedup is claimed. The browser GPT fixture preserves the nested model architecture but uses seeded synthetic data rather than the Node test's Alice corpus.
+
+## Current limits
+
+No editor, localization runtime, storage persistence or production level content is included. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses serial per-row reductions, gather backward scans indices per table element, and shape-specialized optimizer shaders may incur compilation overhead as Adam's step changes. Dispatches exceeding device workgroup limits fail explicitly rather than being split. These are important performance risks for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

@@ -94,7 +94,23 @@ function execute(
   const y = vjp ? xs[count] : out,
     g = vjp ? xs[count + 1] : out;
   const ys = vjp ? shapes[count] : shape;
-  if (['add', 'mul', 'max', 'ge'].includes(op)) {
+  if (!vjp && op === 'optimizer_sgd') {
+    const learningRate = Number(attrs.learningRate);
+    for (let i = 0; i < out.length; i++) out[i] = a[i] - learningRate * b[i];
+  } else if (!vjp && (op === 'optimizer_m' || op === 'optimizer_v')) {
+    const beta = Number(op === 'optimizer_m' ? attrs.beta1 : attrs.beta2);
+    for (let i = 0; i < out.length; i++)
+      out[i] = beta * a[i] + (1 - beta) * b[i] * (op === 'optimizer_v' ? b[i] : 1);
+  } else if (!vjp && op === 'optimizer_adam') {
+    const learningRate = Number(attrs.learningRate),
+      correction1 = xs[3][0],
+      correction2 = xs[3][1],
+      epsilon = Number(attrs.epsilon);
+    for (let i = 0; i < out.length; i++)
+      out[i] =
+        a[i] -
+        (learningRate * (b[i] / correction1)) / (Math.sqrt(xs[2][i] / correction2) + epsilon);
+  } else if (['add', 'mul', 'max', 'ge'].includes(op)) {
     const ai = mapOffsets(ys, shapes[0]),
       bi = mapOffsets(ys, shapes[1]);
     for (let i = 0; i < y.length; i++) {

@@ -41,6 +41,7 @@ it('owns fresh async batches, preserves fixed evaluation tensors and resumes fac
     expect(final.step).toBe(3);
     expect(final.loss).toBeLessThan(initial.loss);
     expect(await evaluation.targets.read()).toEqual(new Float32Array([2]));
+    session.dispose();
     expect(f.backend.liveBuffers).toBe(2);
   } finally {
     evaluation.targets.dispose();

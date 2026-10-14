@@ -57,42 +57,102 @@ function disposeLoss(loss: Tensor, outputs: Tensor[], keep: Tensor[]): void {
   outputs.forEach(visit);
   T.disposeGraph([loss, ...outputs], keep);
 }
-/** CPU-reference optimizer. Reads synchronize accelerator buffers; kernels remain backend-independent. */
+/** Updates and Adam moments stay on the parameter backend without host readback. */
 export class Optimizer {
   step = 0;
-  private moments = new Map<string, { m: Float32Array; v: Float32Array }>();
+  private moments = new Map<string, { m: Tensor; v: Tensor }>();
   constructor(readonly options: OptimizerOptions) {
     if (!(options.learningRate > 0 && Number.isFinite(options.learningRate)))
       throw new Error('training.learning_rate');
   }
+  /** Releases optimizer-owned state only; model parameters remain caller-owned. */
+  dispose(): void {
+    this.moments.forEach(({ m, v }) => {
+      m.dispose();
+      v.dispose();
+    });
+    this.moments.clear();
+    this.step = 0;
+  }
   async update(parameters: Map<string, Tensor>, gradients: Tensor[]): Promise<void> {
     if (parameters.size !== gradients.length) throw new Error('training.gradient_count');
-    this.step++;
     let index = 0;
-    for (const [key, parameter] of parameters) {
-      const values = await parameter.read(),
-        gradient = await gradients[index++].read();
-      const { kind, learningRate, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8 } = this.options;
-      let state = this.moments.get(key);
-      if (!state) {
-        state = { m: new Float32Array(values.length), v: new Float32Array(values.length) };
-        this.moments.set(key, state);
+    for (const parameter of parameters.values()) {
+      const gradient = gradients[index++];
+      parameter.assertLive();
+      gradient.assertLive();
+      if (parameter.backend !== gradient.backend) throw new Error('engine.backend.mismatch');
+      if (
+        parameter.shape.length !== gradient.shape.length ||
+        parameter.shape.some((d, i) => d !== gradient.shape[i])
+      )
+        throw new Error('training.gradient_shape');
+    }
+    this.step++;
+    index = 0;
+    // Bias corrections change every step; passing them as data keeps the update kernel's code
+    // (and thus the compiled GPU pipeline) identical across steps.
+    const corrections = new Map<Tensor['backend'], Tensor>();
+    const correctionsFor = (backend: Tensor['backend']) => {
+      let value = corrections.get(backend);
+      if (!value) {
+        const { beta1 = 0.9, beta2 = 0.999 } = this.options;
+        value = T.tensor([1 - beta1 ** this.step, 1 - beta2 ** this.step], [2], backend);
+        corrections.set(backend, value);
       }
-      const next = new Float32Array(values.length);
-      for (let i = 0; i < values.length; i++) {
-        let delta = gradient[i];
-        if (kind === 'adam') {
-          state.m[i] = beta1 * state.m[i] + (1 - beta1) * delta;
-          state.v[i] = beta2 * state.v[i] + (1 - beta2) * delta * delta;
-          delta =
-            state.m[i] /
-            (1 - beta1 ** this.step) /
-            (Math.sqrt(state.v[i] / (1 - beta2 ** this.step)) + epsilon);
+      return value;
+    };
+    try {
+      for (const [key, parameter] of parameters) {
+        const gradient = gradients[index++];
+        const { kind, learningRate, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8 } = this.options;
+        const allocated: Tensor[] = [];
+        const allocate = () => {
+          const t = new T.Tensor(parameter.backend, parameter.shape);
+          allocated.push(t);
+          return t;
+        };
+        try {
+          const next = allocate();
+          if (kind === 'adam') {
+            const previous = this.moments.get(key);
+            const state = previous ?? { m: allocate(), v: allocate() };
+            const m = allocate(),
+              v = allocate();
+            parameter.backend.submit([
+              { op: 'optimizer_m', inputs: [state.m, gradient], output: m, attrs: { beta1 } },
+              { op: 'optimizer_v', inputs: [state.v, gradient], output: v, attrs: { beta2 } },
+              {
+                op: 'optimizer_adam',
+                inputs: [parameter, m, v, correctionsFor(parameter.backend)],
+                output: next,
+                attrs: { learningRate, epsilon },
+              },
+            ]);
+            this.moments.set(key, { m, v });
+            state.m.dispose();
+            state.v.dispose();
+            allocated.splice(allocated.indexOf(m), 1);
+            allocated.splice(allocated.indexOf(v), 1);
+          } else {
+            parameter.backend.submit([
+              {
+                op: 'optimizer_sgd',
+                inputs: [parameter, gradient],
+                output: next,
+                attrs: { learningRate },
+              },
+            ]);
+          }
+          parameters.set(key, next);
+          allocated.splice(allocated.indexOf(next), 1);
+          parameter.dispose();
+        } finally {
+          allocated.forEach((t) => t.dispose());
         }
-        next[i] = values[i] - learningRate * delta;
       }
-      parameters.set(key, T.tensor(next, parameter.shape, parameter.backend));
-      parameter.dispose();
+    } finally {
+      corrections.forEach((t) => t.dispose());
     }
   }
 }
@@ -114,6 +174,8 @@ export interface TrainingSessionOptions {
   lossOutput?: string;
   evaluationBatch?: TrainingBatch;
   accuracy?: boolean;
+  /** Read and report training loss every N updates (default 10), and on the final update. */
+  reportEvery?: number;
 }
 export class TrainingSession {
   readonly optimizer: Optimizer;
@@ -126,6 +188,10 @@ export class TrainingSession {
     readonly sessionOptions: TrainingSessionOptions = {},
   ) {
     this.optimizer = new Optimizer(options);
+  }
+  /** Releases optimizer state, not the model or borrowed batches. */
+  dispose(): void {
+    this.optimizer.dispose();
   }
   private getLoss(outputs: Record<string, Tensor>, batch: TrainingBatch): Tensor {
     const loss = this.sessionOptions.lossOutput
@@ -153,27 +219,33 @@ export class TrainingSession {
     steps: number,
     options: {
       yieldEvery?: number;
+      reportEvery?: number;
       onReport?: (report: TrainingReport) => void;
       signal?: AbortSignal;
     } = {},
   ): Promise<TrainingReport> {
     if (!Number.isInteger(steps) || steps < 0) throw new Error('training.steps');
+    const reportEvery = options.reportEvery ?? this.sessionOptions.reportEvery ?? 10;
+    if (!Number.isInteger(reportEvery) || reportEvery < 1) throw new Error('training.report_every');
     for (let i = 0; i < steps; i++) {
       if (options.signal?.aborted) break;
       const batch =
         typeof this.batch === 'function' ? await this.batch(this.optimizer.step) : this.batch;
+      const report = (this.optimizer.step + 1) % reportEvery === 0 || i === steps - 1;
       let outputs: Record<string, Tensor> | undefined;
       let parameters: Tensor[] = [],
         loss: Tensor | undefined,
         gradients: Tensor[] = [],
-        value: number;
+        value: number | undefined;
       try {
         outputs = this.model.execute(batch.inputs);
         parameters = [...this.model.parameters.values()];
         loss = this.getLoss(outputs, batch);
         if (loss.shape.length !== 0) throw new Error('training.scalar_loss');
-        value = (await loss.read())[0];
-        if (!Number.isFinite(value)) throw new Error('training.nonfinite');
+        if (report) {
+          value = (await loss.read())[0];
+          if (!Number.isFinite(value)) throw new Error('training.nonfinite');
+        }
         gradients = await T.backward(loss, parameters);
         await this.optimizer.update(this.model.parameters, gradients);
       } finally {
@@ -184,7 +256,7 @@ export class TrainingSession {
           if (typeof this.batch === 'function') releaseBatch(batch);
         }
       }
-      options.onReport?.({ step: this.optimizer.step, loss: value });
+      if (value !== undefined) options.onReport?.({ step: this.optimizer.step, loss: value });
       if ((i + 1) % (options.yieldEvery ?? 10) === 0)
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }

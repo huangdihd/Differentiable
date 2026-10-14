@@ -78,12 +78,17 @@ describe('optimizers and resumable training', () => {
     const a = make(),
       b = make();
     const reports: number[] = [];
-    await a.session.run(10, { onReport: (r) => reports.push(r.step), yieldEvery: 2 });
+    await a.session.run(10, {
+      onReport: (r) => reports.push(r.step),
+      yieldEvery: 2,
+      reportEvery: 1,
+    });
     const split = await a.session.run(10),
       whole = await b.session.run(20);
     expect(split).toEqual(whole);
     expect(reports).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     for (const x of [a, b]) {
+      x.session.dispose();
       x.plan.dispose();
       x.batch.targets.dispose();
       Object.values(x.batch.inputs).forEach((t) => t.dispose());

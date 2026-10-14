@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GPU engine tests</title>
+  </head>
+  <body>
+    <pre id="status">Running GPU tests…</pre>
+    <script>
+      const failure = (error) =>
+        fetch('/__gpu_report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'failure', error: String(error?.stack ?? error) + (error?.params ? " " + JSON.stringify(error.params) : "") }),
+        });
+      window.addEventListener('error', (event) => failure(event.error ?? event.message));
+      window.addEventListener('unhandledrejection', (event) => failure(event.reason));
+      import('/src/gpu-tests.ts').then((module) => module.run()).catch(failure);
+    </script>
+  </body>
+</html>

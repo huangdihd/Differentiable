@@ -264,6 +264,7 @@ it('trains a nested GraphJSON GPT with fresh Adam batches and matches primitive 
     const baselineBuffers = backend.liveBuffers;
     await session.run(100, { yieldEvery: 100 });
     const finalLoss = await evaluateHoldout(session);
+    session.dispose();
     expect(backend.liveBuffers).toBe(baselineBuffers);
     // Held-out positional suffix is never sampled by the training factory.
     const counts = new Float64Array(V);
