@@ -18,8 +18,17 @@ export interface SuiteResult {
   tests: LevelResult[];
   metrics?: GraphMetrics;
 }
-export async function evaluateSuite(level: LevelSuite, graph: GraphJSON, options: { registry?: ComponentRegistry } = {}): Promise<SuiteResult> {
+export async function evaluateSuite(
+  level: LevelSuite,
+  graph: GraphJSON,
+  options: { registry?: ComponentRegistry } = {},
+): Promise<SuiteResult> {
   const tests: LevelResult[] = [];
   for (const test of level.tests) tests.push(await evaluateLevel(test, graph, options));
-  return { levelId: level.id, passed: tests.length > 0 && tests.every(t => t.passed), tests, metrics: tests[0]?.metrics };
+  return {
+    levelId: level.id,
+    passed: tests.length > 0 && tests.every((t) => t.passed),
+    tests,
+    metrics: tests[0]?.metrics,
+  };
 }

@@ -1,42 +1,102 @@
-import { GraphError, compileGraph, createDefaultRegistry, type ComponentRegistry, type GraphJSON, type ShapePorts } from './graph';
+import {
+  GraphError,
+  compileGraph,
+  createDefaultRegistry,
+  type ComponentRegistry,
+  type GraphJSON,
+  type ShapePorts,
+} from './graph';
 import { Random } from './random';
 import * as T from './tensor';
-import { crossEntropy, disposeExecution, TrainingSession, type OptimizerOptions, type TrainingBatch, type TrainingReport } from './training';
+import {
+  crossEntropy,
+  disposeExecution,
+  TrainingSession,
+  type OptimizerOptions,
+  type TrainingBatch,
+  type TrainingReport,
+} from './training';
 
 export interface LevelMetadata {
-  id: string; titleKey: string; descriptionKey: string; chapter?: string; hintsKeys?: readonly string[];
-  available: readonly string[]; interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
+  id: string;
+  titleKey: string;
+  descriptionKey: string;
+  chapter?: string;
+  hintsKeys?: readonly string[];
+  available: readonly string[];
+  interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
   unlock: readonly string[];
   unlockComponents?: readonly string[];
 }
-export interface LevelCase { id: string; inputs: Record<string, number[]> }
+export interface LevelCase {
+  id: string;
+  inputs: Record<string, number[]>;
+}
 export interface ForwardLevel extends LevelMetadata {
-  kind: 'forward' | 'derivative'; fixed: readonly LevelCase[];
-  generated?: { seed: number; count: number; generate: (random: Random, index: number) => LevelCase };
+  kind: 'forward' | 'derivative';
+  fixed: readonly LevelCase[];
+  generated?: {
+    seed: number;
+    count: number;
+    generate: (random: Random, index: number) => LevelCase;
+  };
   reference: (inputs: Record<string, T.Tensor>) => T.Tensor;
-  derivativeInput?: string; atol?: number; rtol?: number;
+  derivativeInput?: string;
+  atol?: number;
+  rtol?: number;
 }
 export interface TrainLevel extends LevelMetadata {
-  kind: 'train'; seed: number; steps: number; optimizer: OptimizerOptions;
+  kind: 'train';
+  seed: number;
+  steps: number;
+  optimizer: OptimizerOptions;
   dataset: (random: Random) => TrainingBatch;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
   threshold: { loss: number; accuracy?: number };
 }
 export type Level = ForwardLevel | TrainLevel;
-export interface GraphMetrics { topNodes: number; expandedPrimitives: number; parameterCount: number }
-export interface TestResult { id: string; passed: boolean; actual: number[]; expected: number[]; errorKey?: string }
-export interface LevelResult { levelId: string; passed: boolean; tests: TestResult[]; metrics: GraphMetrics; training?: TrainingReport; errorKey?: string; error?: { key: string; node?: string; port?: string; params: Record<string, unknown> } }
-export function graphMetrics(graph: GraphJSON, registry: ComponentRegistry = createDefaultRegistry()): GraphMetrics {
-  let expandedPrimitives = 0, parameterCount = 0;
+export interface GraphMetrics {
+  topNodes: number;
+  expandedPrimitives: number;
+  parameterCount: number;
+}
+export interface TestResult {
+  id: string;
+  passed: boolean;
+  actual: number[];
+  expected: number[];
+  errorKey?: string;
+}
+export interface LevelResult {
+  levelId: string;
+  passed: boolean;
+  tests: TestResult[];
+  metrics: GraphMetrics;
+  training?: TrainingReport;
+  errorKey?: string;
+  error?: { key: string; node?: string; port?: string; params: Record<string, unknown> };
+}
+export function graphMetrics(
+  graph: GraphJSON,
+  registry: ComponentRegistry = createDefaultRegistry(),
+): GraphMetrics {
+  let expandedPrimitives = 0,
+    parameterCount = 0;
   const visit = (g: GraphJSON, stack: string[]) => {
     for (const node of g.nodes) {
-      if (node.component === 'param') parameterCount += ((node.attrs?.shape ?? []) as number[]).reduce((a, b) => a * b, 1);
+      if (node.component === 'param')
+        parameterCount += ((node.attrs?.shape ?? []) as number[]).reduce((a, b) => a * b, 1);
       if (['input', 'output', 'param', 'const'].includes(node.component)) continue;
       const definition = registry.get(node.component);
       if (definition?.subgraph) {
         if (stack.includes(node.component)) throw new Error('levels.recursive_component');
-        visit(typeof definition.subgraph === 'function' ? definition.subgraph(node.attrs ?? {}) : definition.subgraph, [...stack, node.component]);
+        visit(
+          typeof definition.subgraph === 'function'
+            ? definition.subgraph(node.attrs ?? {})
+            : definition.subgraph,
+          [...stack, node.component],
+        );
       } else expandedPrimitives++;
     }
   };
@@ -44,36 +104,95 @@ export function graphMetrics(graph: GraphJSON, registry: ComponentRegistry = cre
   return { topNodes: graph.nodes.length, expandedPrimitives, parameterCount };
 }
 /** Tests compile and execute the actual user graph, never a solution-specific evaluator. */
-export async function evaluateLevel(level: Level, graph: GraphJSON, options: {
-  registry?: ComponentRegistry; onReport?: (report: TrainingReport) => void; signal?: AbortSignal;
-} = {}): Promise<LevelResult> {
-  const result: LevelResult = { levelId: level.id, passed: false, tests: [], metrics: { topNodes: graph.nodes.length, expandedPrimitives: 0, parameterCount: 0 } };
+export async function evaluateLevel(
+  level: Level,
+  graph: GraphJSON,
+  options: {
+    registry?: ComponentRegistry;
+    onReport?: (report: TrainingReport) => void;
+    signal?: AbortSignal;
+  } = {},
+): Promise<LevelResult> {
+  const result: LevelResult = {
+    levelId: level.id,
+    passed: false,
+    tests: [],
+    metrics: { topNodes: graph.nodes.length, expandedPrimitives: 0, parameterCount: 0 },
+  };
   let plan: ReturnType<typeof compileGraph> | undefined;
   try {
     result.metrics = graphMetrics(graph, options.registry);
-    plan = compileGraph(graph, { registry: options.registry, availableComponents: level.available, inputShapes: level.interface.inputs, random: new Random(level.kind === 'train' ? level.seed : 1) });
+    plan = compileGraph(graph, {
+      registry: options.registry,
+      availableComponents: level.available,
+      inputShapes: level.interface.inputs,
+      random: new Random(level.kind === 'train' ? level.seed : 1),
+    });
     const shape = plan.outputShapes[level.interface.output];
-    if (!shape || JSON.stringify(shape) !== JSON.stringify(level.interface.outputShape)) throw new Error('levels.output_shape');
+    if (!shape || JSON.stringify(shape) !== JSON.stringify(level.interface.outputShape))
+      throw new Error('levels.output_shape');
     if (level.kind === 'train') {
       const batch = level.dataset(new Random(level.seed));
       let evaluationBatch: TrainingBatch | undefined;
       try {
         evaluationBatch = level.evaluationDataset?.(new Random(level.seed + 1));
-        const session = new TrainingSession(plan, batch, crossEntropy, level.optimizer, level.interface.output, { lossOutput: level.lossOutput, evaluationBatch, accuracy: level.threshold.accuracy !== undefined });
+        const session = new TrainingSession(
+          plan,
+          batch,
+          crossEntropy,
+          level.optimizer,
+          level.interface.output,
+          {
+            lossOutput: level.lossOutput,
+            evaluationBatch,
+            accuracy: level.threshold.accuracy !== undefined,
+          },
+        );
         result.training = await session.run(level.steps, options);
-        result.passed = result.training.loss < level.threshold.loss && (level.threshold.accuracy === undefined || result.training.accuracy! >= level.threshold.accuracy);
-        result.tests.push({ id: 'evaluation', passed: result.passed, actual: [result.training.loss, ...(result.training.accuracy === undefined ? [] : [result.training.accuracy])], expected: [level.threshold.loss, ...(level.threshold.accuracy === undefined ? [] : [level.threshold.accuracy])] });
+        result.passed =
+          result.training.loss < level.threshold.loss &&
+          (level.threshold.accuracy === undefined ||
+            result.training.accuracy! >= level.threshold.accuracy);
+        result.tests.push({
+          id: 'evaluation',
+          passed: result.passed,
+          actual: [
+            result.training.loss,
+            ...(result.training.accuracy === undefined ? [] : [result.training.accuracy]),
+          ],
+          expected: [
+            level.threshold.loss,
+            ...(level.threshold.accuracy === undefined ? [] : [level.threshold.accuracy]),
+          ],
+        });
       } finally {
-        const tensors = new Set([ ...Object.values(batch.inputs), batch.targets, ...(evaluationBatch ? [...Object.values(evaluationBatch.inputs), evaluationBatch.targets] : []) ]);
-        tensors.forEach(x => x.dispose());
+        const tensors = new Set([
+          ...Object.values(batch.inputs),
+          batch.targets,
+          ...(evaluationBatch
+            ? [...Object.values(evaluationBatch.inputs), evaluationBatch.targets]
+            : []),
+        ]);
+        tensors.forEach((x) => x.dispose());
       }
     } else {
-      const cases = [...level.fixed], generator = level.generated;
-      if (generator) { const random = new Random(generator.seed); for (let i = 0; i < generator.count; i++) cases.push(generator.generate(random, i)); }
+      const cases = [...level.fixed],
+        generator = level.generated;
+      if (generator) {
+        const random = new Random(generator.seed);
+        for (let i = 0; i < generator.count; i++) cases.push(generator.generate(random, i));
+      }
       for (const test of cases) {
-        const inputs = Object.fromEntries(Object.entries(test.inputs).map(([name, data]) => [name, T.tensor(data, level.interface.inputs[name])]));
+        const inputs = Object.fromEntries(
+          Object.entries(test.inputs).map(([name, data]) => [
+            name,
+            T.tensor(data, level.interface.inputs[name]),
+          ]),
+        );
         let execution: Record<string, T.Tensor> | undefined;
-        let outputs: T.Tensor[] = [], reference: T.Tensor | undefined, gradient: T.Tensor | undefined;
+        let outputs: T.Tensor[] = [],
+          reference: T.Tensor | undefined,
+          gradient: T.Tensor | undefined;
         try {
           execution = plan.execute(inputs);
           outputs = Object.values(execution);
@@ -85,35 +204,77 @@ export async function evaluateLevel(level: Level, graph: GraphJSON, options: {
             [gradient] = await T.backward(reference, [inputs[level.derivativeInput ?? 'x']]);
           }
           const expected = Array.from(await (gradient ?? reference).read());
-          const passed = actual.length === expected.length && actual.every((x, i) => Number.isFinite(x) && Number.isFinite(expected[i]) && Math.abs(x - expected[i]) <= (level.atol ?? 1e-5) + (level.rtol ?? 1e-4) * Math.abs(expected[i]));
+          const passed =
+            actual.length === expected.length &&
+            actual.every(
+              (x, i) =>
+                Number.isFinite(x) &&
+                Number.isFinite(expected[i]) &&
+                Math.abs(x - expected[i]) <=
+                  (level.atol ?? 1e-5) + (level.rtol ?? 1e-4) * Math.abs(expected[i]),
+            );
           result.tests.push({ id: test.id, passed, actual, expected });
         } finally {
           disposeExecution(outputs, Object.values(inputs));
           if (execution) plan.releaseExecution(execution, Object.values(inputs));
           if (reference) T.disposeGraph([reference], Object.values(inputs));
-          gradient?.dispose(); Object.values(inputs).forEach(x => x.dispose());
+          gradient?.dispose();
+          Object.values(inputs).forEach((x) => x.dispose());
         }
       }
-      result.passed = result.tests.length > 0 && result.tests.every(t => t.passed);
+      result.passed = result.tests.length > 0 && result.tests.every((t) => t.passed);
     }
   } catch (error) {
     if (error instanceof GraphError) {
       result.errorKey = error.key;
       result.error = { key: error.key, node: error.node, port: error.port, params: error.params };
     } else result.errorKey = error instanceof Error ? error.message : 'levels.execution_error';
+  } finally {
+    plan?.dispose();
   }
-  finally { plan?.dispose(); }
   return result;
 }
-export interface Progress { unlocked: string[]; unlockedComponents: string[]; passed: string[]; savedGraphs: Record<string, GraphJSON>; bestScores: Record<string, GraphMetrics> }
-export const initialProgress = (levels: readonly string[], components: readonly string[] = []): Progress => ({ unlocked: [...levels], unlockedComponents: [...components], passed: [], savedGraphs: {}, bestScores: {} });
+export interface Progress {
+  unlocked: string[];
+  unlockedComponents: string[];
+  passed: string[];
+  savedGraphs: Record<string, GraphJSON>;
+  bestScores: Record<string, GraphMetrics>;
+}
+export const initialProgress = (
+  levels: readonly string[],
+  components: readonly string[] = [],
+): Progress => ({
+  unlocked: [...levels],
+  unlockedComponents: [...components],
+  passed: [],
+  savedGraphs: {},
+  bestScores: {},
+});
 export function saveGraph(progress: Progress, levelId: string, graph: GraphJSON): Progress {
-  return { ...progress, savedGraphs: { ...progress.savedGraphs, [levelId]: structuredClone(graph) } };
+  return {
+    ...progress,
+    savedGraphs: { ...progress.savedGraphs, [levelId]: structuredClone(graph) },
+  };
 }
 /** Pure progression: only an unlocked, matching, passing level unlocks its successors. */
 export function applyResult(progress: Progress, level: Level, result: LevelResult): Progress {
-  if (!result.passed || result.levelId !== level.id || !progress.unlocked.includes(level.id)) return progress;
-  const old = progress.bestScores[level.id], score = result.metrics;
-  const better = !old || score.expandedPrimitives < old.expandedPrimitives || (score.expandedPrimitives === old.expandedPrimitives && score.parameterCount < old.parameterCount);
-  return { ...progress, unlockedComponents: [...new Set([...(progress.unlockedComponents ?? []), ...(level.unlockComponents ?? [])])], unlocked: [...new Set([...progress.unlocked, ...level.unlock])], passed: [...new Set([...progress.passed, level.id])], bestScores: better ? { ...progress.bestScores, [level.id]: { ...score } } : progress.bestScores };
+  if (!result.passed || result.levelId !== level.id || !progress.unlocked.includes(level.id))
+    return progress;
+  const old = progress.bestScores[level.id],
+    score = result.metrics;
+  const better =
+    !old ||
+    score.expandedPrimitives < old.expandedPrimitives ||
+    (score.expandedPrimitives === old.expandedPrimitives &&
+      score.parameterCount < old.parameterCount);
+  return {
+    ...progress,
+    unlockedComponents: [
+      ...new Set([...(progress.unlockedComponents ?? []), ...(level.unlockComponents ?? [])]),
+    ],
+    unlocked: [...new Set([...progress.unlocked, ...level.unlock])],
+    passed: [...new Set([...progress.passed, level.id])],
+    bestScores: better ? { ...progress.bestScores, [level.id]: { ...score } } : progress.bestScores,
+  };
 }

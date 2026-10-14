@@ -10,11 +10,14 @@ Use a current Node release supported by Vitest 5 (Node 22.12+, 24+, or 26+) and 
 npm install
 npm run typecheck
 npm test
+npm run format:check
 npm run build
 npm run dev
+# Apply Prettier (100 columns, single quotes) to sources:
+npm run format
 ```
 
-Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT feasibility test takes roughly 20 seconds on the development machine and enforces a 60-second budget.
+Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT feasibility test takes roughly 5 seconds on the development machine and enforces a 60-second budget.
 
 ## Engine boundaries
 
@@ -30,11 +33,13 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 Uploads and readbacks copy host arrays. Callers own tensor inputs and returned gradients. Dispose each gradient after use. For eager expressions, use `disposeGraph(outputs, retainedInputsAndParameters)` after backward to release the tape's tensors. A compiled graph owns its constants and initialized parameters. After backward, call `plan.releaseExecution(outputs)` with the exact object returned by `execute`; this also frees disconnected intermediates while retaining plan storage and caller inputs. Dispose the plan when finished. Custom implementations must clean private allocations that are neither returned nor reachable through returned tapes, particularly when throwing. Never release a forward tensor before its backward computation completes. Backend implementations must defer storage reuse until queued users finish.
 
+`TrainingSession` borrows fixed training/evaluation batches. A batch factory receives the zero-based optimizer step and returns fresh standalone tensors (synchronously or asynchronously); the session owns and releases all distinct inputs/targets, even on failure. Without an explicit evaluation batch, evaluation invokes that factory too. Factory-created tensors must not alias model parameters or own additional tape allocations.
+
 ### Native components
 
-Native matmul supports rank >= 2 and broadcast batch dimensions; softmax and layernorm operate on the last axis. Layernorm is normalization only; gain and bias are ordinary multiply/add nodes. Equivalent primitive compositions live in `composites.ts`. Native component selection is separate from game unlock policy: a level's available list must represent what the player has unlocked. Availability is checked recursively, including underlying primitives; input/output are structural exemptions. Subgraphs with parameters deliberately bypass native shortcuts until an explicit native parameter-binding ABI is introduced. `safeCompileGraph` returns a discriminated result with structured diagnostics (currently the first error); `compileGraph` is its throwing counterpart.
+Native matmul supports rank >= 2 and broadcast batch dimensions; softmax and layernorm operate on the last axis. Layernorm is normalization only; gain and bias are ordinary multiply/add nodes. Canonical primitive-only GraphJSON answers and native implementations live together in `standard-components.ts`. These three operations are registered components, not primitives; `preferNative: false` expands their answers. Shape-dependent answers receive concrete input shapes at compilation (for reshape attributes and normalization width). The default primitive vocabulary is `input output const param add mul exp log max ge sum reduce_max reshape transpose gather arange`. Native component selection is separate from game unlock policy: a level's available list must represent what the player has unlocked. Availability only checks nodes placed directly in the top-level player graph, including disconnected nodes; input/output are structural exemptions. An unlocked component can use internal primitives absent from the level palette. Subgraphs with parameters deliberately bypass native shortcuts until an explicit native parameter-binding ABI is introduced. `safeCompileGraph` returns a discriminated result with structured diagnostics (currently the first error); `compileGraph` is its throwing counterpart.
 
-The GPT test constructs token/position embeddings, four-head causal attention, residual MLP blocks, two Transformer layers and cross entropy using primitive tensor operations. It compares logits, loss and every parameter gradient against native matmul/softmax/layernorm, then trains the primitive version for 16 seeded Adam steps. It is a numerical sufficiency test, not a serialized editor/save-game GPT fixture or a quality language model.
+The GPT test builds a complete GraphJSON model with nested registered linear, affine-normalization, three-head causal-attention, MLP and Transformer-block components. Its two blocks have independently scoped parameters. `TrainingSession` trains with native kernels for 100 seeded Adam steps using fresh batches from a contiguous 2,548-character public-domain Alice in Wonderland excerpt. An 80/20 positional split keeps validation text out of training; held-out loss is averaged over deterministic batches covering the validation suffix (the final partial batch overlaps) and must beat both full-corpus and validation unigram entropy. The trained parameters are then shared with a `preferNative: false` plan to compare logits, loss and every parameter gradient. This is a small numerical/generalization feasibility test, not a quality language model.
 
 ## Future GPU work / current limits
 
