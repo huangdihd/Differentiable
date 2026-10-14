@@ -146,7 +146,7 @@ export class WorkerRuntime {
       const checkDiverged = (report: TrainingReport) => {
         if (
           run.level.tunable &&
-          (!Number.isFinite(report.loss) || report.loss > run.initialLoss * 10)
+          (!Number.isFinite(report.loss) || report.loss > run.initialLoss * 1000)
         ) {
           run.result.training = report;
           throw new GraphError('levels.train_diverged', undefined, undefined, {
@@ -154,14 +154,16 @@ export class WorkerRuntime {
           });
         }
       };
-      const report = await run.session.run(1, { reportEvery: 1, onReport: checkDiverged });
+      const report = await run.session.run(1, { reportEvery: 1 });
+      // Chart the step first so the player sees the loss blow up before the run stops.
+      if (Number.isFinite(report.loss))
+        this.emit({
+          type: 'progress',
+          requestId: run.request.requestId,
+          revision: run.request.revision,
+          report,
+        });
       checkDiverged(report);
-      this.emit({
-        type: 'progress',
-        requestId: run.request.requestId,
-        revision: run.request.revision,
-        report,
-      });
       if (report.step >= run.level.steps) {
         this.finish(run, report, true);
         this.release();
@@ -188,8 +190,10 @@ export class WorkerRuntime {
       report.loss < threshold.loss &&
       (threshold.accuracy === undefined || (report.accuracy ?? -Infinity) >= threshold.accuracy);
     if (completed && !passed && run.level.tunable) {
-      run.result.errorKey = 'levels.train_slow';
-      run.result.error = { key: 'levels.train_slow', params: { loss: report.loss } };
+      // Ending above where it started is also overshooting, just more slowly.
+      const key = report.loss > run.initialLoss ? 'levels.train_diverged' : 'levels.train_slow';
+      run.result.errorKey = key;
+      run.result.error = { key, params: { loss: report.loss } };
     }
     Object.assign(run.result, {
       training: report,

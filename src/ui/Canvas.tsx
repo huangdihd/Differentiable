@@ -63,6 +63,15 @@ export interface CanvasProps {
   onDeleteEdge: (index: number) => void;
   onDeleteNode: (id: string) => void;
   onInspect: (node: GraphNode) => void;
+  /**
+   * One training step played back on the canvas: values flow forward along the wires, then
+   * gradients flow back, then parameters change. Text is preformatted by the caller.
+   */
+  flow?: {
+    phase: 'forward' | 'backward' | 'update';
+    gradient: Record<string, string>;
+    update: Record<string, string>;
+  };
   /** Bumped by the parent to make a node shake (rejected connection). */
   shake?: { node: string; tick: number };
 }
@@ -307,7 +316,18 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => !p.readonly && p.onDeleteEdge(i)}
                 />
-                <path className={`wire ${live(edge.from.node) ? 'is-live' : ''}`} d={d} />
+                <path
+                  className={`wire ${live(edge.from.node) ? 'is-live' : ''} ${
+                    p.flow?.phase === 'forward'
+                      ? 'is-flow-forward'
+                      : p.flow?.phase === 'backward' &&
+                          p.flow.gradient[edge.from.node] &&
+                          p.flow.gradient[edge.to.node]
+                        ? 'is-flow-backward'
+                        : ''
+                  }`}
+                  d={d}
+                />
               </g>
             );
           })}
@@ -337,6 +357,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
             io && 'is-io',
             registry.get(n.component)?.subgraph && 'is-composite',
             shaking?.node === n.id && 'is-shaking',
+            p.flow?.phase === 'update' && p.flow.update[n.id] && 'is-updating',
           ]
             .filter(Boolean)
             .join(' ');
@@ -414,6 +435,15 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 )}
                 <span className="node-value">{value?.text ?? '—'}</span>
               </div>
+              {p.flow && p.flow.phase !== 'forward' && p.flow.gradient[n.id] && (
+                <div className="node-grad" title={p.t('ui.gradHelp')}>
+                  <span className="node-grad-tag">∂</span>
+                  <span className="node-value">{p.flow.gradient[n.id]}</span>
+                </div>
+              )}
+              {p.flow?.phase === 'update' && p.flow.update[n.id] && (
+                <div className="node-update">{p.flow.update[n.id]}</div>
+              )}
               {(() => {
                 // Element-wise ops with mismatched operand shapes: say out loud that broadcasting
                 // stretched them, so [4×1]·[1×3] → [4×3] doesn't look like a matrix product.

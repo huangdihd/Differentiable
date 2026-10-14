@@ -1313,3 +1313,96 @@ input[type='range'] {
   border-color: var(--grad);
   color: var(--grad);
 }
+
+/* ---------- single-step training playback ---------- */
+.wire.is-flow-forward,
+.wire.is-flow-backward {
+  stroke-width: 2.4;
+  stroke-dasharray: 7 7;
+  animation: gv-flow 0.9s linear infinite;
+}
+.wire.is-flow-forward {
+  stroke: var(--accent);
+}
+/* Wires run producer → consumer; gradients travel the other way. */
+.wire.is-flow-backward {
+  stroke: var(--grad);
+  animation-direction: reverse;
+}
+.node-grad,
+.node-update {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px var(--s2) 4px;
+  border-top: 1px dashed var(--line);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--grad);
+  min-width: 0;
+}
+.node-grad-tag {
+  flex: none;
+  font-weight: 600;
+}
+.node-update {
+  /* Floats above the node so the step does not push neighbours around. */
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  justify-content: center;
+  padding: 3px var(--s2);
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node.is-updating {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: box-shadow 0.3s;
+}
+.lr-control {
+  display: grid;
+  gap: var(--s1);
+}
+.lr-control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.lr-control output {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.lr-control input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.lr-scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.step-phase {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+.step-phase .is-forward {
+  color: var(--accent);
+}
+.step-phase .is-backward {
+  color: var(--grad);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wire.is-flow-forward,
+  .wire.is-flow-backward {
+    animation: none;
+  }
+}

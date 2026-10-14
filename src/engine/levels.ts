@@ -174,18 +174,22 @@ export async function evaluateLevel(
         );
         const initial = await session.evaluate();
         const checkDiverged = (report: TrainingReport) => {
-          if (level.tunable && (!Number.isFinite(report.loss) || report.loss > initial.loss * 10))
+          if (level.tunable && (!Number.isFinite(report.loss) || report.loss > initial.loss * 1000))
             throw new Error('levels.train_diverged');
         };
         result.training = await session.run(level.steps, {
           ...options,
           reportEvery: 1,
+          // Report first so the player sees the loss blow up before the run stops.
           onReport: (report) => {
-            checkDiverged(report);
             options.onReport?.(report);
+            checkDiverged(report);
           },
         });
         checkDiverged(result.training);
+        // Ending above where it started is also overshooting, just more slowly.
+        if (level.tunable && result.training.loss > initial.loss)
+          throw new Error('levels.train_diverged');
         result.passed =
           result.training.loss < level.threshold.loss &&
           (level.threshold.accuracy === undefined ||

@@ -514,5 +514,13 @@
   "levels.3-4.hint2": "The default rate is too small to get there in 60 steps; too large and each step overshoots the valley and bounces further out. Try between 0.1 and 0.5.",
   "components.mse": "Mean squared error",
   "levels.train_diverged": "Getting further away: the learning rate is too large, and every step overshoots the valley. Lower it.",
-  "levels.train_slow": "All 60 steps used and loss is still {loss}. Steps too small? Try a larger learning rate."
+  "levels.train_slow": "All 60 steps used and loss is still {loss}. Steps too small? Try a larger learning rate.",
+  "ui.learningRate": "Learning rate",
+  "ui.stepOnce": "Step",
+  "ui.stepHelp": "Take one step: watch values flow forward, gradients flow back and the parameters move.",
+  "ui.resetParams": "Reset parameters",
+  "ui.gradHelp": "Gradient of the loss with respect to this value, ∂loss/∂(·)",
+  "ui.stepPhase.forward": "① Forward: data flows through the network, loss = {loss}",
+  "ui.stepPhase.backward": "② Backward: the gradient flows back from loss; each node gets ∂loss/∂(·)",
+  "ui.stepPhase.update": "③ Update: every parameter θ ← θ − η·∂loss/∂θ"
 }

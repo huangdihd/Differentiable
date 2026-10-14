@@ -511,5 +511,13 @@
   "levels.3-4.hint2": "默认学习率太小，60 步走不到底；调太大会一步迈过谷底，越弹越远。在 0.1 到 0.5 之间试试。",
   "components.mse": "均方误差",
   "levels.train_diverged": "越走越远了：学习率太大，每一步都迈过了谷底。调小一点。",
-  "levels.train_slow": "60 步用完了，loss 还在 {loss}。步子太小？调大学习率试试。"
+  "levels.train_slow": "60 步用完了，loss 还在 {loss}。步子太小？调大学习率试试。",
+  "ui.learningRate": "学习率",
+  "ui.stepOnce": "单步",
+  "ui.stepHelp": "只走一步：看值往前流、梯度往回流、参数怎么变。",
+  "ui.resetParams": "重置参数",
+  "ui.gradHelp": "损失对这个值的梯度 ∂loss/∂(·)",
+  "ui.stepPhase.forward": "① 前向：数据流过网络，算出 loss = {loss}",
+  "ui.stepPhase.backward": "② 反向：梯度从 loss 往回流，每个节点得到 ∂loss/∂(·)",
+  "ui.stepPhase.update": "③ 更新：每个参数 θ ← θ − η·∂loss/∂θ"
 }

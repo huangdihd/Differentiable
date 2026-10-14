@@ -20,7 +20,7 @@ import {
 } from './i18n';
 import { WorkerClient, WorkerClientError } from './worker/client';
 import type { WorkerError } from './worker/protocol';
-import type { TrainingReport } from './engine/training';
+import type { TrainingReport, TrainingStepTrace } from './engine/training';
 import Canvas, { position, shapeText, type CanvasHandle, type NodeValue } from './ui/Canvas';
 import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
@@ -311,6 +311,17 @@ function Editor({
   const [training, setTraining] = useState<'idle' | 'running' | 'paused'>('idle');
   const [report, setReport] = useState<TrainingReport>();
   const [losses, setLosses] = useState<number[]>([]);
+  // Single-step training, replayed on the canvas: forward, then backward, then the update.
+  const [stepFlow, setStepFlow] = useState<{
+    trace: TrainingStepTrace;
+    phase: 'forward' | 'backward' | 'update';
+  }>();
+  const stepToken = useRef(0);
+  const stepGraph = useRef<GraphJSON | undefined>(undefined);
+  const tunable = level.kind === 'train' ? level.tunable?.learningRate : undefined;
+  const learningRate = tunable
+    ? (progress.trainingSettings?.[level.id]?.learningRate ?? tunable.default)
+    : undefined;
   const [values, setValues] = useState<Record<string, NodeValue>>({});
   const [expression, setExpression] = useState('');
   const [inside, setInside] = useState<{ name: string; graph: GraphJSON }[]>([]);
@@ -415,6 +426,8 @@ function Editor({
     if (lastGraph.current !== state.graph) {
       setResult(undefined);
       setModal(false);
+      stepToken.current++;
+      setStepFlow(undefined);
     }
     lastGraph.current = state.graph;
     revision.current++;
@@ -564,6 +577,89 @@ function Editor({
     };
   }, [state.graph, parsedInputs, diagnostics, busy, locale]);
 
+  const PHASE_MS = 1100;
+  const stepOnce = async () => {
+    const c = client.current;
+    if (!c) return;
+    setError(undefined);
+    setResult(undefined);
+    const token = ++stepToken.current;
+    try {
+      const trace = await c.trainStep(level.id, state.graph, learningRate);
+      if (token !== stepToken.current) return;
+      // The worker restarts the session when the graph changed; so does the chart.
+      const fresh = stepGraph.current !== state.graph || trace.step === 1;
+      stepGraph.current = state.graph;
+      setLosses((a) => (fresh ? [trace.loss] : [...a, trace.loss]));
+      setReport({ step: trace.step, loss: trace.loss });
+      for (const phase of ['forward', 'backward', 'update'] as const) {
+        if (token !== stepToken.current) return;
+        setStepFlow({ trace, phase });
+        if (phase !== 'update') await new Promise((done) => setTimeout(done, PHASE_MS));
+      }
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const resetSteps = () => {
+    stepToken.current++;
+    setStepFlow(undefined);
+    setLosses([]);
+    setReport(undefined);
+    stepGraph.current = undefined;
+    void client.current?.trainReset().catch(fail);
+  };
+  const setLearningRate = (lr: number) =>
+    latest.current.onProgress({
+      ...latest.current.progress,
+      trainingSettings: {
+        ...latest.current.progress.trainingSettings,
+        [level.id]: { learningRate: lr },
+      },
+    });
+  const traceText = (v: { values: number[]; size: number }) =>
+    v.size === 1 ? compact(locale, v.values[0]) : listText(locale, v.values, 2);
+  const flowValues = useMemo(() => {
+    if (!stepFlow) return undefined;
+    const next: Record<string, NodeValue> = {};
+    const { forward } = stepFlow.trace;
+    for (const node of state.graph.nodes) {
+      const id =
+        node.component === 'output'
+          ? state.graph.edges.find((e) => e.to.node === node.id)?.from.node
+          : node.id;
+      const v = id ? (forward[node.id] ?? forward[id]) : undefined;
+      if (!v) continue;
+      next[node.id] = {
+        text: traceText(v),
+        title: `[${v.shape.join('×') || '·'}] ${fullValues(v.values)}${v.size > v.values.length ? ' …' : ''}`,
+        ok: v.values.every(Number.isFinite),
+        shape: v.shape,
+      };
+    }
+    return next;
+  }, [stepFlow?.trace, state.graph, locale]);
+  const flow = stepFlow && {
+    phase: stepFlow.phase,
+    // Data and constants are not learned; their gradients would only be noise here.
+    gradient: Object.fromEntries(
+      Object.entries(stepFlow.trace.gradient)
+        .filter(([id]) => {
+          const c = state.graph.nodes.find((n) => n.id === id)?.component;
+          return c !== 'input' && c !== 'const';
+        })
+        .map(([id, v]) => [id, traceText(v)]),
+    ),
+    update: Object.fromEntries(
+      Object.entries(stepFlow.trace.parameters).map(([id, v]) => [
+        id,
+        v.before.length === 1
+          ? `${compact(locale, v.before[0])} → ${compact(locale, v.after[0])}`
+          : `${listText(locale, v.before, 2)} → ${listText(locale, v.after, 2)}`,
+      ]),
+    ),
+  };
+
   const gradientWrt =
     level.kind === 'derivative'
       ? [level.derivativeInput ?? 'x']
@@ -628,8 +724,10 @@ function Editor({
       if (level.kind === 'train') {
         setLosses([]);
         setReport(undefined);
+        stepToken.current++;
+        setStepFlow(undefined);
         setTraining('running');
-        await client.current?.start(level.id, state.graph);
+        await client.current?.start(level.id, state.graph, learningRate);
       } else {
         setRunning(true);
         const r = await client.current?.evaluate(level.id, state.graph);
@@ -890,7 +988,8 @@ function Editor({
           readonly={!canEdit}
           t={t}
           errors={inside.length ? [] : errors}
-          values={inside.length ? null : values}
+          values={inside.length ? null : (flowValues ?? values)}
+          flow={inside.length ? undefined : flow}
           ioShapes={inside.length ? undefined : ioShapes}
           onSelect={(ids, shift) => command({ type: 'select', ids, shift })}
           onMove={(positions) => command({ type: 'moveNodes', positions })}
@@ -1196,6 +1295,29 @@ function Editor({
           </div>
           {level.kind === 'train' && (
             <>
+              {tunable && learningRate !== undefined && (
+                <label className="lr-control">
+                  <span className="lr-control-head">
+                    <span className="label">{t('ui.learningRate')}</span>
+                    <output>η = {compact(locale, learningRate)}</output>
+                  </span>
+                  <input
+                    type="range"
+                    min={Math.log10(tunable.min)}
+                    max={Math.log10(tunable.max)}
+                    step={0.01}
+                    value={Math.log10(learningRate)}
+                    disabled={busy}
+                    onChange={(e) =>
+                      setLearningRate(Number(Number(10 ** Number(e.target.value)).toPrecision(2)))
+                    }
+                  />
+                  <span className="lr-scale">
+                    <span>{compact(locale, tunable.min)}</span>
+                    <span>{compact(locale, tunable.max)}</span>
+                  </span>
+                </label>
+              )}
               <LossChart
                 losses={losses}
                 threshold={threshold}
@@ -1219,6 +1341,15 @@ function Editor({
                 <dt>{t('ui.backend')}</dt>
                 <dd>{t(`backend.${backend}`)}</dd>
               </dl>
+              {stepFlow && (
+                <p className="step-phase">
+                  <span className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}>
+                    {t(`ui.stepPhase.${stepFlow.phase}`, {
+                      loss: compact(locale, stepFlow.trace.loss),
+                    })}
+                  </span>
+                </p>
+              )}
             </>
           )}
           <div className="btn-row">
@@ -1234,6 +1365,23 @@ function Editor({
               >
                 ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
               </button>
+            )}
+            {level.kind === 'train' && !busy && (
+              <>
+                <button
+                  className="btn"
+                  title={t('ui.stepHelp')}
+                  disabled={running || !!inside.length}
+                  onClick={() => void stepOnce()}
+                >
+                  ⏯ {t('ui.stepOnce')}
+                </button>
+                {losses.length > 0 && (
+                  <button className="btn" onClick={resetSteps}>
+                    ↺ {t('ui.resetParams')}
+                  </button>
+                )}
+              </>
             )}
             {busy && (
               <>
@@ -1268,7 +1416,7 @@ function Editor({
                 <p className="status">
                   {t('ui.verifying', { n: verify.index + 1, count: verify.result.tests.length })}
                 </p>
-              ) : (
+              ) : shown.tests.length === 0 ? null : (
                 <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
                   {shown.passed ? '✓ ' : '✗ '}
                   {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
