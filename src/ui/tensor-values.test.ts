@@ -36,7 +36,9 @@ describe('read-only tensor values', () => {
   });
   it('defines exactly eight localized chapter-two lessons, each with two hints', () => {
     for (const locale of [en, zh]) {
-      const keys = Object.keys(locale).filter((key) => key.startsWith('levels.2-'));
+      const keys = Object.keys(locale).filter((key) =>
+        /^levels\.2-\d+\.(title|description|hint1|hint2)$/.test(key),
+      );
       expect(keys).toHaveLength(32);
       for (let i = 1; i <= 8; i++)
         for (const field of ['title', 'description', 'hint1', 'hint2'])

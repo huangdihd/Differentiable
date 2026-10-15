@@ -24,7 +24,13 @@ it('preserves every original chapter 0/1/2 par and fixed/seeded case', () => {
             >
           )[level.id] ?? level.id,
         par: level.par,
-        fixed: level.fixed,
+        // The display order may change (the varied case leads); the cases themselves may not.
+        fixed: [
+          ...level.fixed
+            .filter((c) => c.id.startsWith('tensor-'))
+            .sort((a, b) => a.id.localeCompare(b.id)),
+          ...level.fixed.filter((c) => !c.id.startsWith('tensor-')),
+        ],
         seed: level.generated!.seed,
         generated: Array.from({ length: level.generated!.count }, (_, i) =>
           level.generated!.generate(random, i),

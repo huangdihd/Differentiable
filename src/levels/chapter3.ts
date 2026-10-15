@@ -1,3 +1,4 @@
+import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
@@ -325,12 +326,15 @@ const affineLevels = affineDefinitions.map(({ id, component, shapes, output }, i
       unlock: [id === 'neuron' ? 'layer' : '3-3'],
       ...(id === 'layer' ? { unlockComponents: ['linear'], forbidden: ['linear'] } : {}),
       interface: { inputs: shapes[0], output: 'y', outputShape: output },
+      ...(id === 'layer' && {
+        outputNoteKey: 'levels.layer.expectedNote',
+        outputAxes: matrixAxes(shapes, (_, inputs) => ({
+          rows: axisLabels('x', inputs.x[0]),
+          cols: axisLabels('n', inputs.b[0]),
+        })),
+      }),
       referenceGraph: affineAnswer(component),
-      // Lead with the varied case so case 1 shows real numbers, not all zeros.
-      ...((cases) => ({
-        ...cases,
-        fixed: [cases.fixed[2], ...cases.fixed.filter((_, k) => k !== 2)],
-      }))(tensorCases(320 + index * 4, shapes[0])),
+      ...tensorCases(320 + index * 4, shapes[0]),
       shapeVariants: shapes.slice(1).map((inputs, variant) => ({
         inputs,
         ...tensorCases(321 + index * 4 + variant, inputs),

@@ -163,7 +163,8 @@ export function cases(
 /** Shape-aware deterministic fixtures, including zeros, constants and mixed signs. */
 export function tensorCases(index: number, inputs: ShapePorts) {
   return {
-    fixed: Array.from({ length: 5 }, (_, k) => ({
+    // The varied case leads, so the probe panel opens on real numbers rather than all zeros.
+    fixed: [2, 0, 1, 3, 4].map((k) => ({
       id: `tensor-${k}`,
       inputs: Object.fromEntries(
         Object.entries(inputs).map(([name, shape], port) => [

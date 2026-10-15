@@ -190,6 +190,12 @@ for (const index of [1, 2, 4]) {
           }),
           outputNoteKey: 'levels.4-1.expectedNote',
         }),
+        ...(index === 2 && {
+          outputAxes: (args: Record<string, number[]>) => ({
+            rows: args.idx?.map((id) => `idx=${id}`),
+          }),
+          outputNoteKey: 'levels.4-2.expectedNote',
+        }),
         interface: {
           inputs,
           output: 'y',

@@ -336,7 +336,7 @@ describe('tensor curriculum', () => {
         ],
       };
       const inputs = Object.fromEntries(
-        Object.entries(level.fixed[2].inputs).map(([key, data]) => [
+        Object.entries(level.fixed.find((c) => c.id === 'tensor-2')!.inputs).map(([key, data]) => [
           key,
           T.tensor(data, [...level.interface.inputs[key]]),
         ]),

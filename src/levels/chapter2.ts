@@ -1,3 +1,4 @@
+import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
@@ -247,6 +248,21 @@ for (const [index, definition] of definitions.entries()) {
         interface: { inputs: definition.shapes[0], output: 'y', outputShape: definition.output },
         unlock: [index === definitions.length - 1 ? '3-1' : `2-${index + 2}`],
         ...(definition.producesComponent === false ? {} : { unlockComponents: [definition.name] }),
+        ...(['outer', 'matmul', 'matmul_transposed'].includes(definition.name) && {
+          outputNoteKey: `levels.${id}.expectedNote`,
+          outputAxes: matrixAxes(definition.shapes, (args, shapes) => {
+            if (definition.name === 'outer')
+              return {
+                rows: args.a.map((value) => `a=${Number(value.toPrecision(3))}`),
+                cols: args.b.map((value) => `b=${Number(value.toPrecision(3))}`),
+              };
+            if (shapes.a.length !== 2 || shapes.b.length !== 2) return {};
+            return {
+              rows: axisLabels('a', shapes.a[0]),
+              cols: axisLabels('b', shapes.b[definition.name === 'matmul' ? 1 : 0]),
+            };
+          }),
+        }),
         referenceGraph: answer(definition.name),
         ...fixtures(definition.fixtureIndex, definition.shapes[0], definition.name),
         shapeVariants: definition.shapes.slice(1).map((inputs, variant) => ({

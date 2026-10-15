@@ -1,3 +1,4 @@
+import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
 import { Random } from '../engine/random';
@@ -161,7 +162,8 @@ function fixtures(index: number, inputs: ShapePorts) {
     ),
   });
   return {
-    fixed: Array.from({ length: 5 }, (_, i) => make(new Random(5100 + i), i)),
+    // All-zero case-0 goes last: the probe panel should open on real numbers.
+    fixed: [1, 2, 3, 4, 0].map((i) => make(new Random(5100 + i), i)),
     generated: { seed: 5500 + index, count: 5, generate: make },
   };
 }
@@ -205,6 +207,19 @@ for (let i = 0; i < 4; i++) {
         kind: 'forward',
         unlockComponents: [names[i]],
         forbidden: [names[i]],
+        outputNoteKey: `levels.5-${i + 1}.expectedNote`,
+        outputAxes: matrixAxes(shapes[i], (args, inputs) => {
+          if (i === 3)
+            return inputs.idx.length === 1
+              ? { rows: args.idx.map((id, position) => `p${position}:${id}`) }
+              : {};
+          const shape = i === 1 ? inputs.scores : inputs.q;
+          if (shape.length !== 2) return {};
+          return {
+            rows: axisLabels('q', shape[0]),
+            ...(i < 2 && { cols: axisLabels('k', i === 1 ? shape[1] : inputs.k[0]) }),
+          };
+        }),
         interface: {
           inputs,
           output: 'y',

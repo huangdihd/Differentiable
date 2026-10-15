@@ -695,5 +695,14 @@
   "training.nonfinite.hint.default": "请沿输入连线检查数值。若初值正常而训练后才出错，减小学习率并重新训练。",
   "training.nonfinite.value": "此元件输出的第 {index} 个数是 {actual}。",
   "errors.value_missing": "未填写",
-  "levels.4-1.expectedNote": "每一行是一个字（左边是它的编号），每一列是一个可能的编号（上面是 k 里的数）。编号是几，这一行就在那一列是 1。"
+  "levels.4-1.expectedNote": "每一行是一个字（左边是它的编号），每一列是一个可能的编号（上面是 k 里的数）。编号是几，这一行就在那一列是 1。",
+  "levels.2-4.expectedNote": "每格是左侧分量与上方分量的乘积。",
+  "levels.2-5.expectedNote": "行对应左矩阵的行，列对应右矩阵的列；每格是两者的点积。",
+  "levels.2-6.expectedNote": "行对应左矩阵的行，列对应右矩阵的行；每格是两行的点积。",
+  "levels.layer.expectedNote": "每行是一个样本，每列是一个神经元的输出，编号从 0 开始。",
+  "levels.4-2.expectedNote": "每行取出左侧编号对应的词向量，列顺序与原表相同。",
+  "levels.5-1.expectedNote": "行是查询位置，列是键位置；每格是匹配分数，位置从 0 开始。",
+  "levels.5-2.expectedNote": "行是查询位置，列是键位置；未来位置被屏蔽，位置从 0 开始。",
+  "levels.5-3.expectedNote": "每行是该查询位置汇总的向量，列顺序与值向量相同，位置从 0 开始。",
+  "levels.5-4.expectedNote": "行标是位置和字的编号；每行是词向量加位置向量，位置从 0 开始。"
 }
