@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { GraphJSON, GraphNode } from './engine/graph';
 import { applyResult, type Level, type LevelResult, type Progress } from './engine/levels';
 import { parseExpression } from './engine/expression';
@@ -183,69 +183,101 @@ function Home({
   ready: boolean;
   onOpen: (level: Level) => void;
 }) {
+  const fresh = progress.passed.length === 0;
+  // Where the player left off: the first unlocked, unpassed level in road order.
+  const next =
+    catalog.find(
+      (e) => progress.unlocked.includes(e.level.id) && !progress.passed.includes(e.level.id),
+    ) ?? catalog[0];
+  const [chapter, setChapter] = useState<number>(next.chapter);
+  const entries = catalog.filter((e) => e.chapter === chapter);
   return (
     <main className="home blueprint-bg">
       <div className="home-inner">
-        <section className="hero">
+        <section className={`hero ${fresh ? '' : 'is-compact'}`}>
           <h1>
             {t('home.titleA')}
             <span className="hero-accent">a + b</span>
             {t('home.titleB')}
-            <br />
+            {fresh && <br />}
             {t('home.titleC')}
           </h1>
-          <p className="muted">{t('home.lead')}</p>
+          {fresh && <p className="muted">{t('home.lead')}</p>}
+          <button className="continue" disabled={!ready} onClick={() => onOpen(next.level)}>
+            <span className="continue-label">{t(fresh ? 'home.start' : 'home.continue')}</span>
+            <span className="continue-level">
+              <span className="level-id">{next.code}</span> {t(next.level.titleKey)}
+            </span>
+            <span aria-hidden="true">→</span>
+          </button>
         </section>
         <ol className="road">
-          {CHAPTERS.map((chapter) => {
-            const entries = catalog.filter((e) => e.chapter === chapter);
+          {CHAPTERS.map((n) => {
+            const levels = catalog.filter((e) => e.chapter === n);
+            const passed = levels.filter((e) => progress.passed.includes(e.level.id)).length;
+            const open = levels.some((e) => progress.unlocked.includes(e.level.id));
             return (
-              <li
-                key={chapter}
-                className={`road-chapter ${entries.length ? 'has-levels' : ''} ${chapter === 6 ? 'is-goal' : ''}`}
-              >
-                <div className="road-head">
-                  <span className="road-n">CH {chapter}</span>
-                  <span className="road-name">{t(`chapter.${chapter}`)}</span>
-                  <span className="road-desc">{t(`chapter.${chapter}.desc`)}</span>
-                </div>
-                <div className="road-levels">
-                  {entries.length === 0 && <span className="road-soon">{t('ui.comingSoon')}</span>}
-                  {entries.map(({ level, code }) => {
-                    const passed = progress.passed.includes(level.id);
-                    const unlocked = progress.unlocked.includes(level.id);
-                    const best = progress.bestScores[level.id];
-                    return (
-                      <button
-                        key={level.id}
-                        className={`level-card ${passed ? 'is-passed' : ''}`}
-                        disabled={!ready || !unlocked}
-                        onClick={() => onOpen(level)}
-                      >
-                        <span className="level-card-top">
-                          <span className="level-id">{code}</span>
-                          <span className="level-state">
-                            {passed ? '✓ ' : ''}
-                            {t(passed ? 'ui.passed' : unlocked ? 'ui.playable' : 'ui.locked')}
-                          </span>
-                        </span>
-                        <span className="level-card-title">{t(level.titleKey)}</span>
-                        {best && (
-                          <span className="level-card-best">
-                            {t('ui.bestShort', {
-                              nodes: best.expandedPrimitives,
-                              params: best.parameterCount,
-                            })}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+              <li key={n}>
+                <button
+                  className={`road-chapter ${open ? 'is-open' : ''} ${n === chapter ? 'is-selected' : ''} ${passed > 0 && passed === levels.length ? 'is-done' : ''}`}
+                  aria-pressed={n === chapter}
+                  onClick={() => setChapter(n)}
+                >
+                  <span
+                    className="road-track"
+                    style={
+                      { '--done': levels.length ? passed / levels.length : 0 } as CSSProperties
+                    }
+                  />
+                  <span className="road-n">CH {n}</span>
+                  <span className="road-name">{t(`chapter.${n}`)}</span>
+                  <span className="road-count">
+                    {levels.length ? `${passed}/${levels.length}` : t('ui.comingSoon')}
+                  </span>
+                </button>
               </li>
             );
           })}
         </ol>
+        <section className="chapter">
+          <header className="chapter-head">
+            <span className="road-n">CH {chapter}</span>
+            <h2>{t(`chapter.${chapter}`)}</h2>
+            <p className="muted">{t(`chapter.${chapter}.desc`)}</p>
+          </header>
+          {entries.length === 0 ? (
+            <p className="road-soon">{t('ui.comingSoon')}</p>
+          ) : (
+            <div className="chapter-levels">
+              {entries.map(({ level, code }) => {
+                const passed = progress.passed.includes(level.id);
+                const unlocked = progress.unlocked.includes(level.id);
+                const best = progress.bestScores[level.id];
+                return (
+                  <button
+                    key={level.id}
+                    className={`level-card ${passed ? 'is-passed' : unlocked ? 'is-playable' : ''}`}
+                    disabled={!ready || !unlocked}
+                    onClick={() => onOpen(level)}
+                  >
+                    <span className="level-id">{code}</span>
+                    <span className="level-card-title">{t(level.titleKey)}</span>
+                    <span className="level-state">
+                      {passed
+                        ? best
+                          ? t('ui.bestCompact', {
+                              nodes: best.expandedPrimitives,
+                              params: best.parameterCount,
+                            })
+                          : '✓'
+                        : t(unlocked ? 'ui.playable' : 'ui.locked')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );

@@ -306,7 +306,6 @@
   "chapter.6.desc": "stack, train, generate text",
   "ui.chapterNamed": "Chapter {n} · {name}",
   "ui.comingSoon": "Coming soon",
-  "ui.bestShort": "Best: {nodes} ops · {params} params",
   "ui.producedHere": "Built here",
   "ui.emptyCanvas": "Drag parts in from the left\nand wire the inputs through to the output",
   "ui.liveValues": "Live values",
@@ -630,5 +629,8 @@
   "ports.v": "Values v",
   "ports.scores": "Attention scores",
   "ports.tokens": "Token embedding table",
-  "ports.positions": "Position embedding table"
+  "ports.positions": "Position embedding table",
+  "home.continue": "Continue",
+  "home.start": "Start at the first level",
+  "ui.bestCompact": "✓ {nodes} ops · {params} params"
 }

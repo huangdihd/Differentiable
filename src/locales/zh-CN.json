@@ -304,7 +304,6 @@
   "chapter.6.desc": "叠层、训练、生成文本",
   "ui.chapterNamed": "第 {n} 章 · {name}",
   "ui.comingSoon": "即将推出",
-  "ui.bestShort": "最佳：{nodes} 个运算 · {params} 个参数",
   "ui.producedHere": "本关产出",
   "ui.emptyCanvas": "从左侧拖入元件\n把输入一路接到输出",
   "ui.liveValues": "实时数值",
@@ -627,5 +626,8 @@
   "ports.v": "值 v",
   "ports.scores": "注意力分数",
   "ports.tokens": "词元嵌入表",
-  "ports.positions": "位置嵌入表"
+  "ports.positions": "位置嵌入表",
+  "home.continue": "继续",
+  "home.start": "从第一关开始",
+  "ui.bestCompact": "✓ {nodes} 运算 · {params} 参数"
 }
