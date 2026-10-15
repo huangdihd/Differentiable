@@ -48,6 +48,7 @@ import {
 } from './storage';
 import './ui/theme.css';
 import { MusicToggle } from './ui/MusicToggle';
+import { MathText } from './ui/MathText';
 import './ui/layout.css';
 
 type T = ReturnType<typeof createTranslator>;
@@ -1116,12 +1117,14 @@ function Editor({
         <div className="section">
           <div className="level-id">LEVEL {entry.code}</div>
           <h1 className="level-title">{t(level.titleKey)}</h1>
-          <p className="level-desc">{t(level.descriptionKey)}</p>
+          <div className="level-desc">
+            <MathText text={t(level.descriptionKey)} />
+          </div>
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
             <p className="hint hint-open" key={key}>
               <span className="hint-n">{i + 1}</span>
-              {t(key)}
+              <MathText text={t(key)} />
             </p>
           ))}
           {hintsShown < (level.hintsKeys?.length ?? 0) && (

@@ -47,6 +47,7 @@
   /* type */
   --font: 'IBM Plex Mono', 'Noto Sans SC', ui-monospace, monospace;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --math: 'STIX Two Text', 'Cambria Math', 'Times New Roman', serif;
   --fs-xs: 11px;
   --fs-sm: 12px;
   --fs-md: 14px;
@@ -1895,4 +1896,64 @@ input[type='range'] {
   .music.is-playing .music-bars i {
     animation: none;
   }
+}
+
+/* ---------- formulas in level copy ---------- */
+/* Math gets a book serif so it reads as mathematics, not as code. */
+.math,
+.math-block {
+  font-family: var(--math);
+  color: var(--text);
+  font-variant-numeric: lining-nums;
+}
+.math {
+  font-size: 1.12em;
+  padding: 0 0.1em;
+}
+.math-block {
+  display: block;
+  margin: var(--s3) 0;
+  padding: var(--s3) var(--s4);
+  border-left: 2px solid var(--accent);
+  background: var(--panel-2);
+  font-size: 17px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.math var,
+.math-block var {
+  font-style: italic;
+  padding-right: 0.04em;
+}
+.m-fn {
+  font-style: normal;
+}
+.m-op {
+  padding: 0 0.22em;
+}
+.math-block .m-op {
+  padding: 0 0.3em;
+}
+/* Displayed formulas break only at the <wbr> after = ; terms never split. */
+.math-block var,
+.math-block .m-fn,
+.math-block .m-num {
+  white-space: nowrap;
+}
+.hint .math-block {
+  font-size: 16px;
+}
+.math sub,
+.math-block sub,
+.math sup,
+.math-block sup {
+  font-size: 0.7em;
+  line-height: 0;
+  font-style: normal;
+}
+.math var sub,
+.math-block var sub {
+  margin-left: 0.05em;
 }
