@@ -28,7 +28,7 @@ const FUNCTIONS = new Set([
   'CE',
 ]);
 
-const SCRIPT = '[⁰-ⁿ₀-ₜᵢⱼᵀ′″ˣʸᵏⁱ⁻⁺]*';
+const SCRIPT = '[⁰-ⁿ₀-ₜᵢⱼᵀ′″ˣʸᵏⁱᵘ⁻⁺]*';
 const TOKEN = new RegExp(
   [
     `(?<word>[A-Za-z_][A-Za-z_]+)${SCRIPT}`, // function names, or several letters
@@ -76,6 +76,7 @@ const SUP: Record<string, string> = {
   ᵀ: 'T',
   ᵏ: 'k',
   ⁱ: 'i',
+  ᵘ: 'u',
 };
 
 /** Unicode sub/superscript characters as real <sub>/<sup>: the math font has no glyphs for them. */
@@ -143,7 +144,8 @@ function Formula({ src, wrap }: { src: string; wrap: boolean }) {
       );
     else if (g.op) {
       out.push(
-        <span key={i++} className="m-op">
+        // A leading minus (−Σ, (−x) is a sign, not a binary operator: no spacing.
+        <span key={i++} className={afterOp && '−-'.includes(text) ? 'm-sign' : 'm-op'}>
           {text === '-' ? '−' : text}
         </span>,
       );
@@ -178,6 +180,10 @@ export function MathText({ text }: { text: string }) {
               <Formula src={display[1]} wrap={false} />
             </span>
           );
+        // Punctuation that ends a displayed formula would start the next line alone; drop it.
+        if (n > 0 && /^\s*\$\$/.test(lines[n - 1]))
+          line = line.replace(/^\s*[。，、；：,.;:]\s*/, '');
+        if (!line && n > 0 && /^\s*\$\$/.test(lines[n - 1])) return null;
         const parts = line.split(/\$([^$]+)\$/);
         return (
           <Fragment key={n}>
