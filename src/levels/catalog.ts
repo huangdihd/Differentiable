@@ -5,6 +5,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3Levels, chapter3ForwardLevels } from './chapter3';
 import { chapter4Levels } from './chapter4';
+import { chapter5Levels } from './chapter5';
 import { xorLevel, xorSolution } from './examples';
 import { referenceRegistry } from './level-helpers';
 
@@ -53,6 +54,7 @@ export const gameLevels: Level[] = [
     ).expandedPrimitives,
   },
   ...chapter4Levels,
+  ...chapter5Levels,
 ];
 
 export const catalog: CatalogEntry[] = gameLevels.map((level) => ({

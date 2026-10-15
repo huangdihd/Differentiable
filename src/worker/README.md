@@ -114,7 +114,7 @@ silently disposes obsolete training rather than emitting an obsolete result.
 and return `{ text }`. The client method is
 `generate(levelId, graph, prompt, length, seed?, temperature?)`.
 Only training lessons marked `generates: true` support this command (currently
-4-3 and 4-5); others return `worker.generation_unavailable`. A continuous training
+4-3, 4-5 and 5-5); others return `worker.generation_unavailable`. A continuous training
 session, including a paused one, rejects generation with `worker.training_busy`.
 
 `length` is the number of **new** characters, an integer from 0 to 400.
@@ -125,13 +125,20 @@ to 1 and must be finite and positive; seed defaults to the lesson seed. Invalid
 arguments return `worker.invalid_request`. Sampling uses the seedable PRNG and
 normalized probability weights raised to `1 / temperature`.
 
+Inference uses a batch of one: `[N]` inputs become `[1]`, and `[N, T]`
+inputs become `[1, T]` using the lesson's declared context length. Outputs must
+be `[1, V]` or, for sequence inputs, `[1, T, V]`, where `V` is the corpus
+vocabulary size. Sequence generation samples only the last position and slides
+the context after each new character; the chapter 4 single-output path is unchanged.
+
 The latest successful continuous completion/manual stop or single-step update
 wins: generation copies its parameters into an independent inference plan.
-Snapshots apply only to the identical level/graph/revision. Without a matching
+Snapshots apply only to the identical level/graph. Without a matching
 snapshot, generation uses the lesson's seeded initial parameters. `evaluate`
 does not provide generation parameters. Parameters are session-local, not saved
-in browser storage. Revision changes, progress synchronization, `cancel` and
-`trainReset` clear the snapshot. Generation never updates the training optimizer
+in browser storage. Revision changes, progress synchronization and `cancel`
+preserve the snapshot so a just-completed model remains available after a pass;
+`trainReset` and disposal clear it. Generation never updates the training optimizer
 or parameters.
 
 `WorkerRuntime.handle` is the Node-testable protocol handler, with optional level, progress, and registry

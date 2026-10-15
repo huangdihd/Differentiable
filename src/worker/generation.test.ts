@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { compileGraph, type GraphJSON } from '../engine/graph';
-import { initialProgress, type Level } from '../engine/levels';
+import { initialProgress, type ForwardLevel, type Level } from '../engine/levels';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
 import { chapter0Levels } from '../levels/chapter0';
@@ -8,6 +8,7 @@ import { chapter1Levels } from '../levels/chapter1';
 import { chapter2Levels } from '../levels/chapter2';
 import { chapter3ForwardLevels } from '../levels/chapter3';
 import { chapter4TrainLevels } from '../levels/chapter4';
+import { gameLevels } from '../levels/catalog';
 import { VOCAB, encode, decode } from '../levels/corpus';
 import { referenceRegistry } from '../levels/level-helpers';
 import { WorkerClient, type WorkerTransport } from './client';
@@ -27,13 +28,21 @@ const runtimes: WorkerRuntime[] = [];
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.dispose()));
 });
-function harness(levels: readonly Level[] = chapter4TrainLevels) {
+function harness(levels: readonly Level[] = chapter4TrainLevels, sequence = false) {
+  const prerequisites = sequence
+    ? gameLevels.filter((level): level is ForwardLevel => level.kind === 'forward')
+    : preceding;
+  const testProgress = sequence ? initialProgress([]) : progress;
+  if (sequence)
+    testProgress.unlockedComponents = prerequisites.flatMap(
+      (level) => level.unlockComponents ?? [],
+    );
   const messages: WorkerResponse[] = [];
   const runtime = new WorkerRuntime(
     (m) => messages.push(structuredClone(m)),
     levels,
-    progress,
-    registry,
+    testProgress,
+    sequence ? referenceRegistry(prerequisites) : registry,
   );
   runtimes.push(runtime);
   let requestId = 0;
@@ -79,6 +88,80 @@ it('untrained generation is seeded, filters unknown characters, pads context onl
   expect(await h.send({ ...command, seed: 1.5 })).toMatchObject({
     error: { key: 'worker.invalid_request' },
   });
+});
+
+it('sequence generation uses the declared context, samples the last position and hides left padding', async () => {
+  const context = 4;
+  const graph: GraphJSON = {
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x' } },
+      {
+        id: 'table',
+        component: 'const',
+        attrs: {
+          shape: [VOCAB.length, VOCAB.length],
+          value: Array.from({ length: VOCAB.length ** 2 }, (_, i) =>
+            Number(Math.floor(i / VOCAB.length) === i % VOCAB.length),
+          ),
+        },
+      },
+      { id: 'lookup', component: 'gather' },
+      { id: 'sequence', component: 'reshape', attrs: { shape: [1, context, VOCAB.length] } },
+      { id: 'y', component: 'output', attrs: { name: 'y' } },
+    ],
+    edges: [
+      { from: { node: 'x', port: 'out' }, to: { node: 'lookup', port: 'idx' } },
+      { from: { node: 'table', port: 'out' }, to: { node: 'lookup', port: 'table' } },
+      { from: { node: 'lookup', port: 'out' }, to: { node: 'sequence', port: 'x' } },
+      { from: { node: 'sequence', port: 'out' }, to: { node: 'y', port: 'x' } },
+    ],
+  };
+  const sequenceLevel = {
+    ...level,
+    available: ['const', 'gather', 'reshape'],
+    interface: {
+      inputs: { x: [8, context] },
+      output: 'y',
+      outputShape: [8, context, VOCAB.length],
+    },
+  };
+  const h = harness([sequenceLevel]);
+  await h.send({ type: 'init', backend: 'cpu' });
+  for (const prompt of ['', 'a', 'the cat', '💥a']) {
+    const filtered = [...prompt].filter((char) => VOCAB.includes(char)).join('');
+    expect(text(await h.send({ ...generate(graph), prompt, length: 3 })).text).toBe(
+      filtered + (filtered.at(-1) ?? ' ').repeat(3),
+    );
+  }
+  expect(text(await h.send({ ...generate(graph), prompt: '', length: 0 })).text).toBe('');
+  // A vocabulary-sized trailing axis alone must not accept malformed sequence layouts.
+  for (const shape of [
+    [context, VOCAB.length],
+    [1, 2, 2, VOCAB.length],
+    [1, context, VOCAB.length - 1],
+  ]) {
+    const malformed = structuredClone(graph);
+    const sequence = malformed.nodes.find((node) => node.id === 'sequence')!;
+    sequence.component = 'const';
+    sequence.attrs = { shape, value: 1 };
+    malformed.edges = malformed.edges.filter((edge) => edge.to.node !== 'sequence');
+    expect(await h.send({ ...generate(malformed), length: 0 })).toMatchObject({
+      error: { key: 'levels.output_shape' },
+    });
+  }
+  for (const context of [0, -1, 1.5]) {
+    const invalid = harness([
+      {
+        ...sequenceLevel,
+        interface: { ...sequenceLevel.interface, inputs: { x: [8, context] } },
+      },
+    ]);
+    await invalid.send({ type: 'init', backend: 'cpu' });
+    expect(await invalid.send(generate(graph))).toMatchObject({
+      error: { key: 'worker.generation_unavailable' },
+    });
+  }
 });
 
 it('only explicitly generating training levels are eligible and active/paused runs are busy', async () => {
@@ -181,9 +264,17 @@ it('snapshots exact post-step parameters, survive plan release, and invalidate o
   }
 });
 
-for (const trainedLevel of chapter4TrainLevels) {
+const sequenceTrainLevels = gameLevels.filter(
+  (level) => level.kind === 'train' && level.id === '5-5',
+);
+it('registers the generating chapter 5 capstone', () => {
+  expect(sequenceTrainLevels).toHaveLength(1);
+  expect(sequenceTrainLevels[0]).toMatchObject({ generates: true });
+});
+for (const trainedLevel of [...chapter4TrainLevels, ...sequenceTrainLevels]) {
+  if (trainedLevel.kind !== 'train') continue;
   it(`${trainedLevel.id}: actual continuous reference training retains parameters after completion and samples single-context inference`, async () => {
-    const h = harness();
+    const h = harness([trainedLevel], trainedLevel.id === '5-5');
     await h.send({ type: 'init', backend: 'cpu' });
     const command = { ...generate(trainedLevel.referenceGraph!), levelId: trainedLevel.id };
     const baseline = text(await h.send(command));
@@ -197,7 +288,9 @@ for (const trainedLevel of chapter4TrainLevels) {
     const sample = text(await h.send(command));
     expect(sample).not.toEqual(baseline);
     expect(sample.text).toHaveLength(104);
+    expect([...sample.text].every((char) => VOCAB.includes(char))).toBe(true);
     expect(text(await h.send(command))).toEqual(sample);
+    expect(text(await h.send({ ...command, seed: 4901 }))).not.toEqual(sample);
     expect(text(await h.send({ ...command, prompt: '', length: 2 })).text).toHaveLength(2);
     console.info(
       JSON.stringify({ levelId: trainedLevel.id, seed: command.seed, sample: sample.text }),

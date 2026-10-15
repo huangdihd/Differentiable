@@ -122,7 +122,7 @@ it('chapter contracts keep unlocks and interfaces in progression order', () => {
     ['4-3'],
     ['4-4'],
     ['4-5'],
-    [],
+    ['5-1'],
   ]);
   expect(chapter4Levels.map((level) => level.par)).toEqual([4, 8, 10, 5, 29]);
   for (const level of chapter4Levels) {

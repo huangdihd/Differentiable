@@ -8,6 +8,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
+import { chapter5ForwardLevels } from './chapter5';
 import { formulaGraph, referenceRegistry } from './level-helpers';
 import en from '../locales/en.json';
 import zh from '../locales/zh-CN.json';
@@ -18,11 +19,12 @@ const registry = referenceRegistry([
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...chapter5ForwardLevels,
 ]);
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 
 describe('formal chapter catalog', () => {
-  it('contains forty sequential lessons and the preserved XOR challenge', () => {
+  it('contains forty-five sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
@@ -30,6 +32,7 @@ describe('formal chapter catalog', () => {
       ...Array.from({ length: 9 }, (_, i) => `3-${i + 1}`),
       'xor',
       ...Array.from({ length: 5 }, (_, i) => `4-${i + 1}`),
+      ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),
     ]);
     expect(catalog.map((entry) => entry.level)).toEqual(gameLevels);
     for (const [index, level] of gameLevels.entries()) {

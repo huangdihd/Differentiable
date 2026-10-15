@@ -41,6 +41,10 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   one_hot: '1-hot',
   embedding: 'E[i]',
   sample: 'draw',
+  attn_scores: 'qkᵀ',
+  causal_mask: '◣',
+  attention: 'attn',
+  embed_pos: 'E+P',
 };
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */

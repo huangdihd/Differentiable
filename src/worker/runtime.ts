@@ -106,9 +106,12 @@ export class WorkerRuntime {
       (request.seed !== undefined && !Number.isSafeInteger(request.seed))
     )
       throw new Error('worker.invalid_request');
-    const rank = level.interface.inputs.x?.length;
+    const inputShape = level.interface.inputs.x;
+    const rank = inputShape?.length;
     if (rank !== 1 && rank !== 2) throw new Error('worker.generation_unavailable');
-    const context = rank === 1 ? 1 : 2;
+    const context = rank === 1 ? 1 : inputShape[1];
+    if (!Number.isSafeInteger(context) || context < 1)
+      throw new Error('worker.generation_unavailable');
     const tokens = encode([...request.prompt].filter((char) => VOCAB.includes(char)).join(''));
     const promptLength = tokens.length;
     const padded = [...tokens];
@@ -119,7 +122,7 @@ export class WorkerRuntime {
       for (const [id, value] of saved.values) parameters.set(id, T.tensor(value.data, value.shape));
     let plan: GraphPlan | undefined;
     try {
-      const shape = rank === 1 ? [1] : [1, 2];
+      const shape = rank === 1 ? [1] : [1, context];
       plan = compileGraph(request.graph, {
         registry: this.registry,
         availableComponents: level.available,
@@ -128,7 +131,15 @@ export class WorkerRuntime {
         parameters,
       });
       const outputShape = plan.outputShapes[level.interface.output];
-      if (!outputShape || outputShape.at(-1) !== VOCAB.length)
+      if (
+        !outputShape ||
+        outputShape[0] !== 1 ||
+        outputShape.at(-1) !== VOCAB.length ||
+        !(
+          outputShape.length === 2 ||
+          (rank === 2 && outputShape.length === 3 && outputShape[1] === context)
+        )
+      )
         throw new Error('levels.output_shape');
       const random = new Random(request.seed ?? level.seed);
       for (let i = 0; i < request.length; i++) {

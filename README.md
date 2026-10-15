@@ -1,6 +1,6 @@
 # Differentiable
 
-A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–4, including the XOR challenge and character language models. `demos/` is untouched reference material, not application source.
+A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–5, including the XOR challenge and character language models. `demos/` is untouched reference material, not application source.
 
 ## Development
 
@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and nine learning lessons unlock sequentially, followed by the XOR challenge (3-10, stable ID `xor`) and five sequence lessons (4-1–4-5). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and nine learning lessons unlock sequentially, followed by the XOR challenge (3-10, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -32,7 +32,7 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for future visualization. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
 - `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named single-element graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
-- `src/levels/`: chapter 0/1/2/3/4 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
+- `src/levels/`: chapter 0/1/2/3/4/5 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
 
@@ -61,6 +61,33 @@ Rates must be finite and positive; optimizer, if present, must be `sgd` or `adam
 successors with existing unlocks, so completing 2-8 unlocks 3-1 without removing
 an already-unlocked XOR. UI code should persist its chosen rate in this field and
 pass it to worker training requests; no learning-rate UI is added in this step.
+
+### Attention lessons (chapter 5)
+
+The route continues 4-5 → 5-1 → 5-2 → 5-3 → 5-4 → 5-5. Existing saves
+that passed 4-5 acquire 5-1 through the normal unlock migration.
+Forward lessons award `attn_scores(q,k)`, `causal_mask(scores)`,
+`attention(q,k,v)` and `embed_pos(idx,tokens,positions)`. Each checks two additional
+shapes, including a batch axis; sequence lengths and vector widths vary. `size`
+wires the sequence length into `arange`, and supplies the score scaling width.
+5-2 compares scores with absolute tolerance 1e-4 and zero relative tolerance:
+visible scores stay strict and masked f32 values must be -1e9, as the lesson states.
+
+5-5 trains on 32 seeded corpus windows of length 8 (256 next-character targets),
+with vocabulary 27 and embedding width 12. Training and grading use the same fixed
+empirical distribution, not a held-out generalization test. Adam runs 120 steps,
+with learning rate .001–.1 (default .03), seed 5505 and loss threshold .9,
+below 4-5's 1.639788. CPU reference loss is approximately .483740; the
+`embed_pos → linear → softmax` control reaches 1.227393 under the same schedule
+and fails. Isolated training takes roughly 1–2 seconds. Cross entropy already
+supports `[N,T,V]`: it sums all entries and averages over N×T, without reshaping.
+
+Sequence generation feeds the last T characters as `[1,T]`, left-padding with
+spaces, then samples the last output position of `[1,T,V]`. Padding is not shown.
+Seeded sampling and the existing one-/two-character model behavior are tested.
+The existing `generates` panel includes 5-5 without UI changes. Generated prose
+remains rudimentary. Symbolic gradient inspection still lacks `gather`/`arange`
+support; ordinary tensor autodiff and training work without that inspector.
 
 ### Sequence lessons (chapter 4)
 
@@ -174,6 +201,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–4 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling and a two-character model. Text generation is available through the worker API; its UI is not included. Chapters 5 onward remain upcoming. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–5 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 remains upcoming. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.
