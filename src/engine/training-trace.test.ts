@@ -52,7 +52,13 @@ it('evaluates target-free loss and distinguishes slow from divergent training', 
   );
   const invalid = structuredClone(graph);
   invalid.nodes[0].attrs!.value = 1e30;
-  expect((await evaluateLevel(level, invalid)).errorKey).toBe('levels.train_diverged');
+  const nonfinite = await evaluateLevel(level, invalid);
+  expect(nonfinite.errorKey).toBe('training.nonfinite');
+  expect(nonfinite.error).toMatchObject({
+    key: 'training.nonfinite',
+    node: 'square',
+    params: { stageKey: 'training.stage.forward', actual: 'Infinity', index: 0 },
+  });
 });
 it('traces live target-free training, agrees with symbolic backward and retains no tape allocations', async () => {
   const backend = new CpuBackend();

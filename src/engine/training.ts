@@ -1,5 +1,14 @@
 import * as T from './tensor';
 import type { Tensor } from './tensor';
+import { GraphError } from './graph';
+
+/** Structured diagnostics retain the training category across worker/level boundaries. */
+export class TrainingError extends GraphError {
+  constructor(key: string, node?: string, params: Record<string, unknown> = {}) {
+    super(key, node, undefined, params);
+    this.message = key;
+  }
+}
 
 export interface TrainingModel {
   parameters: Map<string, Tensor>;
@@ -75,7 +84,13 @@ export class Optimizer {
   private moments = new Map<string, { m: Tensor; v: Tensor }>();
   constructor(readonly options: OptimizerOptions) {
     if (!(options.learningRate > 0 && Number.isFinite(options.learningRate)))
-      throw new Error('training.learning_rate');
+      throw new TrainingError('training.learning_rate', undefined, {
+        actual: String(options.learningRate),
+        min: 0,
+        max: Number.MAX_VALUE,
+        minExclusive: true,
+        rangeKey: 'training.learning_rate_range',
+      });
   }
   /** Releases optimizer-owned state only; model parameters remain caller-owned. */
   dispose(): void {
@@ -241,6 +256,46 @@ export class TrainingSession {
       model.releaseExecution?.(outputs, keep);
     }
   }
+  /** Failure-only replay: reuse the failing batch and never run backward or an update.
+   * Probe insertion order is the model's dependency order (canvas nodes for GraphPlan).
+   * Diagnosis is best effort: a replay/readback failure must not hide the original error.
+   */
+  private async diagnoseNonfinite(
+    error: unknown,
+    batch: TrainingBatch,
+    model: TrainingModel = this.model,
+  ): Promise<unknown> {
+    if (!(error instanceof Error) || error.message !== 'training.nonfinite') return error;
+    const probes = new Map<string, Tensor>();
+    let outputs: Record<string, Tensor> | undefined;
+    let diagnostic: unknown = new TrainingError('training.nonfinite');
+    try {
+      outputs = model.execute(batch.inputs, probes);
+      for (const [node, tensor] of probes) {
+        const values = await tensor.read();
+        const index = values.findIndex((value) => !Number.isFinite(value));
+        if (index !== -1) {
+          diagnostic = new TrainingError('training.nonfinite', node, {
+            stageKey: 'training.stage.forward',
+            actual: String(values[index]),
+            index,
+          });
+          break;
+        }
+      }
+    } catch {
+      // Preserve the original category even when the diagnostic replay cannot complete.
+    } finally {
+      if (outputs) {
+        try {
+          this.cleanup(outputs, undefined, batch, [...model.parameters.values()], model);
+        } catch {
+          // Cleanup of the original execution still runs in the caller's finally block.
+        }
+      }
+    }
+    return diagnostic;
+  }
   /** Classification accuracy from the same pre-update forward pass as a step trace. */
   private async accuracy(
     outputs: Record<string, Tensor>,
@@ -335,6 +390,8 @@ export class TrainingSession {
       for (const parameter of Object.values(trace.parameters))
         if (!parameter.after.every(Number.isFinite)) throw new Error('training.nonfinite');
       return trace;
+    } catch (error) {
+      throw await this.diagnoseNonfinite(error, batch);
     } finally {
       gradients.forEach((g) => g.dispose());
       try {
@@ -383,6 +440,8 @@ export class TrainingSession {
         }
         gradients = await T.backward(loss, parameters);
         await this.optimizer.update(this.model.parameters, gradients);
+      } catch (error) {
+        throw await this.diagnoseNonfinite(error, batch);
       } finally {
         gradients.forEach((g) => g.dispose());
         try {
@@ -421,6 +480,8 @@ export class TrainingSession {
       const accuracy = await this.accuracy(outputs, batch);
       if (accuracy !== undefined) report.accuracy = accuracy;
       return report;
+    } catch (error) {
+      throw await this.diagnoseNonfinite(error, batch, evaluationModel ?? this.model);
     } finally {
       try {
         if (outputs)

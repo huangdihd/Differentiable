@@ -116,14 +116,31 @@ export function translateDiagnostic(
     params?: Record<string, unknown>;
   },
 ): string {
+  const rawKey = error.key ?? error.message ?? '';
+  const key = diagnosticKey(rawKey);
+  // Keep opaque internal failures inspectable without flooding repeated UI renders.
+  const internal = (en as Dictionary)[key] === en['errors.unknown'];
+  const logId = `diagnostic:${rawKey}`;
+  if ((internal || key === 'errors.component_error') && !warned.has(logId)) {
+    warned.add(logId);
+    console.error('[i18n] Diagnostic:', rawKey, error.params, error);
+  }
   const params: Record<string, string | number> = {};
   for (const [key, value] of Object.entries(error.params ?? {})) {
-    if (key !== 'message' && (typeof value === 'string' || typeof value === 'number'))
-      params[key] = value;
+    if (key === 'message') continue;
+    if (typeof value === 'string' || typeof value === 'number') params[key] = value;
     else if (Array.isArray(value) && value.every((d) => typeof d === 'number'))
-      params[key] = value.length ? `[${value.join('×')}]` : '[]';
+      params[key] = value.length ? `[${value.join(key === 'allowed' ? ', ' : '×')}]` : '[]';
+    else
+      params[key] =
+        value == null ? translate(locale, 'errors.value_missing') : JSON.stringify(value);
   }
   if (error.node) params.node = error.node;
   if (error.port) params.port = error.port;
-  return translate(locale, diagnosticKey(error.key ?? error.message ?? ''), params);
+  for (const key of ['component', 'requiredComponent']) {
+    const value = params[key];
+    if (typeof value === 'string' && Object.hasOwn(en, `components.${value}`))
+      params[key] = translate(locale, `components.${value}`);
+  }
+  return translate(locale, key, params);
 }

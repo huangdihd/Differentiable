@@ -316,7 +316,11 @@ export class WorkerRuntime {
     } catch (error) {
       run.result.error =
         run.level.tunable && error instanceof Error && error.message === 'training.nonfinite'
-          ? { key: 'levels.train_diverged', params: { loss: Infinity } }
+          ? {
+              ...workerError(error),
+              key: 'levels.train_diverged',
+              params: { ...workerError(error).params, loss: Infinity, nonfinite: true },
+            }
           : workerError(error);
       run.result.errorKey = run.result.error.key;
       this.emit({

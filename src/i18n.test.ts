@@ -141,14 +141,58 @@ describe('i18n', () => {
         expect(keys.has(`ports.${port}`)).toBe(true);
     }
   });
+  it('localizes component parameters in both languages and preserves custom names', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      for (const [key, parameter] of [
+        ['component_unavailable', 'component'],
+        ['missing_component', 'requiredComponent'],
+      ] as const) {
+        expect(translateDiagnostic(locale, { key, params: { [parameter]: 'matmul' } })).toBe(
+          translate(locale, `errors.${key}`, {
+            [parameter]: locales[locale]['components.matmul'],
+          }),
+        );
+        expect(
+          translateDiagnostic(locale, { key, params: { [parameter]: 'custom_part' } }),
+        ).toContain('custom_part');
+      }
+    }
+  });
+  it('logs original internal diagnostic codes and params once across locales', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const key of ['engine.tensor.disposed', 'disposed_plan', 'unrecognized_test_error']) {
+        const error = { key, params: { message: 'private backend detail', component: 'matmul' } };
+        for (const locale of ['en', 'zh-CN'] as const) {
+          const text = translateDiagnostic(locale, error);
+          expect(text).toBe(locales[locale]['errors.unknown']);
+          expect(text).not.toContain(key);
+          expect(text).not.toContain(error.params.message);
+        }
+        expect(spy).toHaveBeenCalledWith('[i18n] Diagnostic:', key, error.params, error);
+      }
+      expect(spy).toHaveBeenCalledTimes(3);
+      translateDiagnostic('en', { key: 'missing_input', params: { node: 'a', port: 'x' } });
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
   it('maps raw and namespaced diagnostics without exposing raw exceptions', () => {
     expect(diagnosticKey('missing_input')).toBe('errors.missing_input');
     expect(diagnosticKey('training.nonfinite')).toBe('training.nonfinite');
-    expect(translateDiagnostic('en', { message: 'private raw exception' })).toBe(
-      'Unable to complete this operation.',
-    );
-    expect(
-      translateDiagnostic('en', { key: 'component_error', params: { message: 'raw' } }),
-    ).not.toContain('raw');
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const locale of ['en', 'zh-CN'] as const) {
+        expect(translateDiagnostic(locale, { message: 'private raw exception' })).toBe(
+          locales[locale]['errors.unknown'],
+        );
+        expect(
+          translateDiagnostic(locale, { key: 'component_error', params: { message: 'raw' } }),
+        ).not.toContain('raw');
+      }
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -165,7 +165,8 @@ describe('loss-only evaluation and component progression', () => {
         { kind: 'sgd', learningRate: 0.1 },
       );
       await expect(failing.run(1)).rejects.toThrow('loss.failed');
-      expect(released).toBe(3);
+      // Each nonfinite failure also releases its diagnostic replay.
+      expect(released).toBe(5);
     } finally {
       input.dispose();
       target.dispose();

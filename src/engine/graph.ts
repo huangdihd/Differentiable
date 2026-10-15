@@ -168,7 +168,10 @@ export class GraphPlan {
       const store = spec.parameter ? this.parameters : this.constants;
       let value = store.get(id);
       if (value && !sameShape(value.shape, spec.shape))
-        throw new GraphError('parameter_shape_mismatch', id);
+        throw new GraphError('parameter_shape_mismatch', id, undefined, {
+          expected: spec.shape,
+          actual: value.shape,
+        });
       if (!value) {
         const n = size(spec.shape);
         const data = new Float32Array(n);
@@ -381,12 +384,18 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               attrs.shape !== undefined &&
               !sameShape(shape(attrs.shape), shapes.get(bindings[name])!)
             )
-              throw new GraphError('input_shape_mismatch', id, name);
+              throw new GraphError('input_shape_mismatch', id, name, {
+                expected: attrs.shape,
+                actual: shapes.get(bindings[name]),
+              });
             out.out = bindings[name];
           } else {
             const s = shape(options.inputShapes?.[name] ?? attrs.shape);
             if (attrs.shape !== undefined && !sameShape(s, shape(attrs.shape)))
-              throw new GraphError('input_shape_mismatch', id, name);
+              throw new GraphError('input_shape_mismatch', id, name, {
+                expected: attrs.shape,
+                actual: s,
+              });
             out.out = `${id}:out`;
             shapes.set(out.out, s);
             externalInputs[name] = out.out;
@@ -407,26 +416,39 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
                 attrs.value.length === size(s))
             )
           )
-            throw new GraphError('invalid_constant', id);
+            throw new GraphError('invalid_constant', id, undefined, {
+              actual: attrs.value,
+              shape: s,
+              expected: size(s),
+              actual_count: Array.isArray(attrs.value) ? attrs.value.length : undefined,
+            });
           if (
             node.component === 'param' &&
             !['zeros', 'ones', 'normal', 'uniform', 'constant'].includes(
               String(attrs.init ?? 'zeros'),
             )
           )
-            throw new GraphError('invalid_initializer', id);
+            throw new GraphError('invalid_initializer', id, undefined, {
+              actual: attrs.init,
+              allowed: ['zeros', 'ones', 'normal', 'uniform', 'constant'],
+            });
           if (
             node.component === 'param' &&
             attrs.init === 'constant' &&
             (typeof attrs.value !== 'number' || !Number.isFinite(attrs.value))
           )
-            throw new GraphError('invalid_constant', id);
+            throw new GraphError('invalid_constant', id, undefined, {
+              actual: attrs.value,
+              shape: s,
+              expected: 1,
+              actual_count: Array.isArray(attrs.value) ? attrs.value.length : undefined,
+            });
           if (
             node.component === 'param' &&
             attrs.scale !== undefined &&
             (typeof attrs.scale !== 'number' || !Number.isFinite(attrs.scale) || attrs.scale < 0)
           )
-            throw new GraphError('invalid_scale', id);
+            throw new GraphError('invalid_scale', id, undefined, { actual: attrs.scale, min: 0 });
           // Storage keys are node instance paths, not output port names.
           out.out = id;
           shapes.set(id, s);
@@ -531,9 +553,11 @@ export function safeCompileGraph(
 /** Shape metadata is available without reading backend storage. */
 function sizeAxis(s: Shape, attrs: Attributes): number {
   const raw = attrs.axis === undefined ? -1 : attrs.axis;
-  if (typeof raw !== 'number' || !Number.isInteger(raw)) throw new GraphError('size_axis');
+  if (typeof raw !== 'number' || !Number.isInteger(raw))
+    throw new GraphError('size_axis', undefined, undefined, axisParams(raw, s.length));
   const axis = raw < 0 ? raw + s.length : raw;
-  if (axis < 0 || axis >= s.length) throw new GraphError('size_axis');
+  if (axis < 0 || axis >= s.length)
+    throw new GraphError('size_axis', undefined, undefined, axisParams(raw, s.length));
   return s[axis];
 }
 
@@ -550,12 +574,17 @@ export function resolveDimensions(
     if (!Object.hasOwn(args, port)) continue;
     const index = Number(port.slice(1));
     if (component === 'reshape' && (!Array.isArray(attrs.shape) || index >= attrs.shape.length))
-      throw new GraphError('dim_out_of_range', undefined, port);
+      throw new GraphError('dim_out_of_range', undefined, port, {
+        port,
+        shape: attrs.shape,
+        actual: index,
+        rank: Array.isArray(attrs.shape) ? attrs.shape.length : 0,
+      });
     const value = scalars.get(args[port]);
-    if (value === undefined) throw new GraphError('dim_not_static', undefined, port);
+    if (value === undefined) throw new GraphError('dim_not_static', undefined, port, { port });
     const integer = Math.round(value);
     if (!Number.isFinite(value) || Math.abs(value - integer) > 1e-3)
-      throw new GraphError('dim_not_integer', undefined, port);
+      throw new GraphError('dim_not_integer', undefined, port, { port, actual: value });
     if (component === 'reshape') {
       attrs.shape = [...(attrs.shape as number[])];
       (attrs.shape as number[])[index] = integer;
@@ -627,15 +656,21 @@ function broadcast(a: Shape, b: Shape): number[] {
   }
   return out;
 }
+/** Include negative aliases in the complete range accepted by axis attributes. */
+function axisParams(actual: unknown, rank: number, insertion = false): Record<string, unknown> {
+  const length = rank + (insertion ? 1 : 0);
+  return { actual, rank, allowed: Array.from({ length: length * 2 }, (_, i) => i - length) };
+}
 function axes(a: Attributes, rank: number): number[] {
   const raw = a.axes ?? Array.from({ length: rank }, (_, i) => i);
-  if (!Array.isArray(raw)) throw new GraphError('invalid_axes');
+  if (!Array.isArray(raw))
+    throw new GraphError('invalid_axes', undefined, undefined, axisParams(raw, rank));
   const result = raw.map((x) => (typeof x === 'number' && x < 0 ? x + rank : x));
   if (
     result.some((x) => !Number.isInteger(x) || x < 0 || x >= rank) ||
     new Set(result).size !== result.length
   )
-    throw new GraphError('invalid_axes');
+    throw new GraphError('invalid_axes', undefined, undefined, axisParams(raw, rank));
   return result;
 }
 function unsqueezeShape(s: Shape, attrs: Attributes): number[] {
@@ -646,32 +681,50 @@ function unsqueezeShape(s: Shape, attrs: Attributes): number[] {
     axis < -s.length - 1 ||
     axis > s.length
   )
-    throw new GraphError('invalid_axes');
+    throw new GraphError('invalid_axes', undefined, undefined, axisParams(axis, s.length, true));
   const result = [...s];
   result.splice(axis < 0 ? axis + s.length + 1 : axis, 0, 1);
   return result;
 }
 function reshapeShape(s: Shape, attrs: Attributes): number[] {
-  if (!Array.isArray(attrs.shape)) throw new GraphError('invalid_shape');
+  if (!Array.isArray(attrs.shape))
+    throw new GraphError('invalid_shape', undefined, undefined, { shape: attrs.shape });
   const target = [...attrs.shape] as number[];
   if (
     target.some((d) => !Number.isInteger(d) || d < -1) ||
     target.filter((d) => d === -1).length > 1
   )
-    throw new GraphError('invalid_shape');
+    throw new GraphError('invalid_shape', undefined, undefined, { shape: attrs.shape });
   const index = target.indexOf(-1);
   if (index >= 0) {
     const n = target.reduce((a, b) => a * (b === -1 ? 1 : b), 1);
-    if (!n || size(s) % n) throw new GraphError('reshape_mismatch');
+    if (!n || size(s) % n)
+      throw new GraphError('reshape_mismatch', undefined, undefined, {
+        actual: s,
+        expected: attrs.shape,
+        actual_size: size(s),
+        expected_size: undefined,
+        known_size: n,
+      });
     target[index] = size(s) / n;
   }
-  if (size(target) !== size(s)) throw new GraphError('reshape_mismatch');
+  if (size(target) !== size(s))
+    throw new GraphError('reshape_mismatch', undefined, undefined, {
+      actual: s,
+      expected: attrs.shape,
+      actual_size: size(s),
+      expected_size: size(target),
+    });
   return target;
 }
 function permutation(a: Attributes, rank: number): number[] {
   // Axis pairs swap dimensions; legacy permutations still default to rank reversal.
   if ('axes' in a) {
-    if (!Array.isArray(a.axes) || a.axes.length !== 2) throw new GraphError('invalid_axes');
+    if (!Array.isArray(a.axes) || a.axes.length !== 2)
+      throw new GraphError('invalid_axes', undefined, undefined, {
+        ...axisParams(a.axes, rank),
+        expected_count: 2,
+      });
     const [first, second] = axes(a, rank);
     const p = Array.from({ length: rank }, (_, i) => i);
     [p[first], p[second]] = [p[second], p[first]];
@@ -684,7 +737,11 @@ function permutation(a: Attributes, rank: number): number[] {
     new Set(p).size !== rank ||
     p.some((i) => !Number.isInteger(i) || i < 0 || i >= rank)
   )
-    throw new GraphError('invalid_permutation');
+    throw new GraphError('invalid_permutation', undefined, undefined, {
+      actual: p,
+      rank,
+      allowed: Array.from({ length: rank }, (_, i) => i),
+    });
   return p;
 }
 export function createDefaultRegistry(): ComponentRegistry {

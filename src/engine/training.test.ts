@@ -1,7 +1,31 @@
 import { expect, it } from 'vitest';
 import { CpuBackend } from './cpu';
 import { tensor, mul, sum } from './tensor';
-import { TrainingSession, type TrainingBatch, type TrainingModel } from './training';
+import { Optimizer, TrainingSession, type TrainingBatch, type TrainingModel } from './training';
+import { workerError } from '../worker/runtime';
+
+it.each([0, -1, NaN, Infinity, -Infinity])(
+  'reports the actual invalid learning rate %s and range',
+  (actual) => {
+    try {
+      new Optimizer({ kind: 'sgd', learningRate: actual });
+      expect.fail('expected invalid learning rate');
+    } catch (error) {
+      expect(workerError(error)).toEqual({
+        key: 'training.learning_rate',
+        node: undefined,
+        port: undefined,
+        params: {
+          actual: String(actual),
+          min: 0,
+          max: Number.MAX_VALUE,
+          minExclusive: true,
+          rangeKey: 'training.learning_rate_range',
+        },
+      });
+    }
+  },
+);
 
 function fixture() {
   const backend = new CpuBackend();
@@ -133,6 +157,91 @@ it('borrows fixed training and explicit evaluation batches', async () => {
     expect(await batch.targets!.read()).toEqual(new Float32Array([2]));
     expect(f.backend.liveBuffers).toBe(2);
   } finally {
+    batch.targets?.dispose();
+    f.parameters.forEach((t) => t.dispose());
+  }
+  expect(f.backend.liveBuffers).toBe(0);
+});
+
+it.each(['run', 'evaluate', 'trainStepTrace'] as const)(
+  'replays only after %s fails, identifies the first probe, and releases the replay',
+  async (method) => {
+    const f = fixture();
+    let executions = 0,
+      batches = 0;
+    f.model.execute = (inputs, probes) => {
+      executions++;
+      const y = mul(inputs.x, f.parameters.get('weight')!);
+      probes?.set('first', y);
+      probes?.set('later', y);
+      return { y };
+    };
+    const session = new TrainingSession(
+      f.model,
+      () => {
+        batches++;
+        const x = tensor([Infinity], [1], f.backend);
+        return { inputs: { x }, targets: x };
+      },
+      f.loss,
+      { kind: 'sgd', learningRate: 0.1 },
+      'y',
+      { accuracy: false },
+    );
+    try {
+      const operation = method === 'run' ? session.run(1) : session[method]();
+      await expect(operation).rejects.toMatchObject({
+        key: 'training.nonfinite',
+        node: 'first',
+        message: 'training.nonfinite',
+        params: { actual: 'Infinity', index: 0, stageKey: 'training.stage.forward' },
+      });
+      expect(executions).toBe(2);
+      expect(batches).toBe(1);
+      expect(session.optimizer.step).toBe(0);
+      expect(f.backend.liveBuffers).toBe(1);
+    } finally {
+      session.dispose();
+      f.parameters.forEach((t) => t.dispose());
+    }
+    expect(f.backend.liveBuffers).toBe(0);
+  },
+);
+
+it('does not replay successful executions or mask failures with replay exceptions', async () => {
+  const f = fixture();
+  let executions = 0;
+  const execute = f.model.execute;
+  f.model.execute = (inputs, trace) => {
+    executions++;
+    if (trace) throw new Error('replay failed');
+    return execute(inputs);
+  };
+  const batch = f.batch();
+  const session = new TrainingSession(
+    f.model,
+    batch,
+    f.loss,
+    { kind: 'sgd', learningRate: 0.1 },
+    'y',
+    { accuracy: false },
+  );
+  try {
+    await session.evaluate();
+    expect(executions).toBe(1);
+    const broken = new TrainingSession(
+      f.model,
+      batch,
+      () => tensor([NaN], [], f.backend),
+      { kind: 'sgd', learningRate: 0.1 },
+      'y',
+      { accuracy: false },
+    );
+    await expect(broken.evaluate()).rejects.toMatchObject({ key: 'training.nonfinite' });
+    expect(executions).toBe(3);
+    expect(f.backend.liveBuffers).toBe(2);
+  } finally {
+    session.dispose();
     batch.targets?.dispose();
     f.parameters.forEach((t) => t.dispose());
   }

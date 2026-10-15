@@ -28,6 +28,7 @@ import LossChart from './ui/LossChart';
 import DataPlot, { type PlotData } from './ui/DataPlot';
 import { VOCAB } from './levels/corpus';
 import { caseInputs, fullValues } from './ui/tensor-values';
+import { diagnosticNode, graphDiagnostic } from './ui/diagnostic';
 import { formatValue } from './ui/format-value';
 import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
@@ -920,12 +921,17 @@ function Editor({
   // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
   const SOFT = new Set(['missing_port', 'missing_input']);
   const errors = [
+    ...(error?.node && !diagnostics.some((d) => d.node === error.node && d.key === error.key)
+      ? [error]
+      : []),
     ...diagnostics,
     ...probeErrors.filter((p) => !diagnostics.some((d) => d.node === p.node && d.key === p.key)),
   ].map((e) => ({
     ...e,
     soft: SOFT.has(e.key),
-    message: translateDiagnostic(locale, e),
+    node: diagnosticNode(state.graph, e),
+    // Shown on the node itself, so no component-name prefix.
+    message: graphDiagnostic(locale, state.graph, e, registry, false),
   }));
   // Component internals get their own framing; leaving restores the player's view.
   const outerView = useRef(state.viewport);
@@ -1390,7 +1396,7 @@ function Editor({
       <aside className="panel panel-right">
         {(error || state.error) && (
           <p role="alert" className="status status-fail">
-            {translateDiagnostic(locale, error ?? { key: state.error! })}
+            {graphDiagnostic(locale, state.graph, error ?? { key: state.error! }, registry)}
           </p>
         )}
         {errors
@@ -1844,7 +1850,7 @@ function Editor({
                             className={r.errorKey ? 'cell-error' : undefined}
                           >
                             {r.errorKey
-                              ? translateDiagnostic(locale, {
+                              ? graphDiagnostic(locale, state.graph, {
                                   key: r.errorKey,
                                   params: r.errorParams,
                                 })
