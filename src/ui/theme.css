@@ -612,6 +612,9 @@ input[type='range'] {
   gap: var(--s2);
   color: var(--text);
 }
+.hint-text {
+  min-width: 0;
+}
 .hint-n {
   flex: none;
   font-family: var(--mono);

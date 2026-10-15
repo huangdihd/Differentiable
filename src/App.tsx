@@ -1137,7 +1137,10 @@ function Editor({
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
             <p className="hint hint-open" key={key}>
               <span className="hint-n">{i + 1}</span>
-              <MathText text={t(key)} />
+              {/* One flex item: the text's own spans and formulas must flow as a paragraph. */}
+              <span className="hint-text">
+                <MathText text={t(key)} />
+              </span>
             </p>
           ))}
           {hintsShown < (level.hintsKeys?.length ?? 0) && (
