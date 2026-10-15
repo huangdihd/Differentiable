@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and nine learning lessons unlock sequentially, followed by the XOR challenge (3-10, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -57,8 +57,13 @@ for resampled levels, but those larger levels are not exposed yet.
 ### Gradient-descent lessons and saves
 
 The route after 2-8 is 3-1 → 3-2 → 3-3 → 3-4 → 3-5 (cross entropy) →
-3-6 (classification) → 3-7 (momentum) → 3-8 (Adam) → 3-9 (hidden layer) →
-`xor` (displayed as 3-10). Cross entropy is a player subgraph with `p`/`t` ports;
+3-6 (`neuron`, one neuron) → 3-7 (`layer`, a layer) → 3-8 (classification) →
+3-9 (momentum) → 3-10 (Adam) → 3-11 (hidden layer) → `xor` (displayed as 3-12).
+Display codes follow chapter order; existing IDs `3-6`–`3-9` remain unchanged.
+The neuron circuit uses the player's dot + add for a point or batch (par 3).
+The layer uses the player's matmul + add (par 5), awarding `linear` with x/w/b ports.
+Loading a save that passed `3-5` unlocks `neuron`; an already unlocked or passed
+stable ID `3-6` unlocks both new lessons without marking either passed. Cross entropy is a player subgraph with `p`/`t` ports;
 it reduces classes, then averages rows, including at new batch/class sizes.
 MSE is the player's saved subgraph, not a native kernel. Lesson 3-4 predicts
 `w*x+b` from zero-initialized scalar parameters and uses the graph's `loss` output
@@ -202,7 +207,7 @@ surrogates. Training rates are tunable; Adam is the default, with SGD also allow
 Both models support the worker `generate` API documented in
 [src/worker/README.md](src/worker/README.md). No generation panel or other UI is added.
 
-### Classification lesson calibration (CPU, seeded reference circuits)
+### Classification lesson calibration (CPU, seeded reference circuits; stable level IDs)
 
 | Level | Data / seed | Steps | Threshold | LR min–max (default) | Optimizer default |
 | --- | --- | --- | --- | --- | --- |

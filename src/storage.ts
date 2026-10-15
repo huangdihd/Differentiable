@@ -197,9 +197,21 @@ export async function loadProgressWithMigration(
         envelope.version === 2 ? migrateChapter2(envelope.progress) : envelope.progress;
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
+      // The stable linear-layer milestone predates the neuron/layer construction lessons.
+      const constructionUnlocks = progress.unlocked.includes('3-6')
+        ? ['neuron', 'layer']
+        : progress.passed.includes('3-5')
+          ? ['neuron']
+          : [];
       const restored = {
         ...progress,
-        unlocked: [...new Set([...progress.unlocked, ...passedLevels.flatMap((l) => l.unlock)])],
+        unlocked: [
+          ...new Set([
+            ...progress.unlocked,
+            ...passedLevels.flatMap((l) => l.unlock),
+            ...constructionUnlocks.filter((id) => levels.some((level) => level.id === id)),
+          ]),
+        ],
         unlockedComponents: [
           ...new Set([
             ...progress.unlockedComponents,

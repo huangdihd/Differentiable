@@ -1,4 +1,4 @@
-import type { Attributes, GraphJSON } from '../engine/graph';
+import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
 import { chapter0Levels } from './chapter0';
@@ -244,6 +244,7 @@ const crossEntropyLevel = withPar<ForwardLevel>(
   {
     ...metadata(5),
     kind: 'forward',
+    unlock: ['neuron'],
     referenceGraph: crossEntropyAnswer(),
     interface: { inputs: { p: [4, 3], t: [4, 3] }, output: 'y', outputShape: [1] },
     unlockComponents: ['cross_entropy'],
@@ -262,6 +263,85 @@ const crossEntropyLevel = withPar<ForwardLevel>(
   [...preceding, ...chapter3ForwardLevels],
 );
 
+/** A point and a batch share the same circuit; only the input shapes change. */
+function affineAnswer(component: 'dot' | 'matmul'): GraphJSON {
+  return {
+    version: 1,
+    nodes: [
+      ...['x', 'w', 'b'].map((name) => ({ id: name, component: 'input', attrs: { name } })),
+      { id: 'weighted', component },
+      { id: 'biased', component: 'add' },
+      { id: 'output', component: 'output', attrs: { name: 'y' } },
+    ],
+    edges: [
+      ['x', 'weighted', 'a'],
+      ['w', 'weighted', 'b'],
+      ['weighted', 'biased', 'a'],
+      ['b', 'biased', 'b'],
+      ['biased', 'output', 'x'],
+    ].map(([from, to, port]) => ({ from: { node: from, port: 'out' }, to: { node: to, port } })),
+  };
+}
+
+const affineDefinitions: {
+  id: string;
+  component: 'dot' | 'matmul';
+  shapes: ShapePorts[];
+  output: number[];
+}[] = [
+  {
+    id: 'neuron',
+    component: 'dot',
+    shapes: [
+      { x: [2], w: [2], b: [] },
+      { x: [5, 2], w: [2], b: [] },
+      { x: [3], w: [3], b: [] },
+      { x: [4, 3], w: [3], b: [] },
+    ],
+    output: [],
+  },
+  {
+    id: 'layer',
+    component: 'matmul',
+    shapes: [
+      { x: [4, 2], w: [2, 3], b: [3] },
+      { x: [6, 2], w: [2, 3], b: [3] },
+      { x: [4, 5], w: [5, 2], b: [2] },
+      { x: [1, 3], w: [3, 4], b: [4] },
+    ],
+    output: [4, 3],
+  },
+];
+const affineLevels = affineDefinitions.map(({ id, component, shapes, output }, index) =>
+  withPar<ForwardLevel>(
+    {
+      id,
+      chapter: '3',
+      kind: 'forward',
+      titleKey: `levels.${id}.title`,
+      descriptionKey: `levels.${id}.description`,
+      hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
+      available: crossEntropyLevel.available,
+      unlock: [id === 'neuron' ? 'layer' : '3-6'],
+      ...(id === 'layer' ? { unlockComponents: ['linear'], forbidden: ['linear'] } : {}),
+      interface: { inputs: shapes[0], output: 'y', outputShape: output },
+      referenceGraph: affineAnswer(component),
+      // Lead with the varied case so case 1 shows real numbers, not all zeros.
+      ...((cases) => ({
+        ...cases,
+        fixed: [cases.fixed[2], ...cases.fixed.filter((_, k) => k !== 2)],
+      }))(tensorCases(320 + index * 4, shapes[0])),
+      shapeVariants: shapes.slice(1).map((inputs, variant) => ({
+        inputs,
+        ...tensorCases(321 + index * 4 + variant, inputs),
+      })),
+      reference: ({ x, w, b }) =>
+        T.add(component === 'dot' ? T.sum(T.mul(x, w), [-1]) : T.matmul(x, w), b),
+    },
+    [...preceding, ...chapter3ForwardLevels, crossEntropyLevel],
+  ),
+);
+
 const momentumLevel = withPar<ForwardLevel>(
   {
     ...metadata(7),
@@ -274,7 +354,7 @@ const momentumLevel = withPar<ForwardLevel>(
   },
   [...preceding, ...chapter3ForwardLevels, crossEntropyLevel],
 );
-chapter3ForwardLevels.push(crossEntropyLevel, momentumLevel);
+chapter3ForwardLevels.push(crossEntropyLevel, ...affineLevels, momentumLevel);
 
 export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) => {
   const count = index === 9 ? 64 : 40;
@@ -337,6 +417,7 @@ export const chapter3Levels = [
   ...chapter3ForwardLevels.slice(0, 3),
   chapter3TrainLevel,
   crossEntropyLevel,
+  ...affineLevels,
   chapter3ClassificationLevels[0],
   momentumLevel,
   ...chapter3ClassificationLevels.slice(1),

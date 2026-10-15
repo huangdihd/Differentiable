@@ -101,7 +101,7 @@ for (const level of chapter3ClassificationLevels) {
     }
   }, 60000);
 }
-for (const level of chapter3ForwardLevels.slice(3)) {
+for (const level of chapter3ForwardLevels.filter((level) => ['3-5', '3-7'].includes(level.id))) {
   it(`${level.id} reference and mistakes`, async () => {
     const result = await evaluateLevel(playable(level), level.referenceGraph!, { registry });
     expect(result.passed).toBe(true);

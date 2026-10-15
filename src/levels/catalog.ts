@@ -27,6 +27,7 @@ export const gameLevels: Level[] = [
   ...chapter3Levels,
   {
     ...xorLevel,
+    chapter: '3',
     available: [
       'param',
       'const',
@@ -59,11 +60,13 @@ export const gameLevels: Level[] = [
   ...chapter6Levels,
 ];
 
-export const catalog: CatalogEntry[] = gameLevels.map((level) => ({
-  level,
-  chapter: level.id === 'xor' ? 3 : Number(level.id.split('-')[0]),
-  code: level.id === 'xor' ? '3-10' : level.id,
-}));
+const chapterCounts = new Map<number, number>();
+export const catalog: CatalogEntry[] = gameLevels.map((level) => {
+  const chapter = Number(level.chapter);
+  const ordinal = (chapterCounts.get(chapter) ?? 0) + 1;
+  chapterCounts.set(chapter, ordinal);
+  return { level, chapter, code: `${chapter}-${ordinal}` };
+});
 
 export function entryFor(level: Level): CatalogEntry {
   return catalog.find((e) => e.level.id === level.id) ?? { level, chapter: 0, code: level.id };

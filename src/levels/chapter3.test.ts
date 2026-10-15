@@ -28,13 +28,30 @@ describe('gradient descent curriculum', () => {
       ['3-3'],
       ['3-4'],
       ['3-5'],
+      ['neuron'],
+      ['layer'],
       ['3-6'],
       ['3-7'],
       ['3-8'],
       ['3-9'],
       ['xor'],
     ]);
-    expect(catalog.find((entry) => entry.level.id === 'xor')!.code).toBe('3-10');
+    expect(
+      catalog.filter((entry) => entry.chapter === 3).map(({ level, code }) => [level.id, code]),
+    ).toEqual([
+      ['3-1', '3-1'],
+      ['3-2', '3-2'],
+      ['3-3', '3-3'],
+      ['3-4', '3-4'],
+      ['3-5', '3-5'],
+      ['neuron', '3-6'],
+      ['layer', '3-7'],
+      ['3-6', '3-8'],
+      ['3-7', '3-9'],
+      ['3-8', '3-10'],
+      ['3-9', '3-11'],
+      ['xor', '3-12'],
+    ]);
     expect(chapter3Levels.slice(0, 4).map((l) => l.par)).toEqual([7, 6, 11, 13]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
@@ -119,6 +136,66 @@ describe('gradient descent curriculum', () => {
     expect(progress.unlocked).toContain('3-4');
     expect(availableComponents(chapter3TrainLevel, progress)).toContain('mse');
   });
+
+  for (const id of ['neuron', 'layer']) {
+    it(`${id}: player components pass all four shapes and award only linear`, async () => {
+      const level = chapter3ForwardLevels.find((level) => level.id === id)!;
+      const progress = initialProgress([id]);
+      for (const prior of preceding) {
+        progress.passed.push(prior.id);
+        progress.passedSolutions[prior.id] = prior.referenceGraph!;
+        progress.unlockedComponents.push(...(prior.unlockComponents ?? []));
+      }
+      const playerRegistry = buildPlayerRegistry(gameLevels, progress);
+      const result = await evaluateLevel(
+        { ...level, available: availableComponents(level, progress) },
+        level.referenceGraph!,
+        { registry: playerRegistry },
+      );
+      expect(result.passed).toBe(true);
+      expect(result.tests).toHaveLength(36);
+      expect(level.par).toBe(id === 'neuron' ? 3 : 5);
+      expect(level.available).toEqual(chapter3ForwardLevels.find((l) => l.id === '3-5')!.available);
+      const next = applyResult(progress, level, result, level.referenceGraph!);
+      if (id === 'layer') {
+        expect(level.forbidden).toEqual(['linear']);
+        const linear = buildPlayerRegistry(gameLevels, next).get('linear')!;
+        expect(linear.inputs).toEqual(['x', 'w', 'b']);
+        expect(linear.subgraph).toBeDefined();
+        expect(linear.native).toBeUndefined();
+        expect(
+          availableComponents(
+            gameLevels.find((l) => l.id === '3-6')!,
+            next,
+          ),
+        ).toContain('linear');
+      } else {
+        expect(level.unlockComponents).toBeUndefined();
+        // Axis 0 works for a single point, but mistakenly contracts the batch axis.
+        const wrong = structuredClone(level.referenceGraph!);
+        Object.assign(
+          wrong.nodes.find((node) => node.id === 'weighted')!,
+          { component: 'mul' },
+        );
+        wrong.nodes.push({ id: 'sum', component: 'sum', attrs: { axes: [0] } });
+        wrong.edges.find((edge) => edge.from.node === 'weighted')!.from.node = 'sum';
+        wrong.edges.push({
+          from: { node: 'weighted', port: 'out' },
+          to: { node: 'sum', port: 'x' },
+        });
+        expect(
+          (
+            await evaluateLevel(
+              { ...level, available: playable(level).available, shapeVariants: [] },
+              wrong,
+              { registry },
+            )
+          ).passed,
+        ).toBe(true);
+        expect((await evaluateLevel(playable(level), wrong, { registry })).passed).toBe(false);
+      }
+    });
+  }
 
   it('measures slow, convergent and divergent learning rates', async () => {
     const losses: Record<string, number | undefined> = {};

@@ -111,6 +111,48 @@ describe('storage', () => {
     expect(saveProgress(createInitialProgress(), source)).toBe(true);
     expect((await loadProgressWithMigration(gameLevels, source)).unlocked).not.toContain('6-1');
   });
+  it.each([2, STORAGE_VERSION])(
+    'restores neuron/layer unlocks without crediting new lessons in version %s saves',
+    async (version) => {
+      const levels = [
+        { ...chapter1Levels[0], id: '3-5', unlock: ['neuron'] },
+        { ...chapter1Levels[0], id: 'neuron', unlock: ['layer'] },
+        { ...chapter1Levels[0], id: 'layer', unlock: ['3-6'] },
+        { ...chapter1Levels[0], id: '3-6', unlock: ['3-7'] },
+      ];
+      for (const [id, passed, expected] of [
+        ['3-5', false, ['3-5']],
+        ['3-5', true, ['3-5', 'neuron']],
+        ['3-6', false, ['3-6', 'neuron', 'layer']],
+        ['3-6', true, ['3-6', '3-7', 'neuron', 'layer']],
+      ] as const) {
+        const { data, source } = memory();
+        const progress = {
+          ...createInitialProgress(),
+          unlocked: [id],
+          passed: passed ? [id] : [],
+          savedGraphs: { [id]: graph },
+          passedSolutions: passed ? { [id]: graph } : {},
+          bestScores: { [id]: { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 } },
+          trainingSettings: { [id]: { learningRate: 0.01 } },
+        };
+        data.set(STORAGE_KEY, JSON.stringify({ version, progress }));
+        const restored = await loadProgressWithMigration(levels, source);
+        expect(restored).toEqual({ ...progress, unlocked: expected });
+        expect(saveProgress(restored, source)).toBe(true);
+        expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
+      }
+      const { source } = memory();
+      expect(saveProgress(createInitialProgress(), source)).toBe(true);
+      expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
+    },
+  );
+  it('does not restore neuron/layer IDs absent from the supplied catalog', async () => {
+    const { source } = memory();
+    const progress = { ...createInitialProgress(), unlocked: ['3-6'] };
+    expect(saveProgress(progress, source)).toBe(true);
+    expect(await loadProgressWithMigration(chapter1Levels, source)).toEqual(progress);
+  });
   it('gates expressions for new players, graduates and grandfathered players', () => {
     const fresh = createInitialProgress();
     expect(isExpressionUnlocked(fresh, chapter1Levels)).toBe(false);

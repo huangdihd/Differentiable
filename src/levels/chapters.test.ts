@@ -26,12 +26,15 @@ const registry = referenceRegistry([
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 
 describe('formal chapter catalog', () => {
-  it('contains forty-nine sequential lessons and the preserved XOR challenge', () => {
+  it('contains the sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
-      ...Array.from({ length: 9 }, (_, i) => `3-${i + 1}`),
+      ...Array.from({ length: 5 }, (_, i) => `3-${i + 1}`),
+      'neuron',
+      'layer',
+      ...Array.from({ length: 4 }, (_, i) => `3-${i + 6}`),
       'xor',
       ...Array.from({ length: 5 }, (_, i) => `4-${i + 1}`),
       ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),

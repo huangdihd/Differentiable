@@ -30,6 +30,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   recip: '1/x',
   sigmoid: 'σ',
   matmul: '@',
+  linear: 'xW+b',
   softmax: 'soft',
   layernorm: 'LN',
   mse: 'MSE',
