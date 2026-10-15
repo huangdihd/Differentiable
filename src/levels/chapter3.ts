@@ -105,6 +105,7 @@ chapter3ForwardLevels.push(
   withPar<ForwardLevel>(
     {
       ...metadata(2),
+      unlock: ['neuron'],
       kind: 'forward',
       interface: { inputs: { w: [3], x: [3], t: [] }, output: 'y', outputShape: [3] },
       ...tensorCases(301, { w: [3], x: [3], t: [] }),
@@ -244,7 +245,6 @@ const crossEntropyLevel = withPar<ForwardLevel>(
   {
     ...metadata(5),
     kind: 'forward',
-    unlock: ['neuron'],
     referenceGraph: crossEntropyAnswer(),
     interface: { inputs: { p: [4, 3], t: [4, 3] }, output: 'y', outputShape: [1] },
     unlockComponents: ['cross_entropy'],
@@ -321,8 +321,8 @@ const affineLevels = affineDefinitions.map(({ id, component, shapes, output }, i
       titleKey: `levels.${id}.title`,
       descriptionKey: `levels.${id}.description`,
       hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
-      available: crossEntropyLevel.available,
-      unlock: [id === 'neuron' ? 'layer' : '3-6'],
+      available,
+      unlock: [id === 'neuron' ? 'layer' : '3-3'],
       ...(id === 'layer' ? { unlockComponents: ['linear'], forbidden: ['linear'] } : {}),
       interface: { inputs: shapes[0], output: 'y', outputShape: output },
       referenceGraph: affineAnswer(component),
@@ -338,7 +338,7 @@ const affineLevels = affineDefinitions.map(({ id, component, shapes, output }, i
       reference: ({ x, w, b }) =>
         T.add(component === 'dot' ? T.sum(T.mul(x, w), [-1]) : T.matmul(x, w), b),
     },
-    [...preceding, ...chapter3ForwardLevels, crossEntropyLevel],
+    [...preceding, ...chapter3ForwardLevels.slice(0, 2)],
   ),
 );
 
@@ -414,10 +414,11 @@ export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) 
   );
 });
 export const chapter3Levels = [
-  ...chapter3ForwardLevels.slice(0, 3),
+  ...chapter3ForwardLevels.slice(0, 2),
+  ...affineLevels,
+  chapter3ForwardLevels[2],
   chapter3TrainLevel,
   crossEntropyLevel,
-  ...affineLevels,
   chapter3ClassificationLevels[0],
   momentumLevel,
   ...chapter3ClassificationLevels.slice(1),

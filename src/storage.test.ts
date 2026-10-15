@@ -287,41 +287,97 @@ describe('storage', () => {
     'restores neuron/layer unlocks without crediting new lessons in version %s saves',
     async (version) => {
       const levels = [
-        { ...chapter1Levels[0], id: '3-5', unlock: ['neuron'] },
+        { ...chapter1Levels[0], id: '3-2', unlock: ['neuron'] },
         { ...chapter1Levels[0], id: 'neuron', unlock: ['layer'] },
-        { ...chapter1Levels[0], id: 'layer', unlock: ['3-6'] },
-        { ...chapter1Levels[0], id: '3-6', unlock: ['3-7'] },
+        { ...chapter1Levels[0], id: 'layer', unlock: ['3-3'] },
+        { ...chapter1Levels[0], id: '3-3', unlock: ['3-4'] },
+        { ...chapter1Levels[0], id: '3-4', unlock: ['3-5'] },
+        { ...chapter1Levels[0], id: '3-5', unlock: ['3-6'] },
       ];
-      for (const [id, passed, expected] of [
-        ['3-5', false, ['3-5']],
-        ['3-5', true, ['3-5', 'neuron']],
-        ['3-6', false, ['3-6', 'neuron', 'layer']],
-        ['3-6', true, ['3-6', '3-7', 'neuron', 'layer']],
-      ] as const) {
+      for (const [unlocked, passed, additions] of [
+        [['3-2'], [], []],
+        [['3-2'], ['3-2'], ['neuron']],
+        [['3-3'], [], ['neuron', 'layer']],
+        [['3-3'], ['3-3'], ['3-4', 'neuron', 'layer']],
+        [
+          ['3-2', '3-3', '3-4', '3-5'],
+          ['3-2', '3-3', '3-4', '3-5'],
+          ['neuron', '3-6', 'layer'],
+        ],
+        [['neuron'], ['neuron'], ['layer']],
+        [['neuron', 'layer', '3-3'], ['neuron', 'layer'], []],
+      ]) {
         const { data, source } = memory();
         const progress = {
           ...createInitialProgress(),
-          unlocked: [id],
-          passed: passed ? [id] : [],
-          savedGraphs: { [id]: graph },
-          passedSolutions: passed ? { [id]: graph } : {},
-          bestScores: { [id]: { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 } },
-          trainingSettings: { [id]: { learningRate: 0.01 } },
+          unlocked,
+          passed,
+          unlockedComponents: ['identity'],
+          savedGraphs: { neuron: graph, layer: graph },
+          passedSolutions: Object.fromEntries(passed.map((id) => [id, graph])),
+          bestScores: Object.fromEntries(
+            passed.map((id) => [id, { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 }]),
+          ),
+          trainingSettings: { neuron: { learningRate: 0.01 }, layer: { learningRate: 0.02 } },
         };
         data.set(STORAGE_KEY, JSON.stringify({ version, progress }));
         const restored = await loadProgressWithMigration(levels, source);
-        expect(restored).toEqual({ ...progress, unlocked: expected });
+        expect(restored).toEqual({ ...progress, unlocked: [...unlocked, ...additions] });
         expect(saveProgress(restored, source)).toBe(true);
         expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
       }
-      const { source } = memory();
-      expect(saveProgress(createInitialProgress(), source)).toBe(true);
+      const { data, source } = memory();
+      data.set(STORAGE_KEY, JSON.stringify({ version, progress: createInitialProgress() }));
       expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
     },
   );
+  it('restores v1 construction access without automatically crediting neuron or layer', async () => {
+    const reference = structuredClone(graph);
+    reference.nodes[1].attrs = { name: 'y' };
+    const lesson: ForwardLevel = {
+      id: '3-2',
+      titleKey: 'test.title',
+      descriptionKey: 'test.description',
+      kind: 'forward',
+      available: [],
+      interface: { inputs: { x: [2] }, output: 'y', outputShape: [2] },
+      unlock: ['neuron'],
+      fixed: [{ id: 'case', inputs: { x: [1, 2] } }],
+      reference: (inputs) => inputs.x,
+      referenceGraph: reference,
+    };
+    const levels = [
+      lesson,
+      { ...lesson, id: 'neuron', unlock: ['layer'] },
+      { ...lesson, id: 'layer', unlock: ['3-3'] },
+      { ...lesson, id: '3-3', unlock: [] },
+    ];
+    for (const passed of [[], ['3-3']]) {
+      const { data, source } = memory();
+      const legacy = {
+        ...createInitialProgress(),
+        unlocked: ['3-3'],
+        passed,
+        savedGraphs: { neuron: graph, layer: graph },
+        trainingSettings: { neuron: { learningRate: 0.01 } },
+      };
+      data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress: legacy }));
+      const restored = await loadProgressWithMigration(levels, source);
+      expect(restored.unlocked).toEqual(expect.arrayContaining(['neuron', 'layer']));
+      expect(restored.passed).toEqual(passed.length ? ['3-2', '3-3'] : []);
+      for (const id of ['neuron', 'layer']) {
+        expect(restored.passedSolutions[id]).toBeUndefined();
+        expect(restored.bestScores[id]).toBeUndefined();
+      }
+      expect(restored.savedGraphs).toEqual(legacy.savedGraphs);
+      expect(restored.trainingSettings).toEqual(legacy.trainingSettings);
+      expect(loadProgress(source)).toEqual(restored);
+      expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
+    }
+  });
   it('does not restore neuron/layer IDs absent from the supplied catalog', async () => {
     const { source } = memory();
-    const progress = { ...createInitialProgress(), unlocked: ['3-6'] };
+    const progress = { ...createInitialProgress(), unlocked: ['3-3'] };
     expect(saveProgress(progress, source)).toBe(true);
     expect(await loadProgressWithMigration(chapter1Levels, source)).toEqual(progress);
   });

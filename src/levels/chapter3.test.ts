@@ -25,11 +25,11 @@ describe('gradient descent curriculum', () => {
     expect(chapter2Levels.at(-1)!.unlock).toEqual(['3-1']);
     expect(chapter3Levels.map((l) => l.unlock)).toEqual([
       ['3-2'],
+      ['neuron'],
+      ['layer'],
       ['3-3'],
       ['3-4'],
       ['3-5'],
-      ['neuron'],
-      ['layer'],
       ['3-6'],
       ['3-7'],
       ['3-8'],
@@ -41,18 +41,20 @@ describe('gradient descent curriculum', () => {
     ).toEqual([
       ['3-1', '3-1'],
       ['3-2', '3-2'],
-      ['3-3', '3-3'],
-      ['3-4', '3-4'],
-      ['3-5', '3-5'],
-      ['neuron', '3-6'],
-      ['layer', '3-7'],
+      ['neuron', '3-3'],
+      ['layer', '3-4'],
+      ['3-3', '3-5'],
+      ['3-4', '3-6'],
+      ['3-5', '3-7'],
       ['3-6', '3-8'],
       ['3-7', '3-9'],
       ['3-8', '3-10'],
       ['3-9', '3-11'],
       ['xor', '3-12'],
     ]);
-    expect(chapter3Levels.slice(0, 4).map((l) => l.par)).toEqual([7, 6, 11, 13]);
+    expect(
+      ['3-1', '3-2', '3-3', '3-4'].map((id) => chapter3Levels.find((l) => l.id === id)!.par),
+    ).toEqual([7, 6, 11, 13]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
@@ -120,7 +122,7 @@ describe('gradient descent curriculum', () => {
 
   it('earns mse as the player subgraph with p/t ports and no native kernel', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of [...preceding, ...chapter3ForwardLevels.slice(0, 3)]) {
+    for (const level of [...preceding, ...chapter3Levels.slice(0, 5)]) {
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         level.referenceGraph!,
@@ -135,6 +137,36 @@ describe('gradient descent curriculum', () => {
     expect(mse.subgraph).toBeDefined();
     expect(progress.unlocked).toContain('3-4');
     expect(availableComponents(chapter3TrainLevel, progress)).toContain('mse');
+  });
+
+  it('earns linear before losses without giving construction lessons future components', async () => {
+    let progress = initialProgress(['0-1']);
+    for (const level of gameLevels) {
+      if (level.id === '3-3') {
+        for (const id of ['3-3', '3-4', '3-5', '3-6']) {
+          expect(
+            availableComponents(
+              gameLevels.find((l) => l.id === id)!,
+              progress,
+            ),
+          ).toContain('linear');
+        }
+        break;
+      }
+      expect(progress.unlocked).toContain(level.id);
+      const available = availableComponents(level, progress);
+      if (['neuron', 'layer'].includes(level.id)) {
+        expect(available).toContain(level.id === 'neuron' ? 'dot' : 'matmul');
+        for (const name of ['mse', 'cross_entropy', 'linear'])
+          expect(available).not.toContain(name);
+        expect(level.par).toBe(level.id === 'neuron' ? 3 : 5);
+      }
+      const result = await evaluateLevel({ ...level, available }, level.referenceGraph!, {
+        registry: buildPlayerRegistry(gameLevels, progress),
+      });
+      expect(result.passed, level.id).toBe(true);
+      progress = applyResult(progress, level, result, level.referenceGraph!);
+    }
   });
 
   for (const id of ['neuron', 'layer']) {

@@ -193,6 +193,15 @@ function reshapeUnlocks(progress: Progress, levels: readonly Level[]): string[] 
     : [];
 }
 
+/** The internal 3-3 milestone predates construction lessons; restore access, never completion. */
+function constructionUnlocks(progress: Progress, levels: readonly Level[]): string[] {
+  const reachedLayer = progress.unlocked.includes('3-3') || progress.passed.includes('3-3');
+  return [
+    ...(reachedLayer || progress.passed.includes('3-2') ? ['neuron'] : []),
+    ...(reachedLayer || progress.passed.includes('neuron') ? ['layer'] : []),
+  ].filter((id) => levels.some((level) => level.id === id));
+}
+
 /** Load current saves synchronously elsewhere; App awaits this entry point to validate legacy solutions.
  * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
  * using verified reference circuits when old graphs are absent or no longer compatible.
@@ -213,19 +222,13 @@ export async function loadProgressWithMigration(
         envelope.version === 2 ? migrateChapter2(envelope.progress) : envelope.progress;
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
-      // The stable linear-layer milestone predates the neuron/layer construction lessons.
-      const constructionUnlocks = progress.unlocked.includes('3-6')
-        ? ['neuron', 'layer']
-        : progress.passed.includes('3-5')
-          ? ['neuron']
-          : [];
       const restored = {
         ...progress,
         unlocked: [
           ...new Set([
             ...progress.unlocked,
             ...passedLevels.flatMap((l) => l.unlock),
-            ...constructionUnlocks.filter((id) => levels.some((level) => level.id === id)),
+            ...constructionUnlocks(progress, levels),
             ...axesUnlocks(progress, levels),
             ...reshapeUnlocks(progress, levels),
           ]),
@@ -262,6 +265,7 @@ export async function loadProgressWithMigration(
     ...new Set([
       ...progress.unlocked,
       ...legacy.unlocked.map(mapId).filter((id) => known.has(id)),
+      ...constructionUnlocks(legacy, levels),
       ...axesUnlocks(legacy, levels),
       ...reshapeUnlocks(legacy, levels),
     ]),
@@ -280,7 +284,8 @@ export async function loadProgressWithMigration(
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
     // New lessons must not become completed merely because a legacy milestone follows them.
-    if ((level.id === 'axes' || level.id === 'reshape') && !passed.has(level.id)) continue;
+    if (['axes', 'reshape', 'neuron', 'layer'].includes(level.id) && !passed.has(level.id))
+      continue;
     const saved = progress.savedGraphs[level.id];
     for (const graph of [saved, level.referenceGraph]) {
       if (!graph) continue;

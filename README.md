@@ -56,16 +56,19 @@ for resampled levels, but those larger levels are not exposed yet.
 
 ### Gradient-descent lessons and saves
 
-The route after 2-9 is 3-1 → 3-2 → 3-3 → 3-4 → 3-5 (cross entropy) →
-3-6 (`neuron`, one neuron) → 3-7 (`layer`, a layer) → 3-8 (classification) →
+The route after 2-9 is 3-1 → 3-2 → 3-3 (`neuron`, one neuron) →
+3-4 (`layer`, a layer) → 3-5 (MSE, stable ID `3-3`) →
+3-6 (regression, stable ID `3-4`) → 3-7 (cross entropy, stable ID `3-5`) →
+3-8 (classification) →
 3-9 (momentum) → 3-10 (Adam) → 3-11 (hidden layer) → `xor` (displayed as 3-12).
-Display codes follow chapter order; existing IDs `3-6`–`3-9` remain unchanged.
+Display codes follow chapter order; stable IDs and saved circuits remain unchanged.
 The neuron circuit uses the player's dot + add for a point or batch (par 3).
 The layer uses the player's matmul + add (par 5), awarding `linear` with x/w/b ports.
-Loading a save that passed `3-5` unlocks `neuron`; an already unlocked or passed
-stable ID `3-6` unlocks both new lessons without marking either passed. Cross entropy is a player subgraph with `p`/`t` ports;
+Loading a save that passed `3-2` unlocks `neuron`; an already unlocked or passed
+stable ID `3-3` unlocks both `neuron` and `layer`. Passing `neuron` unlocks `layer`.
+These migration rules grant unlocks only, never pass credit. Cross entropy is a player subgraph with `p`/`t` ports;
 it reduces classes, then averages rows, including at new batch/class sizes.
-MSE is the player's saved subgraph, not a native kernel. Lesson 3-4 predicts
+MSE is the player's saved subgraph, not a native kernel. Lesson 3-6 (stable ID `3-4`) predicts
 `w*x+b` from zero-initialized scalar parameters and uses the graph's `loss` output
 (shape `[1]`); batches need no separate targets when `lossOutput` is set.
 `TrainLevel.tunable.learningRate` declares min/max/default; evaluation and worker
