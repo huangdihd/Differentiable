@@ -31,6 +31,7 @@ const available = [
   'unsqueeze',
   'transpose',
   'reshape',
+  'size',
   'ge',
 ];
 const N = 512,

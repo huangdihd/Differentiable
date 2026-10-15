@@ -50,6 +50,7 @@ describe('graph compiler', () => {
         'transpose',
         'gather',
         'arange',
+        'size',
       ].sort(),
     );
     for (const name of ['matmul', 'softmax', 'layernorm']) {

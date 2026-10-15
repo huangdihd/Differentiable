@@ -368,7 +368,8 @@ function Editor({
   const [plotBase, setPlotBase] = useState<PlotData>();
   useEffect(() => {
     setPlotBase(undefined);
-    if (level.kind !== 'train') return;
+    // Language models take token ids, not coordinates: nothing to plot.
+    if (level.kind !== 'train' || level.generates) return;
     let cancelled = false;
     const batch = level.dataset(new Random(level.seed));
     const x = batch.inputs.x,
@@ -1285,6 +1286,9 @@ function Editor({
           <Properties
             key={selected.id}
             node={selected}
+            connectedInputs={state.graph.edges
+              .filter((edge) => edge.to.node === selected.id)
+              .map((edge) => edge.to.port)}
             t={t}
             onChange={(attrs) =>
               command({ type: 'setAttrs', id: selected.id, attrs, replace: true })

@@ -36,6 +36,7 @@ export const gameLevels: Level[] = [
       'sum',
       'reduce_max',
       'reshape',
+      'size',
       'transpose',
     ],
     presets: ['matmul', 'softmax'],

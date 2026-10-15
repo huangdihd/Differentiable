@@ -39,6 +39,7 @@ export interface ComponentDefinition {
   name: string;
   inputs: readonly string[];
   outputs: readonly string[];
+  optionalInputs?: readonly string[];
   primitive?: ComponentImplementation;
   native?: ComponentImplementation;
   subgraph?: GraphJSON | ((attrs: Attributes, inputs?: ShapePorts) => GraphJSON);
@@ -258,6 +259,7 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
   const probes = new Map<string, string>();
   const storage = new Map<string, StorageSpec>();
   const shapes = new Map<string, Shape>();
+  const scalars = new Map<string, number>();
   const externalInputs: Record<string, string> = Object.create(null);
   const inputShapes: ShapePorts = Object.create(null);
   const active = new Set<string>();
@@ -340,16 +342,20 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
     function visit(node: GraphNode): Record<string, string> {
       if (resolved.has(node.id)) return resolved.get(node.id)!;
       const id = path(node.id),
-        attrs = node.attrs ?? {};
+        attrs = { ...node.attrs };
       if (visiting.has(node.id)) throw new GraphError('cycle', id);
       visiting.add(node.id);
       try {
         const args: Record<string, string> = Object.create(null);
         for (const port of ports(node).inputs) {
           const link = incoming.get(node.id)!.get(port);
-          if (!link) throw new GraphError('missing_port', id, port);
+          if (!link) {
+            if (registry.get(node.component)?.optionalInputs?.includes(port)) continue;
+            throw new GraphError('missing_port', id, port);
+          }
           args[port] = visit(nodes.get(link.node)!)[link.port];
         }
+        resolveDimensions(node.component, attrs, args, scalars);
         let out: Record<string, string> = Object.create(null);
         if (node.component === 'input') {
           const name = requiredName(attrs);
@@ -411,6 +417,13 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
           out.out = id;
           shapes.set(id, s);
           storage.set(id, { shape: s, attrs, parameter: node.component === 'param' });
+          if (node.component === 'const' && s.length === 0)
+            scalars.set(
+              id,
+              Math.fround(
+                typeof attrs.value === 'number' ? attrs.value : (attrs.value as number[])[0],
+              ),
+            );
         } else {
           const def = registry.get(node.component)!;
           const argumentShapes = Object.fromEntries(
@@ -431,7 +444,16 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               out[port] = `${id}:${port}`;
               shapes.set(out[port], shape(inferred[port]));
             }
-            steps.push({ id, inputs: args, outputs: out, attrs, implementation: impl });
+            const scalar = staticScalar(
+              node.component,
+              argumentShapes,
+              attrs,
+              Object.fromEntries(Object.entries(args).map(([p, ref]) => [p, scalars.get(ref)])),
+            );
+            if (scalar !== undefined && inferred.out?.length === 0) {
+              scalars.set(out.out, scalar);
+              storage.set(out.out, { shape: [], attrs: { value: scalar }, parameter: false });
+            } else steps.push({ id, inputs: args, outputs: out, attrs, implementation: impl });
           } else if (def.subgraph) {
             if (active.has(def.name)) throw new GraphError('recursive_component', id);
             active.add(def.name);
@@ -490,6 +512,87 @@ export function safeCompileGraph(
   } catch (error) {
     return { ok: false, errors: [error instanceof GraphError ? error : contextual(error, '')] };
   }
+}
+
+/** Shape metadata is available without reading backend storage. */
+function sizeAxis(s: Shape, attrs: Attributes): number {
+  const raw = attrs.axis === undefined ? -1 : attrs.axis;
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) throw new GraphError('size_axis');
+  const axis = raw < 0 ? raw + s.length : raw;
+  if (axis < 0 || axis >= s.length) throw new GraphError('size_axis');
+  return s[axis];
+}
+
+/** Shared by executable and symbolic lowering; dimension edges are compile-time only. */
+export function resolveDimensions(
+  component: string,
+  attrs: Attributes,
+  args: Record<string, string>,
+  scalars: ReadonlyMap<string, number>,
+): void {
+  const ports =
+    component === 'reshape' ? ['d0', 'd1', 'd2', 'd3'] : component === 'arange' ? ['n'] : [];
+  for (const port of ports) {
+    if (!Object.hasOwn(args, port)) continue;
+    const index = Number(port.slice(1));
+    if (component === 'reshape' && (!Array.isArray(attrs.shape) || index >= attrs.shape.length))
+      throw new GraphError('dim_out_of_range', undefined, port);
+    const value = scalars.get(args[port]);
+    if (value === undefined) throw new GraphError('dim_not_static', undefined, port);
+    const integer = Math.round(value);
+    if (!Number.isFinite(value) || Math.abs(value - integer) > 1e-3)
+      throw new GraphError('dim_not_integer', undefined, port);
+    if (component === 'reshape') {
+      attrs.shape = [...(attrs.shape as number[])];
+      (attrs.shape as number[])[index] = integer;
+    } else attrs.n = integer;
+    delete args[port];
+  }
+}
+
+/** Scalar f32 semantics mirror the reference kernels, never reading GPU data. */
+export function staticScalar(
+  component: string,
+  shapes: ShapePorts,
+  attrs: Attributes,
+  values: Record<string, number | undefined>,
+): number | undefined {
+  if (component === 'size') return Math.fround(sizeAxis(shapes.x, attrs));
+  if (Object.keys(shapes).some((p) => shapes[p].length !== 0 || values[p] === undefined))
+    return undefined;
+  const a = values.a!,
+    b = values.b!,
+    x = values.x!;
+  let value: number;
+  switch (component) {
+    case 'add':
+      value = a + b;
+      break;
+    case 'mul':
+      value = a * b;
+      break;
+    case 'max':
+      value = Math.max(a, b);
+      break;
+    case 'ge':
+      value = a >= b ? 1 : 0;
+      break;
+    case 'exp':
+      value = Math.exp(x);
+      break;
+    case 'log':
+      value = Math.log(x);
+      break;
+    case 'reshape':
+    case 'transpose':
+    case 'sum':
+    case 'reduce_max':
+      value = x;
+      break;
+    default:
+      return undefined;
+  }
+  return Math.fround(value);
 }
 
 function broadcast(a: Shape, b: Shape): number[] {
@@ -570,7 +673,15 @@ export function createDefaultRegistry(): ComponentRegistry {
     inputs: string[],
     infer: ComponentImplementation['infer'],
     execute: ComponentImplementation['execute'],
-  ) => registry.register({ name, inputs, outputs: ['out'], primitive: { infer, execute } });
+    optionalInputs?: readonly string[],
+  ) =>
+    registry.register({
+      name,
+      inputs,
+      outputs: ['out'],
+      optionalInputs,
+      primitive: { infer, execute },
+    });
   // Structural primitives are handled by the compiler/plan rather than tensor kernels.
   for (const name of ['input', 'output', 'const', 'param']) {
     registry.register({
@@ -619,9 +730,10 @@ export function createDefaultRegistry(): ComponentRegistry {
     );
   register(
     'reshape',
-    ['x'],
+    ['x', 'd0', 'd1', 'd2', 'd3'],
     (i, a) => ({ out: reshapeShape(i.x, a) }),
     (i, a) => ({ out: T.reshape(i.x, reshapeShape(i.x.shape, a)) }),
+    ['d0', 'd1', 'd2', 'd3'],
   );
   register(
     'unsqueeze',
@@ -646,9 +758,19 @@ export function createDefaultRegistry(): ComponentRegistry {
   );
   register(
     'arange',
-    [],
+    ['n'],
     (_i, a) => ({ out: shape([a.n]) }),
     (_i, a, c) => ({ out: T.arange(a.n as number, c.backend) }),
+    ['n'],
+  );
+  register(
+    'size',
+    ['x'],
+    (i, a) => {
+      sizeAxis(i.x, a);
+      return { out: [] };
+    },
+    (i, a) => ({ out: T.tensor([sizeAxis(i.x.shape, a)], [], i.x.backend) }),
   );
   for (const component of standardComponents) registry.register(component);
   return registry;

@@ -585,5 +585,21 @@
   "worker.invalid_probabilities": "The graph must output finite, nonnegative character probabilities with a positive total.",
   "ui.generateHelp": "Uses the parameters from your latest training; untrained, it writes gibberish. Low temperature plays safe, high takes chances.",
   "ui.shapeGroup": "Shape",
-  "ui.showCase": "Click to load these inputs onto the canvas"
+  "ui.showCase": "Click to load these inputs onto the canvas",
+  "components.size": "Dimension size",
+  "component.size": "Dimension size",
+  "errors.size_axis": "The selected axis is outside the input rank.",
+  "errors.dim_not_static": "Dimension inputs must be scalars known at compile time.",
+  "errors.dim_not_integer": "Dimension inputs must be integers.",
+  "errors.dim_out_of_range": "The dimension input is outside the allowed range.",
+  "ports.n": "Range length n",
+  "ports.d0": "Target dimension 0",
+  "ports.d1": "Target dimension 1",
+  "ports.d2": "Target dimension 2",
+  "ports.d3": "Target dimension 3",
+  "port.n": "Range length n",
+  "port.d0": "Target dimension 0",
+  "port.d1": "Target dimension 1",
+  "port.d2": "Target dimension 2",
+  "port.d3": "Target dimension 3"
 }

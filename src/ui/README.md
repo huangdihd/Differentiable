@@ -12,6 +12,7 @@
 - Expressions insert a laid-out fragment below existing nodes and connect it to the level output. Double-click a subgraph component to inspect its implementation read-only; Back returns.
 - Tests/probes and training run in a module Worker. Training edits are locked until stopped or completed; pause retains optimizer state.
 - Live values keeps scalar inputs editable and displays tensor fixtures read-only with previous/next case controls. Tensor nodes show shape, a short preview, and complete values in a tooltip. Shape-variant failures name the tested input shapes in the results table.
+- Size (`|x|ₖ`) starts at axis −1 and accepts integer axis edits. Reshape exposes optional dimension ports d0–d3 only up to its target rank; wired shape overrides and wired range lengths are marked with arrows and disable their attribute field (disconnect to edit). Optional inputs do not produce missing-wire notes.
 - Sum and reduce-max start with axis −1 and Keep dimensions enabled. Unsqueeze starts at axis −1; its axis editor accepts negative integers (valid range is checked against the input rank during compilation).
 - Loading an existing v2 save migrates chapter-2 IDs to the eight-lesson route and persists v3. Loading progress then refreshes unlocks from already-passed lessons, so new successors become available without replaying. New transpose nodes swap axes −2 and −1; legacy full permutations remain editable.
 

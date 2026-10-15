@@ -6,6 +6,7 @@ describe('property field validation', () => {
     expect(defaults('sum')).toEqual({ axes: [-1], keepdims: true });
     expect(defaults('reduce_max')).toEqual({ axes: [-1], keepdims: true });
     expect(defaults('unsqueeze')).toEqual({ axis: -1 });
+    expect(defaults('size')).toEqual({ axis: -1 });
     expect(defaults('transpose')).toEqual({ axes: [-2, -1] });
     expect(defaults('param')).toEqual({ shape: [2, 2], init: 'normal', scale: 1 });
   });
@@ -17,6 +18,16 @@ describe('property field validation', () => {
     }
     for (const axis of ['', '-', '1.5', 'null', '1e999', '9007199254740992'])
       expect(validateProperties('unsqueeze', { axis }).errors.axis).toBe('ui.invalidNumber');
+  });
+  it('accepts integer size axes and rejects incomplete or fractional axes', () => {
+    for (const axis of ['-1', '-3', '0', '2']) {
+      expect(validateProperties('size', { axis })).toEqual({
+        attrs: { axis: Number(axis) },
+        errors: {},
+      });
+    }
+    for (const axis of ['', '-', '1.5', 'null', '9007199254740992'])
+      expect(validateProperties('size', { axis }).errors.axis).toBe('ui.invalidNumber');
   });
   it('supports scalar, vector and broadcast constants', () => {
     expect(validateProperties('const', { value: '2' }).errors).toEqual({});

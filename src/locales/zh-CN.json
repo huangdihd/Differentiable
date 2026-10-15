@@ -582,5 +582,21 @@
   "worker.invalid_probabilities": "计算图必须输出有限、非负且总和大于零的字符概率。",
   "ui.generateHelp": "用的是最近一次训练后的参数；还没训练时它只会乱写。温度低更保守，高更大胆。",
   "ui.shapeGroup": "形状",
-  "ui.showCase": "点一下，把这组输入放到画布上看"
+  "ui.showCase": "点一下，把这组输入放到画布上看",
+  "components.size": "维度大小",
+  "component.size": "维度大小",
+  "errors.size_axis": "所选轴超出输入张量的维度范围。",
+  "errors.dim_not_static": "维度输入必须是编译时已知的标量。",
+  "errors.dim_not_integer": "维度输入必须是整数。",
+  "errors.dim_out_of_range": "维度输入超出允许范围。",
+  "ports.n": "序列长度 n",
+  "ports.d0": "目标维度 0",
+  "ports.d1": "目标维度 1",
+  "ports.d2": "目标维度 2",
+  "ports.d3": "目标维度 3",
+  "port.n": "序列长度 n",
+  "port.d0": "目标维度 0",
+  "port.d1": "目标维度 1",
+  "port.d2": "目标维度 2",
+  "port.d3": "目标维度 3"
 }

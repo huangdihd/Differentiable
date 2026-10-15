@@ -7,6 +7,7 @@ import {
   bodyHeight,
   graphBounds,
   layoutGraph,
+  nodePorts,
   sidePortY,
   type Point,
 } from './graph-geometry';
@@ -124,11 +125,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     },
   }));
 
-  const ports = (n: GraphNode, side: 'inputs' | 'outputs'): readonly string[] => {
-    if (n.component === 'input') return side === 'outputs' ? ['out'] : [];
-    if (n.component === 'output') return side === 'inputs' ? ['x'] : [];
-    return registry.get(n.component)?.[side] ?? [];
-  };
+  const ports = (n: GraphNode, side: 'inputs' | 'outputs') => nodePorts(n, registry, side);
   const portOffset = (n: GraphNode, side: 'inputs' | 'outputs', port: string) => {
     const list = ports(n, side);
     return sidePortY(n, registry, Math.max(0, list.indexOf(port)), list.length);

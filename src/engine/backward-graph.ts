@@ -1,6 +1,8 @@
 import { size } from './backend';
 import {
   compileGraph,
+  resolveDimensions,
+  staticScalar,
   createDefaultRegistry,
   GraphError,
   type ComponentRegistry,
@@ -54,6 +56,7 @@ const supported = new Set([
   'reshape',
   'unsqueeze',
   'transpose',
+  'size',
 ]);
 
 /** Pure symbolic lowering. Shape inference is the only implementation hook used here.
@@ -69,6 +72,7 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
   const roles: Record<string, BackwardRole> = {};
   const shapes: Record<string, number[]> = {};
+  const scalars = new Map<string, number>();
   const args: Record<string, Record<string, string>> = {};
   const used = new Set(source.nodes.map((n) => n.id));
   const unique = (base: string) => {
@@ -85,6 +89,25 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
     role: BackwardRole,
     explicitShape?: readonly number[],
   ) {
+    attrs = structuredClone(attrs);
+    inputs = { ...inputs };
+    resolveDimensions(component, attrs, inputs, scalars);
+    const scalar =
+      component === 'const' && ((attrs.shape ?? []) as number[]).length === 0
+        ? Math.fround(typeof attrs.value === 'number' ? attrs.value : (attrs.value as number[])[0])
+        : staticScalar(
+            component,
+            Object.fromEntries(Object.entries(inputs).map(([p, ref]) => [p, shapes[ref]])),
+            attrs,
+            Object.fromEntries(Object.entries(inputs).map(([p, ref]) => [p, scalars.get(ref)])),
+          );
+    if (scalar !== undefined) scalars.set(id, scalar);
+    if (component === 'size') {
+      component = 'const';
+      inputs = {};
+      attrs = { shape: [], value: scalar };
+      explicitShape = [];
+    }
     graph.nodes.push({ id, component, attrs: structuredClone(attrs) });
     roles[id] = role;
     args[id] = inputs;
@@ -100,6 +123,7 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
             attrs,
           ).out;
       shapes[id] = [...inferred];
+      if (inferred.length !== 0) scalars.delete(id);
     }
     return id;
   }

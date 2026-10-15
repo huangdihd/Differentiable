@@ -1,7 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { GraphNode, Attributes } from '../engine/graph';
 
-type Props = { node: GraphNode; t: (key: string) => string; onChange: (attrs: Attributes) => void };
+type Props = {
+  node: GraphNode;
+  connectedInputs?: readonly string[];
+  t: (key: string) => string;
+  onChange: (attrs: Attributes) => void;
+};
 export function defaults(component: string): Attributes {
   switch (component) {
     case 'const':
@@ -11,6 +16,7 @@ export function defaults(component: string): Attributes {
     case 'sum':
     case 'reduce_max':
       return { axes: [-1], keepdims: true };
+    case 'size':
     case 'unsqueeze':
       return { axis: -1 };
     case 'reshape':
@@ -31,6 +37,7 @@ const fields: Record<string, string[]> = {
   reshape: ['shape'],
   transpose: ['axes', 'perm'],
   unsqueeze: ['axis'],
+  size: ['axis'],
   arange: ['n'],
 };
 const initializers = ['zeros', 'ones', 'normal', 'uniform', 'constant'];
@@ -122,7 +129,7 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
   return { attrs, errors };
 }
 
-export default function Properties({ node, t, onChange }: Props) {
+export default function Properties({ node, connectedInputs = [], t, onChange }: Props) {
   const attrs = node.attrs ?? defaults(node.component);
   const source = JSON.stringify(attrs);
   const identity = `${node.id}:${node.component}`;
@@ -153,16 +160,25 @@ export default function Properties({ node, t, onChange }: Props) {
     <section className="section">
       <h3 className="label">{t('ui.properties')}</h3>
       {keys.map((key) => {
+        const wired = connectedInputs.filter((port) =>
+          node.component === 'reshape' && key === 'shape'
+            ? /^d[0-3]$/.test(port)
+            : node.component === 'arange' && key === 'n' && port === 'n',
+        );
         const error = errors[key];
         const inputId = `${id}-${key}`;
         const accessibility = {
           id: inputId,
+          disabled: wired.length > 0,
           'aria-invalid': !!error,
           'aria-describedby': error ? `${inputId}-error` : undefined,
         };
         return (
           <div key={key}>
-            <label htmlFor={inputId}>{t(`ui.${key}`)}</label>
+            <label htmlFor={inputId}>
+              {t(`ui.${key}`)}
+              {wired.map((port) => ` ← ${t(`ports.${port}`)}`).join(', ')}
+            </label>
             {key === 'keepdims' ? (
               <input
                 {...accessibility}

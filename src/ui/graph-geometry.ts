@@ -15,6 +15,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   sum: 'Σ',
   reduce_max: 'max',
   reshape: '⇄',
+  size: '|x|ₖ',
   unsqueeze: '…×1',
   transpose: 'ᵀ',
   gather: '[ ]',
@@ -54,11 +55,27 @@ export interface Point {
   y: number;
 }
 
+/** Reshape exposes only dimensions present in its target shape (up to four wired axes). */
+export function nodePorts(
+  node: GraphNode,
+  registry: ComponentRegistry,
+  side: 'inputs' | 'outputs',
+): readonly string[] {
+  if (node.component === 'input') return side === 'outputs' ? ['out'] : [];
+  if (node.component === 'output') return side === 'inputs' ? ['x'] : [];
+  const ports = registry.get(node.component)?.[side] ?? [];
+  if (node.component !== 'reshape' || side !== 'inputs') return ports;
+  const shape = node.attrs?.shape ?? [-1];
+  const rank = Array.isArray(shape) ? shape.length : 0;
+  return ports.filter((port) => !/^d[0-3]$/.test(port) || Number(port.slice(1)) < rank);
+}
+
 export function portRows(node: GraphNode, registry: ComponentRegistry): number {
-  const def = registry.get(node.component);
-  if (node.component === 'input') return 1;
-  if (node.component === 'output') return 1;
-  return Math.max(def?.inputs.length ?? 0, def?.outputs.length ?? 0, 1);
+  return Math.max(
+    nodePorts(node, registry, 'inputs').length,
+    nodePorts(node, registry, 'outputs').length,
+    1,
+  );
 }
 export function bodyHeight(node: GraphNode, registry: ComponentRegistry): number {
   return portRows(node, registry) * ROW_H + BODY_PAD * 2;
