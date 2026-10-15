@@ -179,7 +179,7 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
       }
       out[i] = total;`);
   }
-  if (op === 'gather') {
+  if (op === 'gather' || op === 'scatter_add') {
     const [rows, width] = a;
     const indices = size(b);
     // Validate independently of output size (including a zero-width table).
@@ -190,17 +190,18 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
       }
     }`;
     let body: string;
-    if (!vjp) {
+    if (op === 'scatter_add' && vjp && input !== 2) body = 'out[i] = 0.0;';
+    else if ((op === 'gather' && !vjp) || (op === 'scatter_add' && vjp)) {
       body = `let row = x1[i / ${u(Math.max(1, width))}];
         if (row >= 0.0 && row < ${f(rows)} && row == floor(row)) {
-          out[i] = x0[u32(row) * ${u(width)} + i % ${u(Math.max(1, width))}];
+          out[i] = ${vjp ? g : 'x0'}[u32(row) * ${u(width)} + i % ${u(Math.max(1, width))}];
         } else { out[i] = 0.0; }`;
-    } else if (input !== 0) body = 'out[i] = 0.0;';
+    } else if (op === 'gather' && input !== 0) body = 'out[i] = 0.0;';
     else {
       body = `var total = 0.0;
         for (var j = 0u; j < ${u(indices)}; j++) {
           if (x1[j] == f32(i / ${u(Math.max(1, width))})) {
-            total += ${g}[j * ${u(width)} + i % ${u(Math.max(1, width))}];
+            total += ${op === 'scatter_add' ? 'x2' : g}[j * ${u(width)} + i % ${u(Math.max(1, width))}];
           }
         }
         out[i] = total;`;

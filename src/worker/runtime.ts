@@ -24,6 +24,7 @@ import {
   type TrainLevel,
 } from '../engine/levels';
 import { Random } from '../engine/random';
+import { TrainingPlotRefresh, trainingPlot } from './training-plot';
 import * as T from '../engine/tensor';
 import {
   crossEntropy,
@@ -59,6 +60,7 @@ interface Run {
   result: LevelResult;
   paused: boolean;
   initialLoss: number;
+  plotRefresh: TrainingPlotRefresh;
 }
 interface StepRun {
   key: string;
@@ -281,6 +283,19 @@ export class WorkerRuntime {
             },
           )
         : await run.session.run(1, { reportEvery: 1 });
+      // This is awaited on the same queue as updates, stop/reset and revision changes.
+      const plot = !run.level.generates
+        ? await run.plotRefresh.refresh(
+            () =>
+              trainingPlot(
+                run.request.graph,
+                run.plan,
+                run.session.batch,
+                run.level.interface.output,
+              ),
+            report.step >= run.level.steps,
+          )
+        : undefined;
       // Chart the step first so the player sees the loss blow up before the run stops.
       if (Number.isFinite(report.loss))
         this.emit({
@@ -288,6 +303,7 @@ export class WorkerRuntime {
           requestId: run.request.requestId,
           revision: run.request.revision,
           report,
+          ...(plot ? { plot } : {}),
         });
       checkDiverged(report);
       if (report.step >= run.level.steps) {
@@ -659,6 +675,7 @@ export class WorkerRuntime {
               }
             }
             this.run = {
+              plotRefresh: new TrainingPlotRefresh(),
               initialLoss,
               request,
               level,

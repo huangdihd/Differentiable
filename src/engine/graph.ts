@@ -1,4 +1,5 @@
 import * as T from './tensor';
+import { infer } from './backend';
 import type { Tensor } from './tensor';
 import type { Random } from './random';
 import { standardComponents } from './standard-components';
@@ -755,6 +756,12 @@ export function createDefaultRegistry(): ComponentRegistry {
       return { out: [...i.idx, ...i.table.slice(1)] };
     },
     (i) => ({ out: T.gather(i.table, i.idx) }),
+  );
+  register(
+    'scatter_add',
+    ['table', 'idx', 'updates'],
+    (i) => ({ out: infer('scatter_add', [i.table, i.idx, i.updates]) }),
+    (i) => ({ out: T.scatterAdd(i.table, i.idx, i.updates) }),
   );
   register(
     'arange',

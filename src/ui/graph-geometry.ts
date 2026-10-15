@@ -19,6 +19,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   unsqueeze: '…×1',
   transpose: 'ᵀ',
   gather: '[ ]',
+  scatter_add: 'Σ[ ]',
   arange: '0‥n',
   neg: '−x',
   sub: 'a−b',

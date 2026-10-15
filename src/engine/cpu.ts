@@ -85,6 +85,24 @@ function execute(
   out: Float32Array,
   shape: Shape,
 ): void {
+  // Reuse gather's validated accumulation kernel for the symbolic table adjoint.
+  if (op === 'scatter_add') {
+    execute(
+      'vjp',
+      [xs[0], xs[1], xs[2], xs[2]],
+      [shapes[0], shapes[1], shapes[2], shapes[2]],
+      { op: 'gather', input: 0, count: 2 },
+      out,
+      shape,
+    );
+    return;
+  }
+  if (op === 'vjp' && attrs.op === 'scatter_add') {
+    if (attrs.input === 2)
+      execute('gather', [xs[4], xs[1]], [shapes[4], shapes[1]], {}, out, shape);
+    else out.fill(0);
+    return;
+  }
   const vjp = op === 'vjp';
   if (vjp) op = String(attrs.op);
   const n = Number(attrs.input ?? 0),

@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { translatePort } from '../i18n';
 import {
   NODE_W,
   SYMBOLS,
@@ -472,6 +473,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                       {list.length > 1 && (
                         <span
                           className={`port-label ${side === 'inputs' ? 'is-in' : 'is-out'}`}
+                          title={translatePort(p.t, n.component, port)}
                           style={{ top: y - 8 }}
                         >
                           {port}
@@ -481,7 +483,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                         data-node={n.id}
                         data-input={side === 'inputs' ? port : undefined}
                         data-output={side === 'outputs' ? port : undefined}
-                        title={p.t(`ports.${port}`)}
+                        title={translatePort(p.t, n.component, port)}
                         className={[
                           'port',
                           side === 'inputs' ? 'is-in' : 'is-out',

@@ -108,6 +108,14 @@ stop evaluation still releases the session and rejects the stop request. Failed
 training emits a nonpassing final result with structured error data. A graph revision change
 silently disposes obsolete training rather than emitting an obsolete result.
 
+Continuous coordinate training also attaches optional `plot` data to progress events.
+Snapshots use live post-update parameters and fixed full datasets, not seeded probes.
+Readback is awaited within the same serialized runtime queue as optimizer/control work:
+first snapshot immediately, subsequent snapshots at most once per 250 ms, plus a forced
+final snapshot. Regression follows the MSE prediction input; classification uses the
+level output. Token models and resampled datasets are excluded. Existing request-ID and
+revision filtering drops obsolete plot events together with obsolete progress.
+
 ## Character generation
 
 `generate` requests carry `{ levelId, graph, prompt, length, seed?, temperature? }`

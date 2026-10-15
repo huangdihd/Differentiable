@@ -88,6 +88,9 @@ export const reduceMax = (x: Tensor, axes: number[], keepdims = false) =>
 export const reshape = (x: Tensor, shape: Shape) => operation('reshape', [x], { shape });
 export const transpose = (x: Tensor, perm: number[]) => operation('transpose', [x], { perm });
 export const gather = (table: Tensor, idx: Tensor) => operation('gather', [table, idx]);
+/** Scatter into a zero table; table supplies only the destination shape. */
+export const scatterAdd = (table: Tensor, idx: Tensor, updates: Tensor) =>
+  operation('scatter_add', [table, idx, updates]);
 export const matmul = (a: Tensor, b: Tensor) => operation('matmul', [a, b]);
 export const softmax = (x: Tensor) => operation('softmax', [x]);
 export const layernorm = (x: Tensor, eps = 1e-5) => operation('layernorm', [x], { eps });

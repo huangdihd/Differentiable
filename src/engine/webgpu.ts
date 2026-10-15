@@ -3,6 +3,7 @@ import type { Gpu, GpuBuffer, GpuDevice, GpuEncoder, GpuPipeline } from './gpu-a
 import { kernel } from './webgpu-kernels';
 import { optimizerKernel } from './webgpu-optimizer';
 import { limitDispatch } from './webgpu-dispatch';
+import { BufferPool } from './buffer-pool';
 
 export class BackendError extends Error {
   constructor(
@@ -21,7 +22,9 @@ export class WebGpuBackend implements Backend {
   private next = 0;
   private live = new Map<Handle, GpuBuffer>();
   private lengths = new Map<Handle, number>();
-  private pool = new Map<number, GpuBuffer[]>();
+  private pool = new BufferPool<GpuBuffer>(undefined, (bytes) => {
+    this.allocatedBytes -= bytes;
+  });
   private retired: GpuBuffer[] = [];
   private encoder?: GpuEncoder;
   private commands = 0;
@@ -66,7 +69,8 @@ export class WebGpuBackend implements Backend {
   get stats() {
     return {
       liveBuffers: this.live.size,
-      pooledBuffers: [...this.pool.values()].reduce((n, a) => n + a.length, 0),
+      pooledBuffers: this.pool.count,
+      pooledBytes: this.pool.bytes,
       allocatedBytes: this.allocatedBytes,
     };
   }
@@ -99,7 +103,7 @@ export class WebGpuBackend implements Backend {
         Math.min(this.device.limits.maxBufferSize, this.device.limits.maxStorageBufferBindingSize)
     )
       throw new BackendError('engine.gpu.bufferLimit', { bytes });
-    let buffer = this.pool.get(bytes)?.pop();
+    let buffer = this.pool.take(bytes);
     if (!buffer) {
       buffer = this.device.createBuffer({ size: bytes, usage: STORAGE | COPY_SRC | COPY_DST });
       this.allocatedBytes += bytes;
@@ -124,8 +128,8 @@ export class WebGpuBackend implements Backend {
       this.check();
       if (
         !size(command.output.shape) &&
-        command.op !== 'gather' &&
-        !(command.op === 'vjp' && command.attrs.op === 'gather')
+        !['gather', 'scatter_add'].includes(command.op) &&
+        !(command.op === 'vjp' && ['gather', 'scatter_add'].includes(String(command.attrs.op)))
       )
         continue;
       const logical = optimizerKernel(command) ?? kernel(command);
@@ -194,16 +198,7 @@ export class WebGpuBackend implements Backend {
           this.fault = new BackendError('engine.gpu.validation', { message: error.message });
         for (const buffer of retired) {
           if (this.closed) buffer.destroy();
-          else {
-            const bucket = this.pool.get(buffer.size) ?? [];
-            if (bucket.length >= 32) {
-              buffer.destroy();
-              this.allocatedBytes -= buffer.size;
-            } else {
-              bucket.push(buffer);
-              this.pool.set(buffer.size, bucket);
-            }
-          }
+          else this.pool.put(buffer);
         }
       })
       .catch((error: unknown) => {
@@ -247,12 +242,7 @@ export class WebGpuBackend implements Backend {
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
-    for (const buffer of [
-      ...this.live.values(),
-      ...this.retired,
-      ...[...this.pool.values()].flat(),
-    ])
-      buffer.destroy();
+    for (const buffer of [...this.live.values(), ...this.retired]) buffer.destroy();
     this.live.clear();
     this.lengths.clear();
     this.pool.clear();

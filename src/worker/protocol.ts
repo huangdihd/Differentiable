@@ -1,3 +1,4 @@
+import type { PlotData } from '../ui/DataPlot';
 import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
@@ -93,5 +94,11 @@ export type WorkerResponse =
       data: ReplyData[Command['type']];
     }
   | { type: 'error'; requestId: number; revision: number; error: WorkerError }
-  | { type: 'progress'; requestId: number; revision: number; report: TrainingReport }
+  | {
+      type: 'progress';
+      requestId: number;
+      revision: number;
+      report: TrainingReport;
+      plot?: PlotData;
+    }
   | { type: 'result'; requestId: number; revision: number; result: LevelResult };

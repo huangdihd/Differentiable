@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBackwardGraph, traceBackward } from './backward-graph';
-import {
-  compileGraph,
-  createDefaultRegistry,
-  GraphError,
-  type ShapePorts,
-  type GraphJSON,
-} from './graph';
+import { compileGraph, createDefaultRegistry, type ShapePorts, type GraphJSON } from './graph';
 import { CpuBackend } from './cpu';
 import { Random } from './random';
 import * as T from './tensor';
@@ -64,7 +58,9 @@ describe('backward graph', () => {
       'engine.data.length',
     );
   });
-  for (const level of gameLevels.filter((l) => /^[012]-/.test(l.id))) {
+  for (const level of gameLevels.filter(
+    (l) => /^[012]-/.test(l.id) || ['4-2', '4-5', '5-5', '6-4'].includes(l.id),
+  )) {
     it(`matches eager backward for all fixed/generated/variant cases: ${level.id}`, async () => {
       const backend = new CpuBackend();
       const groups =
@@ -296,23 +292,103 @@ describe('primitive VJPs and structural contracts', () => {
     };
     buildBackwardGraph(square, { ...options, registry: local });
   });
-  it('unsupported gather/arange errors', () => {
-    for (const op of ['gather', 'arange']) {
-      const shapes: ShapePorts = op === 'gather' ? { table: [2, 2], idx: [1] } : {};
-      try {
-        buildBackwardGraph(primitive(op, shapes, { n: 2 }), {
-          inputShapes: shapes,
-          output: 'y',
-          wrt: [],
-        });
-        throw Error('missing error');
-      } catch (error) {
-        expect(error).toBeInstanceOf(GraphError);
-        expect((error as GraphError).key).toBe('backward_unsupported');
-        expect((error as GraphError).params).toEqual({ component: op });
-      }
-    }
+  it('gather accumulates repeated indices and gives indices zero gradient', async () => {
+    await checkPrimitive(
+      'gather',
+      { table: [3, 2], idx: [2, 2] },
+      { table: [1, 2, 3, 4, 5, 6], idx: [2, 0, 2, 2] },
+    );
   });
+  it('gather handles scalar and empty indices', async () => {
+    await checkPrimitive(
+      'gather',
+      { table: [3, 2], idx: [] },
+      { table: [1, 2, 3, 4, 5, 6], idx: [1] },
+    );
+    await checkPrimitive(
+      'gather',
+      { table: [3, 2], idx: [0] },
+      { table: [1, 2, 3, 4, 5, 6], idx: [] },
+    );
+  });
+  it('arange and size are non-differentiable', async () => {
+    await checkPrimitive('arange', {}, {}, { n: 3 });
+    await checkPrimitive('size', { x: [2, 3] }, { x: [1, 2, 3, 4, 5, 6] }, { axis: -1 });
+  });
+  it('gather symbolic gradients match central differences with repeated indices', async () => {
+    const shapes = { table: [3, 2], idx: [3] };
+    const graph = primitive('gather', shapes);
+    graph.nodes.push({ id: 'square', component: 'mul' });
+    graph.edges.pop();
+    for (const port of ['a', 'b'])
+      graph.edges.push({ from: { node: 'op', port: 'out' }, to: { node: 'square', port } });
+    graph.edges.push({ from: { node: 'square', port: 'out' }, to: { node: 'out', port: 'x' } });
+    const opts = { inputShapes: shapes, output: 'y', wrt: ['table', 'idx'] };
+    const data = { table: [0.2, -0.3, 0.7, 1.2, -0.4, 0.5], idx: [2, 0, 2] };
+    const trace = await traceBackward(graph, { ...opts, inputs: data });
+    const backend = new CpuBackend();
+    const plan = compileGraph(graph, { backend, inputShapes: shapes });
+    const evaluate = async (values: number[]) => {
+      const inputs = {
+        table: T.tensor(values, shapes.table, backend),
+        idx: T.tensor(data.idx, shapes.idx, backend),
+      };
+      const outputs = plan.execute(inputs);
+      try {
+        return Array.from(await outputs.y.read()).reduce((a, b) => a + b, 0);
+      } finally {
+        plan.releaseExecution(outputs);
+        Object.values(inputs).forEach((x) => x.dispose());
+      }
+    };
+    try {
+      for (let i = 0; i < data.table.length; i++) {
+        const plus = [...data.table],
+          minus = [...data.table];
+        plus[i] += 0.001;
+        minus[i] -= 0.001;
+        expect(trace.gradient.table.values[i]).toBeCloseTo(
+          ((await evaluate(plus)) - (await evaluate(minus))) / 0.002,
+          3,
+        );
+      }
+      expect(trace.gradient.idx.values).toEqual([0, 0, 0]);
+    } finally {
+      plan.dispose();
+    }
+    expect(backend.liveBuffers).toBe(0);
+  });
+  it('size wires arange without propagating a shape gradient', async () => {
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'n', component: 'size', attrs: { axis: 0 } },
+        { id: 'range', component: 'arange' },
+        { id: 'out', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'n', port: 'x' } },
+        { from: { node: 'n', port: 'out' }, to: { node: 'range', port: 'n' } },
+        { from: { node: 'range', port: 'out' }, to: { node: 'out', port: 'x' } },
+      ],
+    };
+    const trace = await traceBackward(graph, {
+      inputShapes: { x: [3] },
+      output: 'y',
+      wrt: ['x'],
+      inputs: { x: [4, 5, 6] },
+    });
+    expect(trace.forward.range.values).toEqual([0, 1, 2]);
+    expect(trace.gradient.x.values).toEqual([0, 0, 0]);
+    expect(trace.gradient.n.values).toEqual([0]);
+  });
+  it('scatter_add differentiates only updates', () =>
+    checkPrimitive(
+      'scatter_add',
+      { table: [3, 2], idx: [3], updates: [3, 2] },
+      { table: [9, 9, 9, 9, 9, 9], idx: [2, 0, 2], updates: [1, 2, 3, 4, 5, 6] },
+    ));
   it('param and const leaves; seed and disconnected gradients', async () => {
     const g = primitive('mul', { a: [2], b: [2] });
     g.nodes[1] = { id: 'b', component: 'param', attrs: { shape: [2], init: 'constant', value: 3 } };

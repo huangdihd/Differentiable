@@ -28,6 +28,7 @@ import LossChart from './ui/LossChart';
 import DataPlot, { type PlotData } from './ui/DataPlot';
 import { VOCAB } from './levels/corpus';
 import { caseInputs, fullValues } from './ui/tensor-values';
+import { formatValue } from './ui/format-value';
 import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
@@ -307,7 +308,7 @@ function listText(locale: Locale, values: number[], max = 5) {
   return (
     values
       .slice(0, max)
-      .map((n) => compact(locale, n))
+      .map((n) => formatValue(locale, n))
       .join(', ') + (values.length > max ? ', …' : '')
   );
 }
@@ -398,6 +399,7 @@ function Editor({
   };
   // The training data, for the plot beside the loss chart.
   const [plotBase, setPlotBase] = useState<PlotData>();
+  const [trainingPlot, setTrainingPlot] = useState<PlotData>();
   useEffect(() => {
     setPlotBase(undefined);
     // Language models take token ids, not coordinates: nothing to plot.
@@ -558,6 +560,7 @@ function Editor({
     return c.subscribe((event) => {
       if (event.type === 'progress') {
         setReport(event.report);
+        if (event.plot) setTrainingPlot(event.plot);
         setLosses((a) => [...a, event.report.loss]);
       } else finish(event.result);
     });
@@ -570,6 +573,7 @@ function Editor({
       setModal(false);
       stepToken.current++;
       setStepFlow(undefined);
+      setTrainingPlot(undefined);
     }
     lastGraph.current = state.graph;
     revision.current++;
@@ -699,7 +703,9 @@ function Editor({
             );
             if (cancelled || revision.current !== probeRevision) return;
             const shown =
-              r.values.length === 1 ? compact(locale, r.values[0]) : listText(locale, r.values, 2);
+              r.values.length === 1
+                ? formatValue(locale, r.values[0])
+                : listText(locale, r.values, 2);
             next[node.id] = {
               text: shown,
               title: `[${r.shape.join('×') || '·'}] ${fullValues(r.values)}`,
@@ -727,6 +733,7 @@ function Editor({
     setError(undefined);
     setResult(undefined);
     const token = ++stepToken.current;
+    setTrainingPlot(undefined);
     try {
       const trace = await c.trainStep(level.id, state.graph, learningRate, optimizer);
       if (token !== stepToken.current) return;
@@ -745,6 +752,7 @@ function Editor({
     }
   };
   const resetSteps = () => {
+    setTrainingPlot(undefined);
     stepToken.current++;
     setStepFlow(undefined);
     setLosses([]);
@@ -772,7 +780,7 @@ function Editor({
     resetSteps();
   };
   const traceText = (v: { values: number[]; size: number }) =>
-    v.size === 1 ? compact(locale, v.values[0]) : listText(locale, v.values, 2);
+    v.size === 1 ? formatValue(locale, v.values[0]) : listText(locale, v.values, 2);
   const flowValues = useMemo(() => {
     if (!stepFlow) return undefined;
     const next: Record<string, NodeValue> = {};
@@ -794,6 +802,7 @@ function Editor({
     return next;
   }, [stepFlow?.trace, state.graph, locale]);
   const plot = useMemo((): PlotData | undefined => {
+    if (trainingPlot) return trainingPlot;
     if (!plotBase || !stepFlow) return plotBase;
     const { forward } = stepFlow.trace;
     if (plotBase.kind === 'regression') {
@@ -817,7 +826,7 @@ function Editor({
       ...plotBase,
       predicted: Array.from({ length: n }, (_, i) => argmax(y.values.slice(i * c, (i + 1) * c))),
     };
-  }, [plotBase, stepFlow?.trace, state.graph]);
+  }, [plotBase, trainingPlot, stepFlow?.trace, state.graph]);
   const flow = stepFlow && {
     phase: stepFlow.phase,
     // Data and constants are not learned; their gradients would only be noise here.
@@ -833,7 +842,7 @@ function Editor({
       Object.entries(stepFlow.trace.parameters).map(([id, v]) => [
         id,
         v.before.length === 1
-          ? `${compact(locale, v.before[0])} → ${compact(locale, v.after[0])}`
+          ? `${formatValue(locale, v.before[0])} → ${formatValue(locale, v.after[0])}`
           : `${listText(locale, v.before, 2)} → ${listText(locale, v.after, 2)}`,
       ]),
     ),
@@ -901,6 +910,7 @@ function Editor({
     setResult(undefined);
     try {
       if (level.kind === 'train') {
+        setTrainingPlot(undefined);
         setLosses([]);
         setReport(undefined);
         stepToken.current++;
@@ -1387,7 +1397,7 @@ function Editor({
                 >
                   {!hasTensorInputs && <option value="">{t('ui.customInputs')}</option>}
                   {testCases.map((c, i) => (
-                    <option key={c.id} value={i}>
+                    <option key={`${i}:${c.id}`} value={i}>
                       {t('ui.inputCaseNumber', { n: i + 1 })}
                     </option>
                   ))}
@@ -1418,7 +1428,7 @@ function Editor({
                     label={name}
                     shape={inputShapes[name]}
                     values={value.split(',').map(Number)}
-                    format={(n) => compact(locale, n)}
+                    format={(n) => formatValue(locale, n)}
                   />
                 ) : (
                   <input
@@ -1465,7 +1475,7 @@ function Editor({
                   off={
                     expected && outputActual ? offIndices(level, outputActual, expected) : undefined
                   }
-                  format={(n) => compact(locale, n)}
+                  format={(n) => formatValue(locale, n)}
                 />
               ) : (
                 <span className="mono">
@@ -1485,11 +1495,11 @@ function Editor({
                     label={t('ui.expected')}
                     shape={expected.shape}
                     values={expected.values}
-                    format={(n) => compact(locale, n)}
+                    format={(n) => formatValue(locale, n)}
                   />
                 ) : (
                   <span className="mono" title={fullValues(expected.values)}>
-                    {compact(locale, expected.values[0])}
+                    {formatValue(locale, expected.values[0])}
                   </span>
                 )}
                 {outputActual && (
@@ -1728,7 +1738,8 @@ function Editor({
                     <tbody>
                       {shownTests.map((r, i) => (
                         <tr
-                          key={r.id}
+                          // Fixed and generated cases can share an id; the row index keeps keys unique.
+                          key={`${i}:${r.id}`}
                           className={
                             verify && i === verify.index
                               ? 'is-current'
@@ -1808,7 +1819,7 @@ function Editor({
           wrt={gradientWrt}
           output={level.interface.output}
           composite={(component) => !registry.get(component)?.primitive}
-          format={(n) => compact(locale, n)}
+          format={(n) => formatValue(locale, n)}
           intro={gradView.intro}
           onClose={() => setGradView(undefined)}
         />

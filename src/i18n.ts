@@ -82,6 +82,14 @@ export function createTranslator(locale: Locale) {
   return (key: string, params?: TranslationParams) => translate(locale, key, params);
 }
 
+/** Component-specific port meanings override shared labels; unknown user-defined ports keep their names. */
+export function translatePort(t: (key: string) => string, component: string, port: string): string {
+  const specific = `ports.${component}.${port}`;
+  if (Object.hasOwn(en, specific)) return t(specific);
+  const shared = `ports.${port}`;
+  return Object.hasOwn(en, shared) ? t(shared) : port;
+}
+
 /** Raw GraphError/ExpressionError codes map to dictionary keys. Namespaced engine errors pass through. */
 export const diagnosticKeys: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries(

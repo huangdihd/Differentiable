@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { GraphNode, Attributes } from '../engine/graph';
+import { translatePort } from '../i18n';
 
 type Props = {
   node: GraphNode;
@@ -177,7 +178,7 @@ export default function Properties({ node, connectedInputs = [], t, onChange }: 
           <div key={key}>
             <label htmlFor={inputId}>
               {t(`ui.${key}`)}
-              {wired.map((port) => ` ← ${t(`ports.${port}`)}`).join(', ')}
+              {wired.map((port) => ` ← ${translatePort(t, node.component, port)}`).join(', ')}
             </label>
             {key === 'keepdims' ? (
               <input

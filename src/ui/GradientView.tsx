@@ -45,7 +45,12 @@ export default function GradientView({
   const label = (id: string) => {
     const n = node.get(id)!;
     if (n.component === 'input' || n.component === 'output') return String(n.attrs?.name ?? id);
-    if (n.component === 'const') return String(Number(Number(n.attrs?.value).toPrecision(4)));
+    if (n.component === 'const') {
+      // A constant can be a whole tensor (e.g. 4-2's class ids); label it by length, as the canvas does.
+      const v = n.attrs?.value;
+      if (Array.isArray(v)) return `[${v.length}]`;
+      return String(Number(Number(v).toPrecision(4)));
+    }
     return SYMBOLS[n.component] ?? t(`components.${n.component}`);
   };
   const source = (id: string) => graph.edges.find((e) => e.to.node === id)?.from.node;

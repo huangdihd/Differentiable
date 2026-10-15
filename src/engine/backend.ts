@@ -86,6 +86,12 @@ export function infer(op: string, shapes: Shape[], attrs: Attributes = {}): numb
       throw new Error('engine.shape.emptyReduction');
     return a.flatMap((d, i) => (axes.includes(i) ? (attrs.keepdims ? [1] : []) : [d]));
   }
+  if (op === 'scatter_add') {
+    const gathered = infer('gather', shapes);
+    if (gathered.length !== shapes[2].length || gathered.some((d, i) => d !== shapes[2][i]))
+      throw new Error('engine.shape.gather');
+    return [...a];
+  }
   if (op === 'gather') {
     if (a.length !== 2) throw new Error('engine.shape.gather');
     return [...shapes[1], a[1]];

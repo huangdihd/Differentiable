@@ -11,9 +11,49 @@ import {
   matchLocale,
   translate,
   translateDiagnostic,
+  translatePort,
 } from './i18n';
 
 describe('i18n', () => {
+  it('uses the canonical component namespace without paired aliases', () => {
+    for (const dictionary of Object.values(locales)) {
+      for (const key of Object.keys(dictionary)) {
+        expect(key).not.toMatch(/^component\./);
+        if (key.startsWith('components.'))
+          expect(dictionary).not.toHaveProperty(key.replace('components.', 'component.'));
+      }
+    }
+  });
+  it('translates component-specific ports before shared labels and preserves unknown ports', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const locale of ['en', 'zh-CN'] as const) {
+        const t = createTranslator(locale);
+        expect(translatePort(t, 'one_hot', 'k')).toBe(locale === 'en' ? 'classes k' : '类别数 k');
+        for (const component of ['attention', 'attn_scores', 'multi_head'])
+          expect(translatePort(t, component, 'k')).toBe(locale === 'en' ? 'key k' : '键 k');
+        expect(translatePort(t, 'reshape', 'd0')).toBe(t('ports.d0'));
+        expect(translatePort(t, 'custom', 'x')).toBe(t('ports.x'));
+        expect(translatePort(t, 'custom', 'custom_port')).toBe('custom_port');
+        expect(translatePort(t, 'custom', 'toString')).toBe('toString');
+      }
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('falls back to English for a missing component-specific port translation', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dictionary = locales['zh-CN'] as Record<string, unknown>;
+    const original = dictionary['ports.one_hot.k'];
+    delete dictionary['ports.one_hot.k'];
+    try {
+      expect(translatePort(createTranslator('zh-CN'), 'one_hot', 'k')).toBe('classes k');
+    } finally {
+      dictionary['ports.one_hot.k'] = original;
+      spy.mockRestore();
+    }
+  });
   it('renders shape-variant diagnostics with their input shapes in both locales', () => {
     for (const locale of ['en', 'zh-CN'] as const) {
       const text = translateDiagnostic(locale, {

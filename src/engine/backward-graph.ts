@@ -57,6 +57,9 @@ const supported = new Set([
   'unsqueeze',
   'transpose',
   'size',
+  'arange',
+  'gather',
+  'scatter_add',
 ]);
 
 /** Pure symbolic lowering. Shape inference is the only implementation hook used here.
@@ -285,6 +288,14 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
         send('a', () => binary('mul', grad, a.b));
         send('b', () => binary('mul', grad, a.a));
         break;
+      case 'gather':
+        send('table', () => emit('scatter_add', { table: a.table, idx: a.idx, updates: grad }));
+        break;
+      case 'scatter_add':
+        send('updates', () => emit('gather', { table: grad, idx: a.idx }));
+        break;
+      case 'arange':
+      case 'size':
       case 'ge':
         break; // Comparison is non-differentiable, with zero VJP.
       case 'max': {

@@ -49,6 +49,7 @@ describe('graph compiler', () => {
         'unsqueeze',
         'transpose',
         'gather',
+        'scatter_add',
         'arange',
         'size',
       ].sort(),

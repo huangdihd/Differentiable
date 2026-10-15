@@ -13,6 +13,31 @@ function reduction(op: string, width: number, vjp = false) {
   } satisfies Command);
 }
 
+it('scatter_add reuses gather accumulation and validates indices even for empty outputs', () => {
+  for (const width of [0, 2]) {
+    const table = { handle: { id: 0 }, shape: [3, width] };
+    const idx = { handle: { id: 1 }, shape: [130] };
+    const updates = { handle: { id: 2 }, shape: [130, width] };
+    const spec = kernel({
+      op: 'scatter_add',
+      inputs: [table, idx, updates],
+      output: table,
+      attrs: {},
+    });
+    expect(spec.workgroups).toEqual([3]);
+    expect(spec.code).toContain('total += x2[');
+    expect(spec.code).toContain('atomicStore(&error[0], 1u)');
+    expect(spec.code.indexOf('atomicStore')).toBeLessThan(spec.code.indexOf('return;'));
+    const adjoint = kernel({
+      op: 'vjp',
+      inputs: [table, idx, updates, table, table],
+      output: updates,
+      attrs: { op: 'scatter_add', input: 2, count: 3 },
+    });
+    expect(adjoint.code).toContain('out[i] = x4[u32(row)');
+  }
+});
+
 it('uses one 64-lane group per normalization row in both directions', () => {
   for (const op of ['softmax', 'layernorm'])
     for (const width of [1, 1024, 1031])
