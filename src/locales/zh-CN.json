@@ -119,7 +119,7 @@
     "other": "{count} 项测试"
   },
   "errors.arity_mismatch": "函数参数数量不正确。",
-  "errors.broadcast_mismatch": "两个输入的形状对不上，无法广播。",
+  "errors.broadcast_mismatch": "形状 {a} 和 {b} 没法广播：从最后一维往前对齐，倒数第 {from_end} 维一边是 {x}、一边是 {y}。对齐后的每一维，两边要么相等，要么有一边是 1。",
   "errors.component_error": "组件计算失败，请检查输入和属性。",
   "errors.component_unavailable": "元件 {component} 本关还没解锁。",
   "errors.cycle": "不能连成环：这根线会让元件依赖自己的输出。",

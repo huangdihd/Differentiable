@@ -121,7 +121,7 @@
     "other": "{count} tests"
   },
   "errors.arity_mismatch": "Arity mismatch.",
-  "errors.broadcast_mismatch": "The two input shapes cannot be broadcast together.",
+  "errors.broadcast_mismatch": "Shapes {a} and {b} cannot be broadcast: aligned from the last axis, axis {from_end} from the end is {x} on one side and {y} on the other. After aligning, each axis must match or be 1 on one side.",
   "errors.component_error": "Component error.",
   "errors.component_unavailable": "{component} is locked in this level.",
   "errors.cycle": "That wire would make a loop: a part cannot depend on its own output.",

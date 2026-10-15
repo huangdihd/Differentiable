@@ -602,7 +602,14 @@ function broadcast(a: Shape, b: Shape): number[] {
     const x = a[a.length - i] ?? 1,
       y = b[b.length - i] ?? 1;
     if (x !== y && x !== 1 && y !== 1)
-      throw new GraphError('broadcast_mismatch', undefined, undefined, { a, b });
+      // `from_end` counts from the last axis, the way broadcasting aligns shapes.
+      throw new GraphError('broadcast_mismatch', undefined, undefined, {
+        a,
+        b,
+        from_end: i,
+        x,
+        y,
+      });
     out.unshift(x === 1 ? y : x);
   }
   return out;

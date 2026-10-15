@@ -334,6 +334,9 @@ function Editor({
     createEditorState(level, progress.savedGraphs[level.id], available),
   );
   const [diagnostics, setDiagnostics] = useState<WorkerError[]>([]);
+  // Errors the live probes hit on their own nodes. The whole-graph compile stops at its first
+  // error (usually an unwired output), so a bad multiply upstream would otherwise stay hidden.
+  const [probeErrors, setProbeErrors] = useState<WorkerError[]>([]);
   const [error, setError] = useState<WorkerError>();
   const [result, setResult] = useState<LevelResult>();
   const [running, setRunning] = useState(false);
@@ -670,6 +673,7 @@ function Editor({
   useEffect(() => {
     if (!probing || busy || 'invalid' in parsedInputs) {
       setValues({});
+      setProbeErrors([]);
       return;
     }
     const probeRevision = revision.current;
@@ -679,6 +683,7 @@ function Editor({
         const c = client.current;
         if (!c) return;
         const next: Record<string, NodeValue> = {};
+        const found: WorkerError[] = [];
         for (const node of state.graph.nodes) {
           const port =
             node.component === 'output'
@@ -713,11 +718,19 @@ function Editor({
               ok: r.values.every(Number.isFinite),
               shape: r.shape,
             };
-          } catch {
+          } catch (e) {
             if (cancelled || revision.current !== probeRevision) return;
+            const d = e instanceof WorkerClientError ? e.detail : undefined;
+            if (
+              d?.node &&
+              !['missing_port', 'missing_input'].includes(d.key) &&
+              !found.some((f) => f.node === d.node && f.key === d.key)
+            )
+              found.push(d);
           }
         }
         setValues(next);
+        setProbeErrors(found);
       },
       verify ? 10 : 300,
     );
@@ -875,7 +888,10 @@ function Editor({
   const display = inside.at(-1)?.graph ?? state.graph;
   // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
   const SOFT = new Set(['missing_port', 'missing_input']);
-  const errors = diagnostics.map((e) => ({
+  const errors = [
+    ...diagnostics,
+    ...probeErrors.filter((p) => !diagnostics.some((d) => d.node === p.node && d.key === p.key)),
+  ].map((e) => ({
     ...e,
     soft: SOFT.has(e.key),
     message: translateDiagnostic(locale, e),
