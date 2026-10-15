@@ -644,6 +644,7 @@ input[type='range'] {
 }
 .level-desc {
   margin: 0;
+  white-space: pre-line;
   font-size: 13px;
   line-height: 1.65;
 }
