@@ -635,5 +635,19 @@
   "ports.positions": "位置嵌入表",
   "home.continue": "继续",
   "home.start": "从第一关开始",
-  "ui.bestCompact": "✓ {nodes} 运算 · {params} 参数"
+  "ui.bestCompact": "✓ {nodes} 运算 · {params} 参数",
+  "loop.title": "训练循环：每一步都做这五件事",
+  "loop.data.name": "取一批数据",
+  "loop.data.fixed": "每一步都用同一批样本（整批一起算，3-4）",
+  "loop.data.resample": "每一步从语料里随机换一批",
+  "loop.forward.name": "前向",
+  "loop.forward.note": "你搭的电路，用参数现在的值算出预测",
+  "loop.loss.name": "损失",
+  "loop.loss.note": "预测和答案差多少，压成一个数（3-3 均方误差、3-5 交叉熵）",
+  "loop.backward.name": "反向",
+  "loop.backward.note": "链式法则算出每个参数的梯度——3-1、3-2 你手算过，现在引擎替你算",
+  "loop.update.name": "更新",
+  "loop.update.sgd": "每个参数往梯度反方向走一小步：w ← w − {lr}·梯度（3-1）",
+  "loop.update.adam": "Adam：每个参数按自己的历史调步子，基础步长 {lr}（3-7、3-8）",
+  "loop.repeat": "回到第 1 步，共重复 {steps} 次。损失降下来，就是参数学到了。"
 }

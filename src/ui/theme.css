@@ -1646,3 +1646,91 @@ input[type='range'] {
   text-align: left;
   overflow-wrap: anywhere;
 }
+
+/* Training loop card: the five stages the engine repeats each step. */
+.loop {
+  margin-bottom: var(--s3);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  padding: var(--s2) var(--s3);
+}
+.loop summary {
+  cursor: pointer;
+}
+.loop-stages {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s1);
+  position: relative;
+}
+.loop-stages::before {
+  /* the spine the stages hang on; the repeat arrow returns along it */
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 10px;
+  bottom: 10px;
+  border-left: 1px dashed var(--line-strong);
+}
+.loop-stage {
+  display: grid;
+  grid-template-columns: 20px auto 1fr;
+  column-gap: var(--s2);
+  align-items: baseline;
+  position: relative;
+}
+.loop-n {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+}
+.loop-name {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  white-space: nowrap;
+}
+.loop-note {
+  grid-column: 2 / -1;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  line-height: 1.5;
+}
+.loop-forward .loop-n,
+.loop-loss .loop-n {
+  border-color: var(--accent);
+}
+.loop-backward .loop-n,
+.loop-update .loop-n {
+  border-color: var(--grad);
+}
+.loop-repeat {
+  margin: var(--s2) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.loop.is-running .loop-n {
+  animation: loop-pulse 2s steps(1) infinite;
+  animation-delay: calc(var(--i) * 0.4s);
+}
+@keyframes loop-pulse {
+  0% {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  20% {
+    background: var(--panel);
+    color: var(--muted);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loop.is-running .loop-n {
+    animation: none;
+  }
+}

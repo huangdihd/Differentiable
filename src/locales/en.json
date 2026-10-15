@@ -638,5 +638,19 @@
   "ports.positions": "Position embedding table",
   "home.continue": "Continue",
   "home.start": "Start at the first level",
-  "ui.bestCompact": "✓ {nodes} ops · {params} params"
+  "ui.bestCompact": "✓ {nodes} ops · {params} params",
+  "loop.title": "The training loop: five things, every step",
+  "loop.data.name": "Take a batch",
+  "loop.data.fixed": "The same samples every step, computed together (3-4)",
+  "loop.data.resample": "A fresh random batch from the corpus every step",
+  "loop.forward.name": "Forward",
+  "loop.forward.note": "Your circuit computes predictions with the current parameters",
+  "loop.loss.name": "Loss",
+  "loop.loss.note": "How far predictions are from the answers, as one number (3-3 MSE, 3-5 cross entropy)",
+  "loop.backward.name": "Backward",
+  "loop.backward.note": "The chain rule gives every parameter its gradient; you did it by hand in 3-1 and 3-2, now the engine does it",
+  "loop.update.name": "Update",
+  "loop.update.sgd": "Each parameter takes a small step against its gradient: w ← w − {lr}·gradient (3-1)",
+  "loop.update.adam": "Adam: each parameter sizes its own step from its history, base step {lr} (3-7, 3-8)",
+  "loop.repeat": "Back to step 1, {steps} times in all. A falling loss means the parameters are learning."
 }

@@ -34,6 +34,7 @@ import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
+import { TrainingLoop } from './ui/TrainingLoop';
 import {
   STORAGE_VERSION,
   loadProgress,
@@ -1528,6 +1529,14 @@ function Editor({
           </div>
           {level.kind === 'train' && (
             <>
+              <TrainingLoop
+                t={t}
+                optimizer={optimizer ?? level.optimizer.kind}
+                learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
+                steps={formatNumber(locale, level.steps)}
+                resample={!!level.resample}
+                running={training === 'running'}
+              />
               {plot && <DataPlot data={plot} label={t('ui.data')} />}
               {optimizers && optimizers.length > 1 && (
                 <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
