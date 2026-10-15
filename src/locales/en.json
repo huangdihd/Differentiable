@@ -707,5 +707,7 @@
   "levels.5-1.expectedNote": "Rows query keys in columns; positions start at 0.",
   "levels.5-2.expectedNote": "Rows query keys; future positions are blocked.",
   "levels.5-3.expectedNote": "Each query row holds a weighted value vector.",
-  "levels.5-4.expectedNote": "Rows show position:ID and sum both vectors."
+  "levels.5-4.expectedNote": "Rows show position:ID and sum both vectors.",
+  "home.demoNote": "This is an early demo still in development: levels, text and the save format may change. Progress lives only in this browser; another device or clearing site data starts over.",
+  "home.credit": "Made by huangdihd"
 }

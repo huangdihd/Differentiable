@@ -1980,3 +1980,29 @@ input[type='range'] {
 .math-block var sub {
   margin-left: 0.05em;
 }
+
+/* demo notice: a quiet badge in the topbar, the full note at the foot of the road */
+.demo-tag {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.topbar .demo-tag {
+  margin-left: calc(-1 * var(--s1));
+}
+.home-foot {
+  display: grid;
+  gap: var(--s1);
+  margin-top: var(--s6);
+  padding-top: var(--s4);
+  border-top: 1px dashed var(--line);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+  color: var(--muted);
+}
+.home-foot p {
+  margin: 0;
+  max-width: 64ch;
+}
+.home-foot .demo-tag {
+  margin-right: var(--s1);
+}

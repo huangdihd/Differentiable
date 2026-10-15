@@ -120,6 +120,9 @@ export default function App() {
           <span className="brand-mark">∂</span>
           {t('app.title')}
         </button>
+        <span className="tag demo-tag" title={t('home.demoNote')}>
+          DEMO
+        </span>
         <span className="crumb">
           {entry ? (
             <>
@@ -285,6 +288,12 @@ function Home({
             </div>
           )}
         </section>
+        <footer className="home-foot">
+          <p>
+            <span className="tag demo-tag">DEMO</span> {t('home.demoNote')}
+          </p>
+          <p>{t('home.credit')}</p>
+        </footer>
       </div>
     </main>
   );
