@@ -70,7 +70,7 @@ for (const [index, definition] of definitions.entries()) {
         output: 'y',
         outputShape: [],
       },
-      unlock: [index === definitions.length - 1 ? '2-1' : `1-${index + 2}`],
+      unlock: [index === definitions.length - 1 ? 'axes' : `1-${index + 2}`],
       unlockFeatures:
         index === definitions.length - 1
           ? ['levels.features.autodiff', 'levels.features.expression']

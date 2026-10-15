@@ -177,6 +177,14 @@ function migrateChapter2(progress: Progress): Progress {
   };
 }
 
+/** The tensor chapter predates the axes lesson; restore access, never completion. */
+function axesUnlocks(progress: Progress, levels: readonly Level[]): string[] {
+  return levels.some((level) => level.id === 'axes') &&
+    (progress.unlocked.includes('2-1') || progress.passed.includes('1-10'))
+    ? ['axes']
+    : [];
+}
+
 /** Load current saves synchronously elsewhere; App awaits this entry point to validate legacy solutions.
  * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
  * using verified reference circuits when old graphs are absent or no longer compatible.
@@ -210,6 +218,7 @@ export async function loadProgressWithMigration(
             ...progress.unlocked,
             ...passedLevels.flatMap((l) => l.unlock),
             ...constructionUnlocks.filter((id) => levels.some((level) => level.id === id)),
+            ...axesUnlocks(progress, levels),
           ]),
         ],
         unlockedComponents: [
@@ -241,7 +250,11 @@ export async function loadProgressWithMigration(
   const known = new Set(levels.map((level) => level.id));
   const progress = createInitialProgress();
   progress.unlocked = [
-    ...new Set([...progress.unlocked, ...legacy.unlocked.map(mapId).filter((id) => known.has(id))]),
+    ...new Set([
+      ...progress.unlocked,
+      ...legacy.unlocked.map(mapId).filter((id) => known.has(id)),
+      ...axesUnlocks(legacy, levels),
+    ]),
   ];
   for (const [id, graph] of Object.entries(legacy.savedGraphs)) {
     if (known.has(mapId(id))) progress.savedGraphs[mapId(id)] = structuredClone(graph);
@@ -256,6 +269,8 @@ export async function loadProgressWithMigration(
   const passed = new Set(legacy.passed.map(mapId));
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
+    // New lessons must not become completed merely because a legacy milestone follows them.
+    if (level.id === 'axes' && !passed.has(level.id)) continue;
     const saved = progress.savedGraphs[level.id];
     for (const graph of [saved, level.referenceGraph]) {
       if (!graph) continue;

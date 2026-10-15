@@ -64,7 +64,9 @@ function answer(index: number): GraphJSON {
   } else if (index === 2) {
     const idx = input('idx'),
       table = input('table');
-    const k = node('classes', 'const', {}, { value: [0, 1, 2, 3, 4], shape: [5] });
+    const k = node('classes', 'arange', {
+      n: node('rows', 'size', { x: table }, { axis: 0 }),
+    });
     result = node('lookup', 'matmul', { a: node('encoded', 'one_hot', { idx, k }), b: table });
   } else if (index === 4) {
     const p = input('p'),
@@ -120,7 +122,7 @@ const metadata = (index: number) => ({
   titleKey: `levels.4-${index}.title`,
   descriptionKey: `levels.4-${index}.description`,
   hintsKeys: [`levels.4-${index}.hint1`, `levels.4-${index}.hint2`],
-  available,
+  available: index >= 2 ? [...available, 'arange'] : available,
   unlock: index === 5 ? ['5-1'] : [`4-${index + 1}`],
   referenceGraph: answer(index),
 });
@@ -142,7 +144,11 @@ function forwardCases(index: number, inputs: ShapePorts) {
       const classes = inputs.k?.[0] ?? inputs.table[0];
       values.idx = Array.from({ length: inputs.idx[0] }, (_, j) => (i + j * 2) % classes);
       if (index === 1) values.k = Array.from({ length: classes }, (_, j) => j);
-      else values.table = Array.from({ length: classes * 3 }, () => random.uniform() * 8 - 4);
+      else
+        values.table = Array.from(
+          { length: classes * inputs.table[1] },
+          () => random.uniform() * 8 - 4,
+        );
     }
     return { id: `case-${i}`, inputs: values };
   };
@@ -159,12 +165,15 @@ for (const index of [1, 2, 4]) {
       : index === 2
         ? { idx: [4], table: [5, 3] }
         : { p: [5], u: [], triangle: [5, 5] };
-  const variant: ShapePorts | undefined =
+  const variants: ShapePorts[] =
     index === 1
-      ? { idx: [6], k: [7] }
-      : index === 4
-        ? { p: [8], u: [], triangle: [8, 8] }
-        : undefined;
+      ? [{ idx: [6], k: [7] }]
+      : index === 2
+        ? [
+            { idx: [6], table: [7, 3] },
+            { idx: [3], table: [4, 6] },
+          ]
+        : [{ p: [8], u: [], triangle: [8, 8] }];
   chapter4ForwardLevels.push(
     withPar<ForwardLevel>(
       {
@@ -179,7 +188,7 @@ for (const index of [1, 2, 4]) {
           outputShape: index === 1 ? [4, 5] : index === 2 ? [4, 3] : [],
         },
         ...forwardCases(index, inputs),
-        shapeVariants: variant ? [{ inputs: variant, ...forwardCases(index, variant) }] : [],
+        shapeVariants: variants.map((inputs) => ({ inputs, ...forwardCases(index, inputs) })),
         reference: (args) => {
           if (index === 2) return T.gather(args.table, args.idx);
           if (index === 4) {
@@ -203,7 +212,7 @@ export const chapter4TrainLevels: (TrainLevel & { generates: true })[] = [3, 5].
       ...metadata(index),
       kind: 'train' as const,
       generates: true as const,
-      available: [...available, 'gather', 'param'],
+      available: [...available, 'arange', 'gather', 'param'],
       interface: {
         inputs: { x: index === 3 ? [corpusStats.bigrams] : [N, 2] },
         output: 'y',

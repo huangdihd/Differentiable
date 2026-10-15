@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, eight tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces broadcasting at 2-2 and rank-relative transpose at 2-6; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, nine tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -56,7 +56,7 @@ for resampled levels, but those larger levels are not exposed yet.
 
 ### Gradient-descent lessons and saves
 
-The route after 2-8 is 3-1 → 3-2 → 3-3 → 3-4 → 3-5 (cross entropy) →
+The route after 2-9 is 3-1 → 3-2 → 3-3 → 3-4 → 3-5 (cross entropy) →
 3-6 (`neuron`, one neuron) → 3-7 (`layer`, a layer) → 3-8 (classification) →
 3-9 (momentum) → 3-10 (Adam) → 3-11 (hidden layer) → `xor` (displayed as 3-12).
 Display codes follow chapter order; existing IDs `3-6`–`3-9` remain unchanged.
@@ -81,7 +81,7 @@ loss with respect to node outputs, including `y`.
 Save v3 optionally includes `trainingSettings: Record<levelId, { learningRate: number;
 optimizer?: 'sgd' | 'adam' }>`.
 Rates must be finite and positive; optimizer, if present, must be `sgd` or `adam`. Older saves remain valid; loading unions new
-successors with existing unlocks, so completing 2-8 unlocks 3-1 without removing
+successors with existing unlocks, so completing 2-9 (stable ID `2-8`) unlocks 3-1 without removing
 an already-unlocked XOR. UI code should persist its chosen rate in this field and
 pass it to worker training requests; no learning-rate UI is added in this step.
 

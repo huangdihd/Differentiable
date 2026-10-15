@@ -53,7 +53,9 @@ function answer(kind: string): GraphJSON {
     node('x', 'input', {}, { name: 'x' });
     const reduce = (id: string, op: string, x: string) =>
       unary(id, op, x, { axes: [-1], keepdims: true });
-    if (kind === 'broadcast') {
+    if (kind === 'axes') {
+      result = unary('result', 'sum', 'x', { axes: [-1], keepdims: false });
+    } else if (kind === 'broadcast') {
       node('s', 'input', {}, { name: 's' });
       node('b', 'input', {}, { name: 'b' });
       result = binary('result', 'add', binary('scaled', 'mul', 'x', 's'), 'b');
@@ -192,7 +194,34 @@ function fixtures(index: number, inputs: ShapePorts, name: string) {
   return cases;
 }
 
-export const chapter2Levels: ForwardLevel[] = [];
+const axesShapes: ShapePorts[] = [{ x: [2, 3] }, { x: [4, 3] }, { x: [2, 5] }, { x: [3, 1] }];
+const axesCases = tensorCases(208, axesShapes[0]);
+export const chapter2Levels: ForwardLevel[] = [
+  withPar<ForwardLevel>(
+    {
+      id: 'axes',
+      chapter: '2',
+      kind: 'forward',
+      titleKey: 'levels.axes.title',
+      descriptionKey: 'levels.axes.description',
+      hintsKeys: ['levels.axes.hint1', 'levels.axes.hint2'],
+      available: [...scalarPrimitives, 'max', 'sum', 'unsqueeze', 'reduce_max'],
+      interface: { inputs: axesShapes[0], output: 'y', outputShape: [2] },
+      unlock: ['2-1'],
+      referenceGraph: answer('axes'),
+      ...axesCases,
+      fixed: [{ id: 'rows', inputs: { x: [1, 2, 3, 10, 20, 30] } }, ...axesCases.fixed],
+      shapeVariants: axesShapes.slice(1).map((inputs, variant) => ({
+        inputs,
+        ...tensorCases(209 + variant, inputs),
+      })),
+      reference: ({ x }) => T.sum(x, [-1]),
+      atol: 1e-4,
+      rtol: 1e-4,
+    },
+    [...chapter0Levels, ...chapter1Levels],
+  ),
+];
 for (const [index, definition] of definitions.entries()) {
   const id = `2-${index + 1}`;
   chapter2Levels.push(
@@ -211,7 +240,7 @@ for (const [index, definition] of definitions.entries()) {
           'unsqueeze',
           'reduce_max',
           ...(index >= 5 ? ['transpose'] : []),
-          // After counting a row by hand in 2-3 (mean), the player gets `size` for free.
+          // After counting a row by hand in 2-4 (mean), the player gets `size` for free.
           ...(index >= 3 ? ['size'] : []),
         ],
         forbidden: definition.producesComponent === false ? [] : [definition.name],

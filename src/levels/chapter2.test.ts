@@ -3,7 +3,7 @@ import { compileGraph, createDefaultRegistry, type GraphJSON } from '../engine/g
 import { applyResult, evaluateLevel, graphMetrics, initialProgress } from '../engine/levels';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
-import { gameLevels } from './catalog';
+import { catalog, gameLevels } from './catalog';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
@@ -18,6 +18,34 @@ const available = (index: number) =>
   );
 
 describe('tensor curriculum', () => {
+  it('introduces axes without renaming existing lessons or awarding a component', () => {
+    const level = chapter2Levels[0];
+    expect(level.id).toBe('axes');
+    expect(level.available).toEqual(chapter2Levels[1].available);
+    expect(level.unlockComponents).toBeUndefined();
+    expect(level.fixed[0].inputs.x).toEqual([1, 2, 3, 10, 20, 30]);
+    expect(chapter1Levels.at(-1)!.unlock).toEqual(['axes']);
+    expect(level.unlock).toEqual(['2-1']);
+    expect(
+      catalog.filter((entry) => entry.chapter === 2).map(({ level, code }) => [level.id, code]),
+    ).toEqual(
+      ['axes', '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8'].map((id, i) => [
+        id,
+        `2-${i + 1}`,
+      ]),
+    );
+  });
+  it.each([
+    { axes: [0], keepdims: false },
+    { axes: [-1], keepdims: true },
+  ])('rejects the wrong reduction shape %j', async (attrs) => {
+    const level = chapter2Levels[0];
+    const graph = structuredClone(level.referenceGraph!);
+    graph.nodes.find((node) => node.id === 'result')!.attrs = attrs;
+    const result = await evaluateLevel(level, graph, { registry });
+    expect(result.passed).toBe(false);
+    expect(result.errorKey).toBe('levels.output_shape');
+  });
   it('preserves every original shape-variant fixture and seed after renumbering', () => {
     const original = chapter2Levels.filter((level) => level.unlockComponents);
     original.forEach((level, index) => {
@@ -36,6 +64,7 @@ describe('tensor curriculum', () => {
   });
   it('preserves the original tensor interfaces and restricted primitive palette', () => {
     expect(chapter2Levels.map((level) => level.unlockComponents)).toEqual([
+      undefined,
       ['dot'],
       undefined,
       ['mean'],
@@ -52,6 +81,7 @@ describe('tensor curriculum', () => {
         level.shapeVariants!.map((variant) => variant.inputs),
       ]),
     ).toEqual([
+      [{ x: [2, 3] }, [2], [{ x: [4, 3] }, { x: [2, 5] }, { x: [3, 1] }]],
       [{ a: [6], b: [6] }, [], [{ a: [3], b: [3] }]],
       [
         { x: [4, 3], s: [4, 1], b: [3] },
@@ -103,12 +133,12 @@ describe('tensor curriculum', () => {
       expect(level.atol).toBe(level.id === '2-8' ? 1e-3 : 1e-4);
     }
     expect(
-      chapter2Levels[3].referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
+      chapter2Levels[4].referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
     ).toEqual({ axis: 0 });
     expect(preceding.map((level) => level.par)).toEqual([
       1, 2, 3, 4, 6, 8, 1, 3, 1, 3, 3, 3, 9, 11, 7, 2, 4, 12,
     ]);
-    expect(chapter2Levels.map((level) => level.par)).toEqual([2, 2, 8, 3, 4, 5, 9, 27]);
+    expect(chapter2Levels.map((level) => level.par)).toEqual([1, 2, 2, 8, 3, 4, 5, 9, 27]);
   });
 
   for (const [name, index] of [
@@ -120,7 +150,7 @@ describe('tensor curriculum', () => {
     ['unstable softmax', 4],
   ] as const) {
     it(`rejects ${name}`, async () => {
-      const currentIndex = [0, 2, 3, 4, 6, 7][index];
+      const currentIndex = [1, 3, 4, 5, 7, 8][index];
       const level = chapter2Levels[currentIndex];
       const graph = structuredClone(level.referenceGraph!);
       if (index === 0) {
@@ -173,7 +203,7 @@ describe('tensor curriculum', () => {
 
   for (const mistake of ['omit-b', 'omit-s', 'no-transpose', 'fixed-perm']) {
     it(`rejects ${mistake}`, async () => {
-      const index = mistake.startsWith('omit') ? 1 : 5;
+      const index = mistake.startsWith('omit') ? 2 : 6;
       const level = chapter2Levels[index];
       const graph = structuredClone(level.referenceGraph!);
       if (mistake === 'omit-b')

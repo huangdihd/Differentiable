@@ -124,7 +124,7 @@ it('chapter contracts keep unlocks and interfaces in progression order', () => {
     ['4-5'],
     ['5-1'],
   ]);
-  expect(chapter4Levels.map((level) => level.par)).toEqual([4, 8, 10, 5, 29]);
+  expect(chapter4Levels.map((level) => level.par)).toEqual([4, 10, 10, 5, 29]);
   for (const level of chapter4Levels) {
     expect(level.hintsKeys).toHaveLength(2);
     expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
@@ -136,6 +136,35 @@ it('chapter contracts keep unlocks and interfaces in progression order', () => {
   expect(chapter4ForwardLevels[1].forbidden).toContain('gather');
   for (const level of chapter4ForwardLevels.slice(0, 2))
     expect(level.available).not.toContain('gather');
+});
+it('rejects fixed lookup class IDs only when table shapes change', async () => {
+  const level = chapter4ForwardLevels[1];
+  const graph = structuredClone(level.referenceGraph!);
+  graph.nodes = graph.nodes.filter((node) => node.id !== 'rows');
+  const classes = graph.nodes.find((node) => node.id === 'classes')!;
+  classes.component = 'const';
+  classes.attrs = { value: [0, 1, 2, 3, 4], shape: [5] };
+  graph.edges = graph.edges.filter((edge) => edge.to.node !== 'rows' && edge.to.node !== 'classes');
+  const result = await evaluateLevel(
+    { ...level, available: [...level.available, ...earned] },
+    graph,
+    { registry },
+  );
+  expect(result.passed).toBe(false);
+  expect(
+    result.tests.filter((test) => !test.id.startsWith('shape-')).every((test) => test.passed),
+  ).toBe(true);
+  expect(
+    result.tests.filter((test) => test.id.startsWith('shape-')).some((test) => !test.passed),
+  ).toBe(true);
+  expect(level.shapeVariants!.map((variant) => variant.inputs)).toEqual([
+    { idx: [6], table: [7, 3] },
+    { idx: [3], table: [4, 6] },
+  ]);
+  for (const later of chapter4Levels.slice(1)) {
+    expect(later.available).toContain('arange');
+    expect(later.available).toContain('size');
+  }
 });
 it('sampling reference returns each interior bin, including the last', async () => {
   const level = chapter4ForwardLevels[2];

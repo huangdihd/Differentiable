@@ -30,6 +30,7 @@ describe('formal chapter catalog', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
       ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
+      'axes',
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
       ...Array.from({ length: 5 }, (_, i) => `3-${i + 1}`),
       'neuron',

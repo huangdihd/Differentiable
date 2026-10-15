@@ -40,7 +40,7 @@ it('moves the chapter-end tools to 1-10 and preserves the successor chain', () =
     ['1-8'],
     ['1-9'],
     ['1-10'],
-    ['2-1'],
+    ['axes'],
   ]);
   expect(chapter1Levels.slice(0, 9).every((level) => !level.unlockFeatures?.length)).toBe(true);
   expect(lessons[2].unlockFeatures).toEqual([
