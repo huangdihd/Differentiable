@@ -21,7 +21,7 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, nine tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and five sequence lessons (4-1–4-5), then five attention lessons (5-1–5-5). Chapter 2 introduces shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, nine tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and six sequence lessons (4-1–4-6), then five attention lessons (5-1–5-5). Chapter 2 introduces shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
@@ -142,8 +142,8 @@ for this calibration.
 
 ### Attention lessons (chapter 5)
 
-The route continues 4-5 → 5-1 → 5-2 → 5-3 → 5-4 → 5-5. Existing saves
-that passed 4-5 acquire 5-1 through the normal unlock migration.
+The route continues 4-6 → 5-1 → 5-2 → 5-3 → 5-4 → 5-5. Existing saves
+that passed 4-6 (stable ID `4-5`) acquire 5-1 through the normal unlock migration.
 Forward lessons award `attn_scores(q,k)`, `causal_mask(scores)`,
 `attention(q,k,v)` and `embed_pos(idx,tokens,positions)`. Each checks two additional
 shapes, including a batch axis; sequence lengths and vector widths vary. `size`
@@ -155,7 +155,7 @@ visible scores stay strict and masked f32 values must be -1e9, as the lesson sta
 with vocabulary 27 and embedding width 12. Training and grading use the same fixed
 empirical distribution, not a held-out generalization test. Adam runs 120 steps,
 with learning rate .001–.1 (default .03), seed 5505 and loss threshold .9,
-below 4-5's 1.639788. CPU reference loss is approximately .483740; the
+below 4-6's 1.639788. CPU reference loss is approximately .483740; the
 `embed_pos → linear → softmax` control reaches 1.227393 under the same schedule
 and fails. Isolated training takes roughly 1–2 seconds. Cross entropy already
 supports `[N,T,V]`: it sums all entries and averages over N×T, without reshaping.
@@ -169,8 +169,9 @@ support; ordinary tensor autodiff and training work without that inspector.
 
 ### Sequence lessons (chapter 4)
 
-The route continues `xor` → 4-1 → 4-2 → 4-3 → 4-4 → 4-5. Loading an old
-save that passed XOR unions in the new 4-1 unlock. Expanded primitive par is
+The route continues `xor` → 4-1 → 4-2 → 4-3 → 4-4 → 4-5 (`reshape`) →
+4-6 (stable ID `4-5`). Loading an old save that passed XOR unions in the new
+4-1 unlock. Expanded primitive par for 4-1–4-4 and 4-6 is
 **4, 8, 10, 5, 29**, respectively.
 
 - 4-1 builds `one_hot(idx, k)`: class count is the length of `k = [0,…,V−1]`.
@@ -184,6 +185,13 @@ save that passed XOR unions in the new 4-1 unlock. Expanded primitive par is
   `p × triangle`; counting cumulative boundaries below `u` gives the sampled ID.
   Tests use 5 and 8 classes, with draws strictly inside probability bins.
 
+- 4-5 (stable ID `reshape`) practices [N,2,D] → [N,2D] without changing
+  row-major element order or element count, unlike swapping axes with transpose.
+  Wire `size(x, axis=0)` to `reshape.d0` with shape `[1,-1]`, or
+  `size(x, axis=2) * 2` to `d1` with shape `[-1,1]`. Shape `-1` infers a
+  dimension; axis `-1` selects the last axis. N and D vary across checks.
+  This practice lesson awards no component and prepares the two-character model.
+
 `src/levels/corpus.ts` contains an original 1,611-character English nursery rhyme,
 with a sorted 27-character vocabulary. Its exact empirical bigram conditional
 entropy is **2.0315743966 nats** (uniform guessing: `log(27) = 3.295837`).
@@ -192,15 +200,15 @@ All initialization and sampling are seeded.
 | Level | Data | Steps | Loss threshold | Adam LR min–max (default) | Measured loss |
 | --- | --- | --- | --- | --- | --- |
 | 4-3 | All 1,610 adjacent pairs; parameter seed 4103 | 180 | 2.181574 (H + .15) | .001–.1 (.03) | 2.059719 |
-| 4-5 | 512 contexts sampled with seed 4505; parameter seed 4105 | 160 | 1.639788 | .001–.1 (.03) | .738885 |
+| 4-6 | 512 contexts sampled with seed 4505; parameter seed 4105 | 160 | 1.639788 | .001–.1 (.03) | .738885 |
 
 Both train and evaluate on their declared empirical distribution; these are not
-held-out generalization claims. No accuracy threshold is imposed. The 4-5 model
+held-out generalization claims. No accuracy threshold is imposed. The 4-6 model
 uses embedding width 8 and a tanh hidden layer of width 24. On its exact 512-example
 distribution, the optimal one-character loss is **1.789788**, while two-character
 conditional entropy is **.727661**. Its threshold is .15 below that one-character
 optimum, requiring additional context. Full reference training takes about 2 seconds
-for 4-3 and 3–4 seconds for 4-5 on the development CPU in isolated tests; parallel
+for 4-3 and 3–4 seconds for 4-6 on the development CPU in isolated tests; parallel
 suite execution may take longer. Tests run the complete step budgets, not shortened
 surrogates. Training rates are tunable; Adam is the default, with SGD also allowed.
 
@@ -279,6 +287,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling, reshape practice and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

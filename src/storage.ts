@@ -185,6 +185,14 @@ function axesUnlocks(progress: Progress, levels: readonly Level[]): string[] {
     : [];
 }
 
+/** The two-character model milestone predates reshape; restore access, never completion. */
+function reshapeUnlocks(progress: Progress, levels: readonly Level[]): string[] {
+  return levels.some((level) => level.id === 'reshape') &&
+    (progress.unlocked.includes('4-5') || progress.passed.includes('4-4'))
+    ? ['reshape']
+    : [];
+}
+
 /** Load current saves synchronously elsewhere; App awaits this entry point to validate legacy solutions.
  * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
  * using verified reference circuits when old graphs are absent or no longer compatible.
@@ -219,6 +227,7 @@ export async function loadProgressWithMigration(
             ...passedLevels.flatMap((l) => l.unlock),
             ...constructionUnlocks.filter((id) => levels.some((level) => level.id === id)),
             ...axesUnlocks(progress, levels),
+            ...reshapeUnlocks(progress, levels),
           ]),
         ],
         unlockedComponents: [
@@ -254,6 +263,7 @@ export async function loadProgressWithMigration(
       ...progress.unlocked,
       ...legacy.unlocked.map(mapId).filter((id) => known.has(id)),
       ...axesUnlocks(legacy, levels),
+      ...reshapeUnlocks(legacy, levels),
     ]),
   ];
   for (const [id, graph] of Object.entries(legacy.savedGraphs)) {
@@ -270,7 +280,7 @@ export async function loadProgressWithMigration(
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
     // New lessons must not become completed merely because a legacy milestone follows them.
-    if (level.id === 'axes' && !passed.has(level.id)) continue;
+    if ((level.id === 'axes' || level.id === 'reshape') && !passed.has(level.id)) continue;
     const saved = progress.savedGraphs[level.id];
     for (const graph of [saved, level.referenceGraph]) {
       if (!graph) continue;

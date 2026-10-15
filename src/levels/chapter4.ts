@@ -15,7 +15,7 @@ import {
   vocabularySize,
 } from './corpus';
 import { Random } from '../engine/random';
-import { scalarPrimitives, withPar } from './level-helpers';
+import { scalarPrimitives, tensorCases, withPar } from './level-helpers';
 
 const preceding = [
   ...chapter0Levels,
@@ -123,7 +123,7 @@ const metadata = (index: number) => ({
   descriptionKey: `levels.4-${index}.description`,
   hintsKeys: [`levels.4-${index}.hint1`, `levels.4-${index}.hint2`],
   available: index >= 2 ? [...available, 'arange'] : available,
-  unlock: index === 5 ? ['5-1'] : [`4-${index + 1}`],
+  unlock: index === 5 ? ['5-1'] : index === 4 ? ['reshape'] : [`4-${index + 1}`],
   referenceGraph: answer(index),
 });
 function forwardCases(index: number, inputs: ShapePorts) {
@@ -232,11 +232,60 @@ export const chapter4TrainLevels: (TrainLevel & { generates: true })[] = [3, 5].
     [...preceding, ...chapter4ForwardLevels.filter((level) => Number(level.id.slice(2)) < index)],
   ),
 );
+const reshapeShapes: ShapePorts[] = [
+  { x: [2, 2, 3] },
+  { x: [3, 2, 3] },
+  { x: [2, 2, 4] },
+  { x: [1, 2, 5] },
+];
+const reshapeCases = tensorCases(4500, reshapeShapes[0]);
+export const reshapeLevel = withPar<ForwardLevel>(
+  {
+    id: 'reshape',
+    chapter: '4',
+    kind: 'forward',
+    titleKey: 'levels.reshape.title',
+    descriptionKey: 'levels.reshape.description',
+    hintsKeys: ['levels.reshape.hint1', 'levels.reshape.hint2'],
+    available: chapter4TrainLevels[1].available,
+    unlock: ['4-5'],
+    interface: { inputs: reshapeShapes[0], output: 'y', outputShape: [2, 6] },
+    referenceGraph: {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'batch', component: 'size', attrs: { axis: 0 } },
+        { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
+        { id: 'output', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'batch', port: 'x' } },
+        { from: { node: 'x', port: 'out' }, to: { node: 'flatten', port: 'x' } },
+        { from: { node: 'batch', port: 'out' }, to: { node: 'flatten', port: 'd0' } },
+        { from: { node: 'flatten', port: 'out' }, to: { node: 'output', port: 'x' } },
+      ],
+    },
+    ...reshapeCases,
+    fixed: [
+      { id: 'samples', inputs: { x: [1, 2, 3, 4, 5, 6, 10, 20, 30, 40, 50, 60] } },
+      ...reshapeCases.fixed,
+    ],
+    shapeVariants: reshapeShapes.slice(1).map((inputs, variant) => ({
+      inputs,
+      ...tensorCases(4501 + variant, inputs),
+    })),
+    reference: ({ x }) => T.reshape(x, [x.shape[0], 2 * x.shape[2]]),
+  },
+  [...preceding, ...chapter4ForwardLevels],
+);
+chapter4ForwardLevels.push(reshapeLevel);
+
 export const chapter4Levels = [
   chapter4ForwardLevels[0],
   chapter4ForwardLevels[1],
   chapter4TrainLevels[0],
   chapter4ForwardLevels[2],
+  reshapeLevel,
   chapter4TrainLevels[1],
 ];
 /** Static calibration inputs; measured losses and generated text are emitted by tests. */

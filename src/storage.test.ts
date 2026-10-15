@@ -198,6 +198,92 @@ describe('storage', () => {
     expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
   });
   it.each([2, STORAGE_VERSION])(
+    'restores reshape access without changing other data in version %s saves',
+    async (version) => {
+      const levels = [
+        { ...chapter1Levels[0], id: '4-4', unlock: ['reshape'] },
+        { ...chapter1Levels[0], id: 'reshape', unlock: ['4-5'] },
+        { ...chapter1Levels[0], id: '4-5', unlock: [] },
+      ];
+      for (const [id, passed, expected] of [
+        ['4-4', false, ['4-4']],
+        ['4-4', true, ['4-4', 'reshape']],
+        ['4-5', false, ['4-5', 'reshape']],
+        ['4-5', true, ['4-5', 'reshape']],
+      ] as const) {
+        const { data, source } = memory();
+        const progress = {
+          ...createInitialProgress(),
+          unlocked: [id],
+          passed: passed ? [id] : [],
+          unlockedComponents: ['identity'],
+          savedGraphs: { [id]: graph, reshape: graph },
+          passedSolutions: passed ? { [id]: graph } : {},
+          bestScores: { [id]: { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 } },
+          trainingSettings: { [id]: { learningRate: 0.01 } },
+        };
+        data.set(STORAGE_KEY, JSON.stringify({ version, progress }));
+        const restored = await loadProgressWithMigration(levels, source);
+        expect(restored).toEqual({ ...progress, unlocked: expected });
+        expect(saveProgress(restored, source)).toBe(true);
+        expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
+      }
+      const { data, source } = memory();
+      expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
+      data.set(STORAGE_KEY, JSON.stringify({ version, progress: createInitialProgress() }));
+      expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
+    },
+  );
+  it('restores reshape access in v1 without automatically crediting the new prerequisite', async () => {
+    const reference = structuredClone(graph);
+    reference.nodes[1].attrs = { name: 'y' };
+    const lesson: ForwardLevel = {
+      id: '4-4',
+      titleKey: 'test.title',
+      descriptionKey: 'test.description',
+      kind: 'forward',
+      available: [],
+      interface: { inputs: { x: [2] }, output: 'y', outputShape: [2] },
+      unlock: ['reshape'],
+      fixed: [{ id: 'case', inputs: { x: [1, 2] } }],
+      reference: (inputs) => inputs.x,
+      referenceGraph: reference,
+    };
+    const levels = [
+      lesson,
+      { ...lesson, id: 'reshape', unlock: ['4-5'] },
+      { ...lesson, id: '4-5', unlock: [] },
+    ];
+    for (const [id, passed] of [
+      ['4-4', false],
+      ['4-4', true],
+      ['4-5', false],
+      ['4-5', true],
+    ] as const) {
+      const { data, source } = memory();
+      const legacy = {
+        ...createInitialProgress(),
+        unlocked: [id],
+        passed: passed ? [id] : [],
+        savedGraphs: { [id]: reference, reshape: graph },
+        trainingSettings: { [id]: { learningRate: 0.01 } },
+      };
+      data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress: legacy }));
+      const restored = await loadProgressWithMigration(levels, source);
+      expect(restored.unlocked.includes('reshape')).toBe(id === '4-5' || passed);
+      expect(restored.passed).toEqual(passed ? (id === '4-5' ? ['4-4', '4-5'] : [id]) : []);
+      expect(restored.passedSolutions.reshape).toBeUndefined();
+      expect(restored.bestScores.reshape).toBeUndefined();
+      expect(restored.savedGraphs).toEqual(legacy.savedGraphs);
+      expect(restored.trainingSettings).toEqual(legacy.trainingSettings);
+      expect(loadProgress(source)).toEqual(restored);
+      expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
+    }
+    const { data, source } = memory();
+    data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress: createInitialProgress() }));
+    expect(await loadProgressWithMigration(levels, source)).toEqual(createInitialProgress());
+  });
+  it.each([2, STORAGE_VERSION])(
     'restores neuron/layer unlocks without crediting new lessons in version %s saves',
     async (version) => {
       const levels = [

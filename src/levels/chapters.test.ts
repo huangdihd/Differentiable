@@ -37,11 +37,23 @@ describe('formal chapter catalog', () => {
       'layer',
       ...Array.from({ length: 4 }, (_, i) => `3-${i + 6}`),
       'xor',
-      ...Array.from({ length: 5 }, (_, i) => `4-${i + 1}`),
+      ...Array.from({ length: 4 }, (_, i) => `4-${i + 1}`),
+      'reshape',
+      '4-5',
       ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),
       ...Array.from({ length: 4 }, (_, i) => `6-${i + 1}`),
     ]);
     expect(catalog.map((entry) => entry.level)).toEqual(gameLevels);
+    expect(
+      catalog.filter((entry) => entry.chapter === 4).map(({ level, code }) => [level.id, code]),
+    ).toEqual([
+      ['4-1', '4-1'],
+      ['4-2', '4-2'],
+      ['4-3', '4-3'],
+      ['4-4', '4-4'],
+      ['reshape', '4-5'],
+      ['4-5', '4-6'],
+    ]);
     for (const [index, level] of gameLevels.entries()) {
       expect(level.unlock).toEqual(
         index === gameLevels.length - 1 ? [] : [gameLevels[index + 1].id],
