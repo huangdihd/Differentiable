@@ -658,5 +658,12 @@
   "loop.update.sgd": "Each parameter takes a small step against its gradient: w ← w − {lr}·gradient (3-1)",
   "loop.update.adam": "Adam: each parameter sizes its own step from its history, base step {lr} (3-7, 3-8)",
   "loop.repeat": "Back to step 1, {steps} times in all. A falling loss means the parameters are learning.",
-  "gradView.targets": "answers t"
+  "gradView.targets": "answers t",
+  "coach.title": "Getting started",
+  "coach.skip": "Skip",
+  "coach.mul": "This level asks for −x. The idea: multiply x by −1. First drag \"Multiply\" from the parts on the left onto the canvas (a click works too).",
+  "coach.wireX": "Inputs are on a part's left, outputs on its right. Press on the square to the right of x, drag it to the a port on the left of Multiply, and let go.",
+  "coach.const": "Now add a \"Constant\" and wire it to Multiply's b port. Select it and set its value to −1 under Properties on the right.",
+  "coach.wireY": "Finally wire Multiply's output to y. The live values on the right then show y; compare it with \"Expected\" below it.",
+  "coach.run": "If they match, press \"Run tests\" on the right: the engine checks your circuit on many values of x. Pass them all and the part is yours."
 }

@@ -35,6 +35,7 @@ import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
 import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import { TrainingLoop } from './ui/TrainingLoop';
+import { Coach } from './ui/Coach';
 import {
   STORAGE_VERSION,
   loadProgress,
@@ -334,6 +335,14 @@ function Editor({
     createEditorState(level, progress.savedGraphs[level.id], available),
   );
   const [diagnostics, setDiagnostics] = useState<WorkerError[]>([]);
+  // The 0-1 walkthrough, until the level is passed or skipped. Storage may be unavailable.
+  const [coachSkipped, setCoachSkipped] = useState(() => {
+    try {
+      return localStorage.getItem('differentiable.coach') === 'skipped';
+    } catch {
+      return false;
+    }
+  });
   // Errors the live probes hit on their own nodes. The whole-graph compile stops at its first
   // error (usually an unwired output), so a bad multiply upstream would otherwise stay hidden.
   const [probeErrors, setProbeErrors] = useState<WorkerError[]>([]);
@@ -1069,6 +1078,8 @@ function Editor({
       .map(Number),
   };
   const canEdit = !busy && !inside.length;
+  const coaching =
+    level.id === '0-1' && !progress.passed.includes('0-1') && !coachSkipped && !inside.length;
   // The empty-canvas hint is for the very first look only: any edit (even wiring x straight to y)
   // or any history at all hides it for good.
   const untouched =
@@ -1350,7 +1361,22 @@ function Editor({
             </span>
           </div>
         )}
-        {untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>}
+        {coaching ? (
+          <Coach
+            t={t}
+            graph={state.graph}
+            onSkip={() => {
+              setCoachSkipped(true);
+              try {
+                localStorage.setItem('differentiable.coach', 'skipped');
+              } catch {
+                // The walkthrough just comes back next visit.
+              }
+            }}
+          />
+        ) : (
+          untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>
+        )}
       </section>
 
       <aside className="panel panel-right">
@@ -1897,6 +1923,7 @@ function PaletteItem({
     <button
       type="button"
       className={`palette-item ${player ? 'is-player' : ''}`}
+      data-component={name}
       disabled={disabled}
       onPointerDown={(e) => onPress(name, e)}
     >

@@ -1735,3 +1735,80 @@ input[type='range'] {
     animation: none;
   }
 }
+
+/* 0-1 walkthrough: a card at the bottom of the canvas; <html data-coach> marks the spot to act on. */
+.coach {
+  position: absolute;
+  left: 50%;
+  bottom: var(--s4, 16px);
+  transform: translateX(-50%);
+  width: min(440px, calc(100% - 32px));
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  padding: var(--s3);
+  display: grid;
+  gap: var(--s2);
+  z-index: 5;
+}
+.coach-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.coach-head .label {
+  color: var(--accent);
+}
+.coach-skip {
+  background: none;
+  border: 0;
+  color: var(--faint);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.coach-skip:hover {
+  color: var(--text);
+}
+.coach-dots {
+  display: flex;
+  gap: var(--s1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.coach-dots li {
+  flex: 1;
+  height: 3px;
+  background: var(--line);
+}
+.coach-dots li.is-done {
+  background: var(--good);
+}
+.coach-dots li.is-now {
+  background: var(--accent);
+}
+.coach-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+[data-coach='mul'] .palette-item[data-component='mul'],
+[data-coach='const'] .palette-item[data-component='const'],
+[data-coach='run'] .panel-right .btn-primary {
+  animation: coach-glow 1.4s ease-in-out infinite;
+}
+@keyframes coach-glow {
+  50% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-coach='mul'] .palette-item[data-component='mul'],
+  [data-coach='const'] .palette-item[data-component='const'],
+  [data-coach='run'] .panel-right .btn-primary {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
