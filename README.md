@@ -1,6 +1,6 @@
 # Differentiable
 
-A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–5, including the XOR challenge and character language models. `demos/` is untouched reference material, not application source.
+A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–6, including the XOR challenge and character language models. `demos/` is untouched reference material, not application source.
 
 ## Development
 
@@ -17,7 +17,7 @@ npm run dev
 npm run format
 ```
 
-Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT feasibility test takes roughly 5 seconds on the development machine and enforces a 60-second budget.
+Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT calibration test takes roughly 67 seconds on the development machine (reference plus control), with a 360-second timeout.
 
 ## Editor shell
 
@@ -32,7 +32,7 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for future visualization. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
 - `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named single-element graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
-- `src/levels/`: chapter 0/1/2/3/4/5 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
+- `src/levels/`: chapter 0/1/2/3/4/5/6 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
 
@@ -62,6 +62,61 @@ successors with existing unlocks, so completing 2-8 unlocks 3-1 without removing
 an already-unlocked XOR. UI code should persist its chosen rate in this field and
 pass it to worker training requests; no learning-rate UI is added in this step.
 
+### GPT lessons (chapter 6; calibrated word coverage)
+
+5-5 → 6-1 (`multi_head`, q/k/v) → 6-2 (`feed_forward`, x/w1/b1/w2/b2) →
+6-3 (`transformer_block`) → 6-4. The block has x plus eight weight/bias ports:
+wq, wk, wv, wo, w1, b1, w2, b2. It uses two pre-LN residual branches without
+learnable normalization gains/biases. Old chapter-five graduates unlock 6-1 on load.
+
+The chapter-six forward inputs are uniformly [B,T,D]: primary [2,4,8],
+variants [3,5,12] and [1,3,4], with FFN widths 16, 20 and 7.
+The multi-head circuit reshapes to [B,T,2,D/2], swaps axes 1 and 2,
+applies attention with batch axes [B,2], swaps back and reshapes to [B,T,D].
+B, T and D come from size(q,0), size(q,1) and size(q,-1); D/2 uses static
+scalar multiplication by 1/2. No engine API was changed.
+
+6-4 samples N=8 windows with replacement from all 1595 stride-1 starts,
+T=16, on every update. The model has D=24, H=48 and two blocks; Adam runs
+1500 steps with seed 6404 and learning rate 0.01 (tunable 0.001–0.05).
+The loss threshold is 1.1, approximately 1.2 times reference evaluation loss.
+
+Evaluation uses 400 fixed windows: index `floor(i * (1595 - 1) / 399)` for
+`i=0..399`. This includes both endpoints, spreads starts across the corpus,
+and the overlapping windows cover every next-character target. Evaluate initially,
+every 250 updates and at completion. Standalone CPU reference training measured
+59.51 seconds including 4.32 seconds of evaluation (7.26%); evaluation loss was
+0.925595 (full-window loss in the earlier run: 0.919865). The faster of the two
+specified candidates passes, so D=32/H=64 was not retried. Player descriptions
+round this measurement to about 1 minute; GPU speed was not measured in this step.
+
+Text quality uses three prompts (`little moth`, `penny wren`, `round the pond`),
+temperature 0.2, sampling seed 6404 reset per prompt, and 120 new characters each.
+Exclude prompts, split each continuation on nonletters, discard empty tokens,
+and count corpus-vocabulary hits over all word occurrences in the three samples
+(including truncated words). Reference coverage is 57/77 = 74.03% (required ≥70%).
+The original 5-5 single-head/single-layer lesson, using its unchanged T=8, D=12,
+N=128, seed 5505, 200 steps and lr=.03, reaches loss 1.632982 and coverage
+8/79 = 10.13% (required <50%); its loss also exceeds the 6-4 threshold.
+This is an original-lesson control, not an equal-budget architecture comparison.
+An exploratory equal-budget T=16/1500-step control repeated “the” and reached
+78.13% word coverage despite loss 1.984947: vocabulary coverage alone does not
+exclude repetition or establish sentence quality. No extra quality criterion was added.
+
+`TrainLevel.resample` uses a persistent `Random(seed + 2)` training stream;
+fixed evaluation uses `Random(seed + 1)`. Other levels keep their existing path.
+`evaluationEvery` selects the resampled evaluation interval (default 50), shared
+by level evaluation and continuous Worker training. Separate evaluation graphs
+borrow live parameters. Step traces still show sampled pre-update batch loss.
+Tests cover default/custom cadence and the final partial interval, aligned window
+targets, seeded initialization, reference/control loss and continuation coverage.
+Worker generation tests retain their short parameter-retention smoke check.
+Tests run files serially. Browser/GPU validation is not part of this step.
+
+Step 12d's exact-complete-line standard is superseded by word coverage; no corpus,
+kernels, backward pass, parameter initialization or chapter 0–5 data was changed
+for this calibration.
+
 ### Attention lessons (chapter 5)
 
 The route continues 4-5 → 5-1 → 5-2 → 5-3 → 5-4 → 5-5. Existing saves
@@ -73,7 +128,7 @@ wires the sequence length into `arange`, and supplies the score scaling width.
 5-2 compares scores with absolute tolerance 1e-4 and zero relative tolerance:
 visible scores stay strict and masked f32 values must be -1e9, as the lesson states.
 
-5-5 trains on 32 seeded corpus windows of length 8 (256 next-character targets),
+5-5 trains on 128 seeded corpus windows of length 8 (1024 next-character targets),
 with vocabulary 27 and embedding width 12. Training and grading use the same fixed
 empirical distribution, not a held-out generalization test. Adam runs 120 steps,
 with learning rate .001–.1 (default .03), seed 5505 and loss threshold .9,
@@ -201,6 +256,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–5 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 remains upcoming. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture; reciprocal via `exp(-log(x))` is intentionally restricted to positive inputs.

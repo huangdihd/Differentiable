@@ -271,10 +271,15 @@ it('registers the generating chapter 5 capstone', () => {
   expect(sequenceTrainLevels).toHaveLength(1);
   expect(sequenceTrainLevels[0]).toMatchObject({ generates: true });
 });
-for (const trainedLevel of [...chapter4TrainLevels, ...sequenceTrainLevels]) {
+for (const trainedLevel of [
+  ...chapter4TrainLevels,
+  ...sequenceTrainLevels,
+  // Only exercise completion and retained inference parameters here, not convergence.
+  ...gameLevels.filter((l) => l.id === '6-4').map((level) => ({ ...level, steps: 2 })),
+]) {
   if (trainedLevel.kind !== 'train') continue;
   it(`${trainedLevel.id}: actual continuous reference training retains parameters after completion and samples single-context inference`, async () => {
-    const h = harness([trainedLevel], trainedLevel.id === '5-5');
+    const h = harness([trainedLevel], ['5-5', '6-4'].includes(trainedLevel.id));
     await h.send({ type: 'init', backend: 'cpu' });
     const command = { ...generate(trainedLevel.referenceGraph!), levelId: trainedLevel.id };
     const baseline = text(await h.send(command));
@@ -283,8 +288,29 @@ for (const trainedLevel of [...chapter4TrainLevels, ...sequenceTrainLevels]) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     const result = h.messages.find((m) => m.type === 'result');
     expect(result).toMatchObject({
-      result: { passed: true, training: { step: trainedLevel.steps } },
+      result: {
+        ...(trainedLevel.id === '6-4' ? {} : { passed: true }),
+        training: { step: trainedLevel.steps },
+      },
     });
+    if (trainedLevel.id === '6-4') {
+      for (const prompt of ['little moth ', 'round the pond ', 'penny wren ']) {
+        const request = { ...command, prompt, length: 90, temperature: 0.2 };
+        const generated = text(await h.send(request));
+        expect(text(await h.send(request))).toEqual(generated);
+        expect(generated.text).toHaveLength(prompt.length + 90);
+        expect([...generated.text].every((char) => VOCAB.includes(char))).toBe(true);
+        console.info(
+          JSON.stringify({
+            levelId: trainedLevel.id,
+            prompt,
+            temperature: 0.2,
+            seed: request.seed,
+            sample: generated.text,
+          }),
+        );
+      }
+    }
     const sample = text(await h.send(command));
     expect(sample).not.toEqual(baseline);
     expect(sample.text).toHaveLength(104);

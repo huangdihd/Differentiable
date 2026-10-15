@@ -71,7 +71,7 @@ it('chapter five contracts preserve progression, interfaces and expanded par', (
     ['5-3'],
     ['5-4'],
     ['5-5'],
-    [],
+    ['6-1'],
   ]);
   expect(chapter5ForwardLevels.flatMap((level) => level.unlockComponents!)).toEqual([
     'attn_scores',

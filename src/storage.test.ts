@@ -90,6 +90,27 @@ describe('storage', () => {
     expect(saveProgress(restored, source)).toBe(true);
     expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
   });
+  it('unlocks chapter six for saved chapter-five graduates without changing their graphs', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['5-5'],
+      passed: ['5-5'],
+      passedSolutions: { '5-5': graph },
+      savedGraphs: { '5-5': graph },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const restored = await loadProgressWithMigration(gameLevels, source);
+    expect(restored.unlocked).toEqual(['5-5', '6-1']);
+    expect(restored.passed).toEqual(progress.passed);
+    expect(restored.passedSolutions).toEqual(progress.passedSolutions);
+    expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    expect(saveProgress(restored, source)).toBe(true);
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(saveProgress(createInitialProgress(), source)).toBe(true);
+    expect((await loadProgressWithMigration(gameLevels, source)).unlocked).not.toContain('6-1');
+  });
   it('gates expressions for new players, graduates and grandfathered players', () => {
     const fresh = createInitialProgress();
     expect(isExpressionUnlocked(fresh, chapter1Levels)).toBe(false);

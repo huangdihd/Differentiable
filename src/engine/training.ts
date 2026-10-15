@@ -185,6 +185,10 @@ export const crossEntropy: LossFunction = (prediction, target) => {
 export interface TrainingSessionOptions {
   lossOutput?: string;
   evaluationBatch?: TrainingBatch;
+  /** Fresh evaluation plan borrowing the current model parameters; disposed after evaluation. */
+  evaluationModel?: () => TrainingModel & { dispose(): void };
+  /** Report fixed evaluation loss rather than sampled training loss. */
+  evaluationReports?: boolean;
   accuracy?: boolean;
   /** Read and report training loss every N updates (default 10), and on the final update. */
   reportEvery?: number;
@@ -223,6 +227,7 @@ export class TrainingSession {
     loss: Tensor | undefined,
     batch: TrainingBatch,
     parameters: Tensor[],
+    model: TrainingModel = this.model,
   ): void {
     const keep = [
       ...parameters,
@@ -233,7 +238,7 @@ export class TrainingSession {
       if (loss) disposeLoss(loss, Object.values(outputs), keep);
       else disposeExecution(Object.values(outputs), keep);
     } finally {
-      this.model.releaseExecution?.(outputs, keep);
+      model.releaseExecution?.(outputs, keep);
     }
   }
   /** Classification accuracy from the same pre-update forward pass as a step trace. */
@@ -264,6 +269,7 @@ export class TrainingSession {
     return correct / count;
   }
   /** One live update. Forward values, gradients and loss precede the update; step is 1-based.
+   * Resampled sessions show the current sampled batch loss, not held-out evaluation loss.
    * GraphPlan supplies canvas-node probes without expanding composite internals.
    */
   async trainStepTrace(): Promise<TrainingStepTrace> {
@@ -355,6 +361,7 @@ export class TrainingSession {
     if (!Number.isInteger(steps) || steps < 0) throw new Error('training.steps');
     const reportEvery = options.reportEvery ?? this.sessionOptions.reportEvery ?? 10;
     if (!Number.isInteger(reportEvery) || reportEvery < 1) throw new Error('training.report_every');
+    let evaluation: TrainingReport | undefined;
     for (let i = 0; i < steps; i++) {
       if (options.signal?.aborted) break;
       const batch =
@@ -370,7 +377,7 @@ export class TrainingSession {
         parameters = [...this.model.parameters.values()];
         loss = this.getLoss(outputs, batch);
         if (loss.shape.length !== 0) throw new Error('training.scalar_loss');
-        if (report) {
+        if (report && !this.sessionOptions.evaluationReports) {
           value = (await loss.read())[0];
           if (!Number.isFinite(value)) throw new Error('training.nonfinite');
         }
@@ -384,19 +391,25 @@ export class TrainingSession {
           if (typeof this.batch === 'function') releaseBatch(batch);
         }
       }
+      if (this.sessionOptions.evaluationReports && report) {
+        evaluation = await this.evaluate();
+        options.onReport?.(evaluation);
+      }
       if (value !== undefined) options.onReport?.({ step: this.optimizer.step, loss: value });
       if ((i + 1) % (options.yieldEvery ?? 10) === 0)
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
-    return this.evaluate();
+    return evaluation?.step === this.optimizer.step ? evaluation : this.evaluate();
   }
   async evaluate(
     source: TrainingBatchSource = this.sessionOptions.evaluationBatch ?? this.batch,
   ): Promise<TrainingReport> {
     const batch = typeof source === 'function' ? await source(this.optimizer.step) : source;
+    let evaluationModel: (TrainingModel & { dispose(): void }) | undefined;
     let outputs: Record<string, Tensor> | undefined, loss: Tensor | undefined;
     try {
-      outputs = this.model.execute(batch.inputs);
+      evaluationModel = this.sessionOptions.evaluationModel?.();
+      outputs = (evaluationModel ?? this.model).execute(batch.inputs);
       loss = this.getLoss(outputs, batch);
       if (loss.shape.length !== 0) throw new Error('training.scalar_loss');
       const value = (await loss.read())[0];
@@ -410,8 +423,16 @@ export class TrainingSession {
       return report;
     } finally {
       try {
-        if (outputs) this.cleanup(outputs, loss, batch, [...this.model.parameters.values()]);
+        if (outputs)
+          this.cleanup(
+            outputs,
+            loss,
+            batch,
+            [...this.model.parameters.values()],
+            evaluationModel ?? this.model,
+          );
       } finally {
+        evaluationModel?.dispose();
         if (typeof source === 'function') releaseBatch(batch);
       }
     }

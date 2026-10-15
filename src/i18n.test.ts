@@ -94,6 +94,13 @@ describe('i18n', () => {
       }
     }
   });
+  it('covers chapter-six weight ports in both languages', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const keys = new Set(Object.keys(locales[locale]));
+      for (const port of ['wq', 'wk', 'wv', 'wo', 'w1', 'b1', 'w2', 'b2'])
+        expect(keys.has(`ports.${port}`)).toBe(true);
+    }
+  });
   it('maps raw and namespaced diagnostics without exposing raw exceptions', () => {
     expect(diagnosticKey('missing_input')).toBe('errors.missing_input');
     expect(diagnosticKey('training.nonfinite')).toBe('training.nonfinite');

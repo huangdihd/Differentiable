@@ -14,6 +14,8 @@ import {
   evaluateLevel,
   trainingLearningRate,
   trainingOptimizer,
+  trainingBatchSource,
+  trainingEvaluationModel,
   initialProgress,
   type Progress,
   graphMetrics,
@@ -27,6 +29,7 @@ import {
   crossEntropy,
   TrainingSession,
   type TrainingBatch,
+  type TrainingBatchSource,
   type TrainingReport,
 } from '../engine/training';
 import { gameLevels } from '../levels/catalog';
@@ -61,7 +64,7 @@ interface StepRun {
   key: string;
   plan: GraphPlan;
   session: TrainingSession;
-  batch: TrainingBatch;
+  batch: TrainingBatchSource;
 }
 /** Node-testable message handler. One runtime per worker; engine default backend is process-local. */
 export class WorkerRuntime {
@@ -190,7 +193,8 @@ export class WorkerRuntime {
     if (!run) return;
     run.session.dispose();
     run.plan.dispose();
-    new Set([...Object.values(run.batch.inputs), run.batch.targets]).forEach((t) => t?.dispose());
+    if (typeof run.batch !== 'function')
+      new Set([...Object.values(run.batch.inputs), run.batch.targets]).forEach((t) => t?.dispose());
   }
   private timer?: ReturnType<typeof setTimeout>;
   private timerGeneration = 0;
@@ -269,7 +273,14 @@ export class WorkerRuntime {
           });
         }
       };
-      const report = await run.session.run(1, { reportEvery: 1 });
+      const report = run.level.resample
+        ? await run.session.run(
+            Math.min(run.level.evaluationEvery ?? 50, run.level.steps - run.session.optimizer.step),
+            {
+              reportEvery: run.level.evaluationEvery ?? 50,
+            },
+          )
+        : await run.session.run(1, { reportEvery: 1 });
       // Chart the step first so the player sees the loss blow up before the run stops.
       if (Number.isFinite(report.loss))
         this.emit({
@@ -487,14 +498,14 @@ export class WorkerRuntime {
             availableComponents: level.available,
             random: new Random(level.seed),
           });
-          let batch: TrainingBatch | undefined;
+          let batch: TrainingBatchSource | undefined;
           try {
             if (
               JSON.stringify(plan.outputShapes[level.interface.output]) !==
               JSON.stringify(level.interface.outputShape)
             )
               throw new Error('levels.output_shape');
-            batch = level.dataset(new Random(level.seed));
+            batch = trainingBatchSource(level);
             const session = new TrainingSession(
               plan,
               batch,
@@ -506,7 +517,7 @@ export class WorkerRuntime {
             this.stepRun = { key, plan, batch, session };
           } catch (error) {
             plan.dispose();
-            if (batch)
+            if (batch && typeof batch !== 'function')
               new Set([...Object.values(batch.inputs), batch.targets]).forEach((t) => t?.dispose());
             throw error;
           }
@@ -615,17 +626,23 @@ export class WorkerRuntime {
           const metrics = graphMetrics(graph, this.registry);
           const batches: TrainingBatch[] = [];
           try {
-            batches.push(level.dataset(new Random(level.seed)));
-            if (level.evaluationDataset)
-              batches.push(level.evaluationDataset(new Random(level.seed + 1)));
+            const batch = trainingBatchSource(level);
+            if (typeof batch !== 'function') batches.push(batch);
+            const evaluationBatch = level.evaluationDataset?.(new Random(level.seed + 1));
+            if (evaluationBatch) batches.push(evaluationBatch);
             const session = new TrainingSession(
               plan,
-              batches[0],
+              batch,
               crossEntropy,
               { ...level.optimizer, kind, learningRate },
               level.interface.output,
               {
-                evaluationBatch: batches[1],
+                evaluationBatch,
+                evaluationModel:
+                  level.resample && evaluationBatch
+                    ? trainingEvaluationModel(level, graph, plan, evaluationBatch, this.registry)
+                    : undefined,
+                evaluationReports: level.resample,
                 lossOutput: level.lossOutput,
                 accuracy: level.threshold.accuracy !== undefined,
               },

@@ -192,7 +192,7 @@ const metadata = (index: number) => ({
   descriptionKey: `levels.5-${index}.description`,
   hintsKeys: [`levels.5-${index}.hint1`, `levels.5-${index}.hint2`],
   available,
-  unlock: index === 5 ? [] : [`5-${index + 1}`],
+  unlock: index === 5 ? ['6-1'] : [`5-${index + 1}`],
   referenceGraph: answer(index),
 });
 export const chapter5ForwardLevels: ForwardLevel[] = [];

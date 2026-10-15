@@ -14,6 +14,7 @@ import {
   TrainingSession,
   type OptimizerOptions,
   type TrainingBatch,
+  type TrainingBatchSource,
   type TrainingReport,
 } from './training';
 
@@ -66,6 +67,10 @@ export interface TrainLevel extends LevelMetadata {
     learningRate: { min: number; max: number; default: number };
     optimizer?: readonly OptimizerOptions['kind'][];
   };
+  /** Opt in to a fresh seeded minibatch each update; requires evaluationDataset. */
+  resample?: boolean;
+  /** Fixed evaluation report interval for resampled training (default 50). */
+  evaluationEvery?: number;
   dataset: (random: Random) => TrainingBatch;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
@@ -137,6 +142,48 @@ export function trainingOptimizer(
     ? requested
     : (allowed?.[0] ?? level.optimizer.kind);
 }
+/** Fixed batches remain caller-owned; factory batches are owned by TrainingSession. */
+export function trainingBatchSource(level: TrainLevel): TrainingBatchSource {
+  if (!level.resample) return level.dataset(new Random(level.seed));
+  if (!level.evaluationDataset) throw new Error('training.missing_evaluation_dataset');
+  const random = new Random(level.seed + 2);
+  return () => level.dataset(random);
+}
+/** Compile against evaluation shapes while borrowing the live (optimizer-replaced) parameters. */
+export function trainingEvaluationModel(
+  level: TrainLevel,
+  graph: GraphJSON,
+  plan: ReturnType<typeof compileGraph>,
+  batch: TrainingBatch,
+  registry?: ComponentRegistry,
+): () => ReturnType<typeof compileGraph> {
+  return () => {
+    // Initialize lazy parameters on their owning training plan before evaluation borrows them.
+    if (plan.parameters.size === 0) {
+      const inputs = Object.fromEntries(
+        Object.entries(level.interface.inputs).map(([key, shape]) => [
+          key,
+          T.tensor(new Float32Array(shape.reduce((n, d) => n * d, 1)), [...shape]),
+        ]),
+      );
+      try {
+        const outputs = plan.execute(inputs);
+        plan.releaseExecution(outputs);
+      } finally {
+        Object.values(inputs).forEach((value) => value.dispose());
+      }
+    }
+    return compileGraph(graph, {
+      registry,
+      availableComponents: level.available,
+      inputShapes: Object.fromEntries(
+        Object.entries(batch.inputs).map(([key, value]) => [key, value.shape]),
+      ),
+      random: new Random(level.seed),
+      parameters: plan.parameters,
+    });
+  };
+}
 /** Tests compile and execute the actual user graph, never a solution-specific evaluator. */
 export async function evaluateLevel(
   level: Level,
@@ -168,7 +215,7 @@ export async function evaluateLevel(
     if (!shape || JSON.stringify(shape) !== JSON.stringify(level.interface.outputShape))
       throw new Error('levels.output_shape');
     if (level.kind === 'train') {
-      const batch = level.dataset(new Random(level.seed));
+      const batch = trainingBatchSource(level);
       let evaluationBatch: TrainingBatch | undefined;
       let session: TrainingSession | undefined;
       try {
@@ -186,6 +233,11 @@ export async function evaluateLevel(
           {
             lossOutput: level.lossOutput,
             evaluationBatch,
+            evaluationModel:
+              level.resample && evaluationBatch
+                ? trainingEvaluationModel(level, graph, plan, evaluationBatch, options.registry)
+                : undefined,
+            evaluationReports: level.resample,
             accuracy: level.threshold.accuracy !== undefined,
           },
         );
@@ -196,7 +248,7 @@ export async function evaluateLevel(
         };
         result.training = await session.run(level.steps, {
           ...options,
-          reportEvery: 1,
+          reportEvery: level.resample ? (level.evaluationEvery ?? 50) : 1,
           // Report first so the player sees the loss blow up before the run stops.
           onReport: (report) => {
             options.onReport?.(report);
@@ -240,8 +292,7 @@ export async function evaluateLevel(
       } finally {
         session?.dispose();
         const tensors = new Set([
-          ...Object.values(batch.inputs),
-          batch.targets,
+          ...(typeof batch === 'function' ? [] : [...Object.values(batch.inputs), batch.targets]),
           ...(evaluationBatch
             ? [...Object.values(evaluationBatch.inputs), evaluationBatch.targets]
             : []),

@@ -45,6 +45,9 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   causal_mask: '◣',
   attention: 'attn',
   embed_pos: 'E+P',
+  multi_head: 'attn×2',
+  feed_forward: 'FFN',
+  transformer_block: 'block',
 };
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */
