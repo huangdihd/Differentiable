@@ -182,6 +182,14 @@ for (const index of [1, 2, 4]) {
         unlockComponents:
           index === 1 ? ['one_hot'] : index === 2 ? ['embedding', 'gather'] : ['sample'],
         forbidden: index === 1 ? ['one_hot'] : index === 2 ? ['embedding', 'gather'] : ['sample'],
+        ...(index === 1 && {
+          // Row i belongs to the i-th ID; column j asks "is it j?".
+          outputAxes: (args: Record<string, number[]>) => ({
+            rows: args.idx?.map((id) => `idx=${id}`),
+            cols: args.k?.map(String),
+          }),
+          outputNoteKey: 'levels.4-1.expectedNote',
+        }),
         interface: {
           inputs,
           output: 'y',

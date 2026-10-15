@@ -157,6 +157,7 @@ function Formula({ src, wrap }: { src: string; wrap: boolean }) {
     } else if (/\s/.test(text)) space = true;
     else {
       out.push(<Fragment key={i++}>{scripts(text)}</Fragment>);
+      if (text === ',') out.push('\u2009'); // [0, 0, 1]: a list needs room after commas
       space = false;
       afterOp = '(['.includes(text);
     }

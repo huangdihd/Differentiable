@@ -549,7 +549,7 @@
   "components.dsigmoid": "Sigmoid derivative",
   "components.dtanh": "Tanh derivative",
   "levels.4-1.title": "Characters to numbers",
-  "levels.4-1.description": "From this chapter on the network reads text. But a circuit only computes with numbers, so first give each distinct character an ID: say h=0, e=1, l=2, o=3. The number of distinct characters is $V$.\nThe size of an ID means nothing (l is not “twice” e), so instead of the ID itself, each ID becomes a row of length $V$: 1 in the ID’s cell, 0 everywhere else. This is one-hot encoding.\nFor example with V = 5, ID 2 becomes [0, 0, 1, 0, 0].\n\nThis level: idx holds the IDs of 4 characters; $k$ is every ID [0, 1, …, V−1], which tells you how many characters there are. Output [4×V]: one row per character.",
+  "levels.4-1.description": "From this chapter on the network reads text. A circuit only computes with numbers, so each character first becomes an ID, say h → 0, e → 1, l → 2, o → 3.\nAn ID is a name, not a size: l is not “twice” e. So the network doesn’t use the ID itself; each character gets a row instead, one cell per kind of character, with 1 in its own ID’s cell and 0 elsewhere. This is one-hot encoding. With 5 kinds of characters:\n$$2 ↦ [0, 0, 1, 0, 0]$$\nThis level: input idx is a run of character IDs, such as [0, 2, 4, 1]. Input k is every possible ID [0, 1, 2, 3, 4]; how many numbers it has is how many kinds of characters there are.\nOutput y: one row per character, one column per possible ID. Row i, column j is 1 exactly when the i-th ID in idx equals j. The expected y on the right labels its rows and columns, so you can compare.",
   "levels.4-1.hint1": "Row $i$, column $j$ answers “is the $i$-th ID equal to $j$?”. Use Insert dimension to make idx a column [4×1]; compared with $k$ [V] it broadcasts to a [4×V] table where each cell compares one pair.",
   "levels.4-1.hint2": "There is no “equals” part, but $a = b$ means “$a ≥ b$ and $b ≥ a$”. Greater or equal outputs 1 or 0; multiply the two results and only equal cells are 1.",
   "levels.4-2.title": "Look up a row",
@@ -697,5 +697,6 @@
   "training.nonfinite.hint.param": "Check this parameter’s initial value. Excessive learning rates can make parameters diverge; lower the rate and reset training.",
   "training.nonfinite.hint.default": "Inspect values along the input wires. If initial values are valid but training later fails, lower the learning rate and restart training.",
   "training.nonfinite.value": "Output value {index} of this part is {actual}.",
-  "errors.value_missing": "not provided"
+  "errors.value_missing": "not provided",
+  "levels.4-1.expectedNote": "Each row is one character (its ID on the left); each column is one possible ID (the number from k on top). A row has its 1 in the column of its ID."
 }

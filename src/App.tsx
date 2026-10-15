@@ -687,6 +687,10 @@ function Editor({
       cancelled = true;
     };
   }, [level, parsedInputs]);
+  const outputAxes =
+    expected && !('invalid' in parsedInputs)
+      ? level.outputAxes?.(parsedInputs as Record<string, number[]>)
+      : undefined;
 
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
   useEffect(() => {
@@ -1554,6 +1558,8 @@ function Editor({
                   label={level.interface.output}
                   shape={outputValue.shape}
                   values={outputActual!.values}
+                  rows={outputAxes?.rows}
+                  cols={outputAxes?.cols}
                   off={
                     expected && outputActual ? offIndices(level, outputActual, expected) : undefined
                   }
@@ -1577,6 +1583,8 @@ function Editor({
                     label={t('ui.expected')}
                     shape={expected.shape}
                     values={expected.values}
+                    rows={outputAxes?.rows}
+                    cols={outputAxes?.cols}
                     format={(n) => formatValue(locale, n)}
                   />
                 ) : (
@@ -1590,6 +1598,11 @@ function Editor({
                   >
                     {matchesExpected(level, outputActual, expected) ? '✓' : '≠'}
                   </span>
+                )}
+                {level.outputNoteKey && (
+                  <p className="probe-note">
+                    <MathText text={t(level.outputNoteKey)} />
+                  </p>
                 )}
               </div>
             )}

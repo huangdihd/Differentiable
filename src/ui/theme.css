@@ -1171,6 +1171,26 @@ input[type='range'] {
 .tensor-grid td.err {
   color: var(--bad);
 }
+.tensor-grid th {
+  padding: 1px 6px;
+  font-weight: 400;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.tensor-grid thead th {
+  border-bottom: 1px solid var(--line);
+}
+.tensor-grid tbody th {
+  border-right: 1px solid var(--line);
+  text-align: left;
+}
+.probe-note {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
 
 /* expected answer under the live output */
 .probe-expected {

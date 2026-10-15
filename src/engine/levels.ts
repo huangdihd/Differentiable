@@ -35,6 +35,13 @@ export interface LevelMetadata {
   interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
   unlock: readonly string[];
   unlockComponents?: readonly string[];
+  /**
+   * Labels for a matrix output's rows and columns, from the current inputs, so the expected
+   * answer reads as "row for ID 2, column for class 3" instead of a bare grid.
+   */
+  outputAxes?: (inputs: Record<string, number[]>) => { rows?: string[]; cols?: string[] };
+  /** One line under the expected answer saying how to read it. */
+  outputNoteKey?: string;
 }
 export interface LevelCase {
   id: string;
