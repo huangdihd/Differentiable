@@ -141,7 +141,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     };
   };
   const path = (a: Point, b: Point) => {
-    const dx = Math.max(40, Math.abs(b.x - a.x) * 0.5);
+    // Forward wires bend within the gap, so close ports get a short clean S instead of a
+    // loop past both ends; backward wires still swing out far enough to wrap around.
+    const gap = b.x - a.x;
+    const dx = gap > 0 ? gap * 0.5 : Math.max(40, -gap * 0.5);
     return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
   };
 
