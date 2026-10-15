@@ -431,7 +431,7 @@
   "levels.2-1.hint1": "Wire a and b straight into a multiply. You still get a list of 6.",
   "levels.2-1.hint2": "Sum along axis −1 with Keep dimensions off, and you get a single number.",
   "levels.2-3.title": "Mean",
-  "levels.2-3.description": "x is a 4×6 table. Output the mean of each row, shape [4×1]. The judge also feeds 3×5 and 2×3×4 inputs, so \"divide by 6\" won't do. The circuit has to count the row itself.",
+  "levels.2-3.description": "x is a 4×6 table. Output the mean of each row, shape [4×1]. The judge also feeds 3×5 and 2×3×4 inputs, so \"divide by 6\" won't do. The circuit has to count the row itself. Passing this unlocks Size: from then on you can read an axis length directly instead of counting.",
   "levels.2-3.hint1": "Sum adds up a row. What if every number in the row were 1?",
   "levels.2-3.hint2": "x × 0 + 1 is a tensor of ones shaped like x. Sum both (keeping dimensions) and divide.",
   "levels.2-4.title": "Outer product",

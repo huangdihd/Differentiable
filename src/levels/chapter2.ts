@@ -211,6 +211,8 @@ for (const [index, definition] of definitions.entries()) {
           'unsqueeze',
           'reduce_max',
           ...(index >= 5 ? ['transpose'] : []),
+          // After counting a row by hand in 2-3 (mean), the player gets `size` for free.
+          ...(index >= 3 ? ['size'] : []),
         ],
         forbidden: definition.producesComponent === false ? [] : [definition.name],
         interface: { inputs: definition.shapes[0], output: 'y', outputShape: definition.output },

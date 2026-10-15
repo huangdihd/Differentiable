@@ -95,6 +95,8 @@ describe('tensor curriculum', () => {
           'reduce_max',
           'unsqueeze',
           ...(Number(level.id.slice(2)) >= 6 ? ['transpose'] : []),
+          // Counting a row by hand is 2-3's puzzle; afterwards `size` does it.
+          ...(Number(level.id.slice(2)) >= 4 ? ['size'] : []),
         ].sort(),
       );
       expect(level.rtol).toBe(1e-4);
