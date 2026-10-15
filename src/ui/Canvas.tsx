@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { translatePort } from '../i18n';
+import { parameterName } from './parameter-label';
 import {
   NODE_W,
   SYMBOLS,
@@ -342,7 +343,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
           const value = p.values?.[n.id];
           const name = io ? String(n.attrs?.name ?? '') : (SYMBOLS[n.component] ?? '');
           const sym =
-            n.component === 'param' && Array.isArray(n.attrs?.shape)
+            parameterName(n) ??
+            (n.component === 'param' && Array.isArray(n.attrs?.shape)
               ? `θ ${(n.attrs!.shape as number[]).join('×') || '·'}`
               : n.component === 'const'
                 ? Array.isArray(n.attrs?.value)
@@ -350,7 +352,12 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   : typeof n.attrs?.value === 'number'
                     ? String(Number(n.attrs.value.toPrecision(4)))
                     : String(n.attrs?.value ?? '')
-                : name;
+                : name);
+          const displayShape =
+            value?.shape ??
+            (parameterName(n) && Array.isArray(n.attrs?.shape)
+              ? (n.attrs.shape as number[])
+              : undefined);
           const classes = [
             'node',
             p.selected.includes(n.id) && 'is-selected',
@@ -431,8 +438,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 className={`node-foot ${value ? (value.ok ? 'is-ok' : 'is-bad') : ''}`}
                 title={value?.title}
               >
-                {value?.shape && value.shape.length > 0 && (
-                  <span className="node-shape-tag">{shapeText(value.shape, p.t)}</span>
+                {displayShape && displayShape.length > 0 && (
+                  <span className="node-shape-tag">{shapeText(displayShape, p.t)}</span>
                 )}
                 <span className="node-value">{value?.text ?? '—'}</span>
               </div>

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { GraphNode, Attributes } from '../engine/graph';
 import { translatePort } from '../i18n';
+import { shapeText } from './Canvas';
 
 type Props = {
   node: GraphNode;
@@ -32,7 +33,7 @@ export function defaults(component: string): Attributes {
 }
 const fields: Record<string, string[]> = {
   const: ['value', 'shape'],
-  param: ['shape', 'init', 'scale', 'value'],
+  param: ['label', 'shape', 'init', 'scale', 'value'],
   sum: ['axes', 'keepdims'],
   reduce_max: ['axes', 'keepdims'],
   reshape: ['shape'],
@@ -58,6 +59,12 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
   const errors: Record<string, string> = {};
   for (const key of fields[component] ?? []) {
     const text = (draft[key] ?? (key === 'keepdims' ? 'false' : '')).trim();
+    if (key === 'label') {
+      const label = [...text].slice(0, 16).join('');
+      if (label) attrs.label = label;
+      else delete attrs.label;
+      continue;
+    }
     const optional =
       (component === 'const' && key === 'shape') ||
       (component === 'param' && ['init', 'scale', 'value'].includes(key)) ||
@@ -177,7 +184,7 @@ export default function Properties({ node, connectedInputs = [], t, onChange }: 
         return (
           <div key={key}>
             <label htmlFor={inputId}>
-              {t(`ui.${key}`)}
+              {t(key === 'label' ? 'ui.name' : `ui.${key}`)}
               {wired.map((port) => ` ← ${translatePort(t, node.component, port)}`).join(', ')}
             </label>
             {key === 'keepdims' ? (
@@ -205,8 +212,19 @@ export default function Properties({ node, connectedInputs = [], t, onChange }: 
                 {...accessibility}
                 className="field"
                 type="text"
+                placeholder={
+                  key === 'label' ? `θ ${shapeText((attrs.shape as number[]) ?? [], t)}` : undefined
+                }
+                title={key === 'label' ? t('ui.parameterNameHelp') : undefined}
                 value={draft[key] ?? ''}
-                onChange={(e) => change(key, e.target.value)}
+                onChange={(e) =>
+                  change(
+                    key,
+                    key === 'label'
+                      ? [...e.target.value.trimStart()].slice(0, 16).join('')
+                      : e.target.value,
+                  )
+                }
               />
             )}
             {error && (

@@ -36,6 +36,15 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
 
+### Parameter names
+
+Parameter properties include an optional display-only name (`attrs.label`): whitespace is trimmed,
+up to 16 Unicode code points are kept, and an empty name removes the attribute. Names can repeat;
+`W_1` is displayed literally. Names appear on the canvas (including component inspection) and
+in gradient labels; unnamed parameters keep the existing defaults. Shapes remain visible.
+Edits use the normal undo/redo history and are saved with the graph; old saves need no migration.
+Names do not change parameter IDs, computation, scores, or training-plan/snapshot cache keys.
+
 ### Training gradient view
 
 After autodiff is unlocked, chapter-3 training circuits can open the gradient view

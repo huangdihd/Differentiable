@@ -26,6 +26,19 @@ export interface GraphJSON {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+/** Strip display-only parameter names when comparing computational identity/cache keys. */
+export function computationGraph(graph: GraphJSON): GraphJSON {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node.component !== 'param' || !node.attrs || !Object.hasOwn(node.attrs, 'label'))
+        return node;
+      const { label: _label, ...attrs } = node.attrs;
+      return { ...node, attrs };
+    }),
+  };
+}
+
 export type TensorPorts = Record<string, Tensor>;
 export type ShapePorts = Record<string, Shape>;
 export interface ExecutionContext {

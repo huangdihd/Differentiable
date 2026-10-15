@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import type { GraphJSON, GraphNode } from './engine/graph';
+import { computationGraph, type GraphJSON, type GraphNode } from './engine/graph';
 import { applyResult, type Level, type LevelResult, type Progress } from './engine/levels';
 import { parseExpression } from './engine/expression';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
@@ -585,6 +585,13 @@ function Editor({
     });
   }, [level, client]);
   const lastGraph = useRef(state.graph);
+  const computationKey = JSON.stringify(computationGraph(state.graph));
+  useEffect(() => {
+    latest.current.onProgress({
+      ...latest.current.progress,
+      savedGraphs: { ...latest.current.progress.savedGraphs, [level.id]: state.graph },
+    });
+  }, [state.graph]);
   useEffect(() => {
     const c = client.current;
     if (lastGraph.current !== state.graph) {
@@ -599,10 +606,6 @@ function Editor({
     void c?.syncProgress(latest.current.progress, revision.current).catch(fail);
     setDiagnostics([]);
     setError(undefined);
-    latest.current.onProgress({
-      ...latest.current.progress,
-      savedGraphs: { ...latest.current.progress.savedGraphs, [level.id]: state.graph },
-    });
     const timer = setTimeout(
       () =>
         c
@@ -612,7 +615,7 @@ function Editor({
       250,
     );
     return () => clearTimeout(timer);
-  }, [state.graph, registry]);
+  }, [computationKey, registry]);
   useEffect(
     () => () => {
       void client.current?.stop().catch(() => {});
@@ -753,7 +756,7 @@ function Editor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [state.graph, parsedInputs, diagnostics, busy, locale]);
+  }, [computationKey, parsedInputs, diagnostics, busy, locale]);
 
   const PHASE_MS = 1100;
   const stepOnce = async () => {

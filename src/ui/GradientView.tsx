@@ -2,6 +2,7 @@ import type { BackwardGraph, BackwardTrace } from '../engine/backward-graph';
 import type { GraphJSON } from '../engine/graph';
 import { SYMBOLS } from './graph-geometry';
 import { gradientLayout } from './gradient-layout';
+import { gradientParameterLabel } from './parameter-label';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 
@@ -50,15 +51,7 @@ export default function GradientView({
     const n = node.get(id)!;
     if (n.attrs?.engineLoss === true)
       return t(n.component === 'const' ? 'gradView.targets' : 'components.cross_entropy');
-    if (n.component === 'param') {
-      // Same "θ shape" label as the canvas; same-shaped parameters get a subscript in graph order.
-      const tag = (m: GraphJSON['nodes'][number]) =>
-        ((m.attrs?.shape as number[] | undefined) ?? []).join('×');
-      const twins = graph.nodes.filter((m) => m.component === 'param' && tag(m) === tag(n));
-      const i = twins.indexOf(n);
-      const sub = twins.length > 1 ? ('₁₂₃₄₅₆₇₈₉'[i] ?? String(i + 1)) : '';
-      return tag(n) ? `θ${sub} ${tag(n)}` : `θ${sub}`;
-    }
+    if (n.component === 'param') return gradientParameterLabel(n, graph);
     if (n.component === 'input' || n.component === 'output') return String(n.attrs?.name ?? id);
     if (n.component === 'const') {
       // A constant can be a whole tensor (e.g. 4-2's class ids); label it by length, as the canvas does.
