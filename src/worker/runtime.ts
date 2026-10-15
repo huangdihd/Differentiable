@@ -80,7 +80,9 @@ export class WorkerRuntime {
     values: Map<string, { shape: number[]; data: Float32Array }>;
   };
   private generationKey(levelId: string, graph: GraphJSON) {
-    return JSON.stringify([this.revision, levelId, graph]);
+    // Not tied to the revision: passing a level syncs progress, and the player expects the
+    // model they just trained to write. Same level and graph means the same parameters.
+    return JSON.stringify([levelId, graph]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
     if (!level.generates) return;
@@ -344,7 +346,6 @@ export class WorkerRuntime {
       if (request.revision > this.revision) {
         this.release();
         this.revision = request.revision;
-        this.generationParameters = undefined;
       }
       if (request.type === 'init') {
         if (this.initialized) throw new Error('worker.already_initialized');
@@ -363,8 +364,9 @@ export class WorkerRuntime {
         return;
       }
       if (request.type === 'cancel') {
+        // The client cancels on every revision bump, including the sync after a pass;
+        // a finished model stays usable (its key already pins the level and graph).
         this.release();
-        this.generationParameters = undefined;
         this.reply(request, { state: 'stopped' });
         return;
       }
@@ -384,7 +386,6 @@ export class WorkerRuntime {
         const registry = buildPlayerRegistry(this.levels, progress);
         this.progress = progress;
         this.registry = registry;
-        this.generationParameters = undefined;
         this.reply(request, { state: 'synced' });
         return;
       }
@@ -535,11 +536,21 @@ export class WorkerRuntime {
           ],
         };
       }
+      // A probe may run on a shape variant, so the player can see why a variant fails.
+      const groups =
+        level.kind === 'train'
+          ? [level.interface.inputs]
+          : [level.interface.inputs, ...(level.shapeVariants ?? []).map((v) => v.inputs)];
+      const shapes =
+        request.type === 'probe' && request.shapes
+          ? groups.find((g) => JSON.stringify(g) === JSON.stringify(request.shapes))
+          : level.interface.inputs;
+      if (!shapes) throw new Error('worker.invalid_request');
       let plan: GraphPlan;
       try {
         plan = compileGraph(graph, {
           registry: this.registry,
-          inputShapes: level.interface.inputs,
+          inputShapes: shapes,
           availableComponents: level.available,
           random: new Random(level.kind === 'train' ? level.seed : 1),
         });
@@ -572,7 +583,7 @@ export class WorkerRuntime {
           const inputs: TensorPorts = {};
           let outputs: TensorPorts | undefined;
           try {
-            for (const [name, shape] of Object.entries(level.interface.inputs)) {
+            for (const [name, shape] of Object.entries(shapes)) {
               if (!request.inputs[name]) throw new Error('worker.missing_input');
               inputs[name] = T.tensor(request.inputs[name], shape);
             }

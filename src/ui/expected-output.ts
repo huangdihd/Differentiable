@@ -9,9 +9,10 @@ type Tolerance = { kind: string; atol?: number; rtol?: number };
 export async function expectedOutput(
   level: ForwardLevel,
   inputs: Record<string, number[]>,
+  shapes: Readonly<Record<string, readonly number[]>> = level.interface.inputs,
 ): Promise<{ shape: number[]; values: number[] }> {
   const tensors = Object.fromEntries(
-    Object.entries(level.interface.inputs).map(([name, shape]) => [
+    Object.entries(shapes).map(([name, shape]) => [
       name,
       T.tensor(inputs[name] ?? [], shape, backend),
     ]),

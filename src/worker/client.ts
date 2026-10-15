@@ -135,8 +135,16 @@ export class WorkerClient {
     graph: GraphJSON,
     endpoint: GraphEndpoint,
     inputs: Record<string, number[]>,
+    shapes?: Record<string, number[]>,
   ) {
-    return this.send<'probe'>({ type: 'probe', levelId, graph, endpoint, inputs });
+    return this.send<'probe'>({
+      type: 'probe',
+      levelId,
+      graph,
+      endpoint,
+      inputs,
+      ...(shapes ? { shapes } : {}),
+    });
   }
   /** Read-only backward graph; supplying inputs also requests a numeric trace. */
   backward(levelId: string, graph: GraphJSON, inputs?: Record<string, number[]>) {

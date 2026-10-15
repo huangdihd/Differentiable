@@ -34,6 +34,12 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   dsigmoid: 'σ′',
   dtanh: 'tanh′',
   cross_entropy: 'CE',
+  dot: 'a·b',
+  outer: 'a⊗b',
+  mean: 'x̄',
+  one_hot: '1-hot',
+  embedding: 'E[i]',
+  sample: 'draw',
 };
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */

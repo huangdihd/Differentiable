@@ -118,6 +118,15 @@ export function isProgress(value: unknown): value is Progress {
   }
 }
 /** Preserve the expression tool earned before chapter 1 gained extra lessons. */
+/** The gradient view is the engine's autodiff; it opens once the player has hand-built one. */
+export function isAutodiffUnlocked(progress: Progress, levels: readonly Level[]): boolean {
+  return levels.some(
+    (level) =>
+      progress.passed.includes(level.id) &&
+      level.unlockFeatures?.includes('levels.features.autodiff'),
+  );
+}
+
 export function isExpressionUnlocked(progress: Progress, levels: readonly Level[]): boolean {
   return (
     progress.unlocked.includes('2-1') ||

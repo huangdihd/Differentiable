@@ -1479,3 +1479,71 @@ input[type='range'] {
   cursor: default;
   opacity: 0.6;
 }
+
+/* ---------- language-model writing ---------- */
+.gen {
+  display: grid;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+.gen-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+}
+.gen-prompt,
+.gen-temp {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.gen-temp output {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.gen-temp input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.gen-out {
+  margin: 0;
+  padding: var(--s2);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  border: 1px solid var(--line);
+}
+.gen-out-prompt {
+  color: var(--accent);
+}
+
+/* Result rows load their inputs onto the canvas. */
+.table tr.is-pickable {
+  cursor: pointer;
+}
+.table tr.is-pickable:hover td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.shape-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  border: 0;
+}
+.shape-switch .seg-btn,
+.shape-switch .seg-btn + .seg-btn {
+  font-family: var(--mono);
+  border: 1px solid var(--line-strong);
+}
+.table td.cell-error {
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}

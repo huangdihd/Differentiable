@@ -582,5 +582,8 @@
   "ports.u": "Uniform draw",
   "ports.triangle": "Cumulative-sum matrix",
   "worker.generation_unavailable": "This lesson does not support text generation.",
-  "worker.invalid_probabilities": "The graph must output finite, nonnegative character probabilities with a positive total."
+  "worker.invalid_probabilities": "The graph must output finite, nonnegative character probabilities with a positive total.",
+  "ui.generateHelp": "Uses the parameters from your latest training; untrained, it writes gibberish. Low temperature plays safe, high takes chances.",
+  "ui.shapeGroup": "Shape",
+  "ui.showCase": "Click to load these inputs onto the canvas"
 }

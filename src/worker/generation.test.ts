@@ -100,7 +100,7 @@ it('only explicitly generating training levels are eligible and active/paused ru
   text(await active.send(generate()));
 });
 
-it('snapshots exact post-step parameters, survive plan release, and invalidate on identity/revision/reset/registry changes', async () => {
+it('snapshots exact post-step parameters, survive plan release, and invalidate on identity/reset but survive revision and progress sync', async () => {
   const h = harness([level, { ...level, id: 'other' }]);
   await h.send({ type: 'init', backend: 'cpu' });
   const command = generate();
@@ -168,10 +168,13 @@ it('snapshots exact post-step parameters, survive plan release, and invalidate o
     await h.send({ type: 'trainReset' });
     expect(text(await h.send(command))).toEqual(baseline);
     await h.send({ type: 'trainStep', levelId: level.id, graph: command.graph });
-    expect(text(await h.send(command, 1))).toEqual(baseline);
-    await h.send({ type: 'trainStep', levelId: level.id, graph: command.graph }, 1);
+    // Passing a level bumps the revision and syncs progress; the trained model must survive.
+    expect(text(await h.send(command, 1))).toEqual(trained);
     await h.send({ type: 'syncProgress', progress }, 1);
-    expect(text(await h.send(command, 1))).toEqual(baseline);
+    expect(text(await h.send(command, 1))).toEqual(trained);
+    // The client cancels on every revision bump; that must not forget a finished model.
+    await h.send({ type: 'cancel' }, 2);
+    expect(text(await h.send(command, 2))).toEqual(trained);
   } finally {
     plan.dispose();
     parameters.forEach((value) => value.dispose());

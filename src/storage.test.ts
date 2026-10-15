@@ -432,3 +432,13 @@ describe('storage', () => {
     expect(fails.flush()).toBe(false);
   });
 });
+
+it('the gradient view unlocks with the autodiff level, not with chapter 2', async () => {
+  const { isAutodiffUnlocked } = await import('./storage');
+  const { gameLevels } = await import('./levels/catalog');
+  const progress = createInitialProgress();
+  progress.unlocked.push('2-1');
+  expect(isAutodiffUnlocked(progress, gameLevels)).toBe(false);
+  progress.passed.push('1-10');
+  expect(isAutodiffUnlocked(progress, gameLevels)).toBe(true);
+});

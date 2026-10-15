@@ -20,6 +20,8 @@ export type Command =
       graph: GraphJSON;
       endpoint: GraphEndpoint;
       inputs: Record<string, number[]>;
+      /** One of the level's shape groups (main or a variant); defaults to the main shapes. */
+      shapes?: Record<string, number[]>;
     }
   | {
       type: 'backward';

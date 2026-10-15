@@ -26,6 +26,7 @@ import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import DataPlot, { type PlotData } from './ui/DataPlot';
+import { VOCAB } from './levels/corpus';
 import { caseInputs, fullValues } from './ui/tensor-values';
 import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
@@ -35,6 +36,7 @@ import { NODE_W, SYMBOLS } from './ui/graph-geometry';
 import {
   STORAGE_VERSION,
   loadProgress,
+  isAutodiffUnlocked,
   isExpressionUnlocked,
   loadProgressWithMigration,
   loadLanguage,
@@ -330,6 +332,38 @@ function Editor({
       ? savedOptimizer
       : optimizers[0]
     : undefined;
+  // Language-model levels can write: a prompt, a temperature and what came out.
+  const [gen, setGen] = useState<{
+    prompt: string;
+    temperature: number;
+    text?: string;
+    /** Leading characters of `text` that echo the prompt. */
+    shown?: number;
+    seed: number;
+  }>({ prompt: 'the ', temperature: 1, seed: 1 });
+  const [writing, setWriting] = useState(false);
+  const write = async () => {
+    const c = client.current;
+    if (!c || level.kind !== 'train') return;
+    setError(undefined);
+    setWriting(true);
+    try {
+      const r = await c.generate(level.id, state.graph, gen.prompt, 200, gen.seed, gen.temperature);
+      // A fresh seed each time: the same prompt can continue differently.
+      // The reply starts with the prompt minus characters outside the vocabulary.
+      const kept = [...gen.prompt].filter((ch) => VOCAB.includes(ch)).join('');
+      setGen((g) => ({
+        ...g,
+        text: r.text,
+        shown: r.text.startsWith(kept) ? kept.length : 0,
+        seed: g.seed + 1,
+      }));
+    } catch (e) {
+      fail(e);
+    } finally {
+      setWriting(false);
+    }
+  };
   // The training data, for the plot beside the loss chart.
   const [plotBase, setPlotBase] = useState<PlotData>();
   useEffect(() => {
@@ -378,22 +412,53 @@ function Editor({
   const [hintsShown, setHintsShown] = useState(0);
   const [verify, setVerify] = useState<{ index: number; result: LevelResult } | null>(null);
   const skip = useRef(false);
-  const testCases = useMemo(() => {
-    if (level.kind === 'train') return [];
-    const generated = level.generated;
-    const random = generated ? new Random(generated.seed) : undefined;
-    return [
-      ...level.fixed,
-      ...(generated
-        ? Array.from({ length: generated.count }, (_, i) => generated.generate(random!, i))
-        : []),
-    ];
-  }, [level]);
+  // Shape groups: the main shapes, then each shape variant the judge also tries.
+  const shapeGroups = useMemo(
+    () =>
+      level.kind === 'train'
+        ? []
+        : [
+            { inputs: level.interface.inputs, fixed: level.fixed, generated: level.generated },
+            ...(level.shapeVariants ?? []),
+          ].map((group) => {
+            const generated = group.generated;
+            const random = generated ? new Random(generated.seed) : undefined;
+            return {
+              inputs: group.inputs,
+              cases: [
+                ...group.fixed,
+                ...(generated
+                  ? Array.from({ length: generated.count }, (_, i) =>
+                      generated.generate(random!, i),
+                    )
+                  : []),
+              ],
+            };
+          }),
+    [level],
+  );
+  const [shapeGroup, setShapeGroup] = useState(0);
+  const inputShapes = shapeGroups[shapeGroup]?.inputs ?? level.interface.inputs;
+  const testCases = shapeGroups[shapeGroup]?.cases ?? [];
   const [inputCase, setInputCase] = useState('0');
   const hasTensorInputs = Object.values(level.interface.inputs).some((shape) => shape.length > 0);
   const selectInputCase = (index: string) => {
     setInputCase(index);
     if (index !== '') setInputs(caseInputs(testCases[Number(index)].inputs));
+  };
+  const selectCase = (group: number, index: number) => {
+    const c = shapeGroups[group]?.cases[index];
+    if (!c) return;
+    setShapeGroup(group);
+    setInputCase(String(index));
+    setInputs(caseInputs(c.inputs));
+  };
+  /** The shape group and case a result row came from (`shape-N/` prefixes variant ids). */
+  const caseOfTest = (id: string) => {
+    const m = /^shape-(\d+)\/(.*)$/.exec(id);
+    const group = m ? Number(m[1]) : 0;
+    const index = shapeGroups[group]?.cases.findIndex((c) => c.id === (m ? m[2] : id)) ?? -1;
+    return index < 0 ? undefined : { group, index };
   };
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(
@@ -538,7 +603,7 @@ function Editor({
             .split(/[\s,]+/)
             .filter(Boolean)
             .map(Number);
-          const size = level.interface.inputs[key].reduce((x, y) => x * y, 1);
+          const size = (inputShapes[key] ?? []).reduce((x, y) => x * y, 1);
           if (a.length !== size || !a.every(Number.isFinite)) throw new Error(key);
           return [key, a];
         }),
@@ -546,7 +611,7 @@ function Editor({
     } catch (e) {
       return { invalid: (e as Error).message };
     }
-  }, [inputs, level]);
+  }, [inputs, level, inputShapes]);
 
   // The answer for the same inputs, so the player can compare without running the tests.
   const [expected, setExpected] = useState<{ shape: number[]; values: number[] }>();
@@ -554,7 +619,7 @@ function Editor({
     setExpected(undefined);
     if (level.kind === 'train' || 'invalid' in parsedInputs) return;
     let cancelled = false;
-    expectedOutput(level, parsedInputs as Record<string, number[]>).then(
+    expectedOutput(level, parsedInputs as Record<string, number[]>, inputShapes).then(
       (r) => !cancelled && setExpected(r),
       () => {},
     );
@@ -597,6 +662,7 @@ function Editor({
               state.graph,
               source,
               parsedInputs as Record<string, number[]>,
+              shapeGroup ? (inputShapes as Record<string, number[]>) : undefined,
             );
             if (cancelled || revision.current !== probeRevision) return;
             const shown =
@@ -751,8 +817,8 @@ function Editor({
     const inputs =
       level.kind === 'train'
         ? undefined
-        : 'invalid' in parsedInputs
-          ? testCases[0]?.inputs
+        : 'invalid' in parsedInputs || shapeGroup
+          ? level.fixed[0]?.inputs
           : (parsedInputs as Record<string, number[]>);
     try {
       const r = await c.backward(level.id, graph, inputs);
@@ -936,12 +1002,19 @@ function Editor({
   const threshold = level.kind === 'train' ? level.threshold.loss : undefined;
   // The expression box is a tool you earn at the end of chapter 1; early levels are about wiring.
   const expressionUnlocked = isExpressionUnlocked(progress, gameLevels);
+  // Not on levels up to and including the one that teaches backprop by hand: no spoilers.
+  const autodiffLevel = gameLevels.findIndex((l) =>
+    l.unlockFeatures?.includes('levels.features.autodiff'),
+  );
+  const gradientViewShown =
+    isAutodiffUnlocked(progress, gameLevels) &&
+    gameLevels.findIndex((l) => l.id === level.id) > autodiffLevel;
   const ioShapes = Object.fromEntries(
     state.graph.nodes.flatMap((n) =>
       n.component === 'input'
-        ? [[n.id, level.interface.inputs[String(n.attrs?.name)] ?? []]]
+        ? [[n.id, inputShapes[String(n.attrs?.name)] ?? []]]
         : n.component === 'output'
-          ? [[n.id, level.interface.outputShape]]
+          ? [[n.id, shapeGroup ? (expected?.shape ?? []) : level.interface.outputShape]]
           : [],
     ),
   );
@@ -1168,7 +1241,7 @@ function Editor({
           >
             {t('ui.fit')}
           </button>
-          {expressionUnlocked && level.kind !== 'train' && (
+          {gradientViewShown && level.kind !== 'train' && (
             <>
               <span className="tool-sep" />
               <button
@@ -1221,6 +1294,40 @@ function Editor({
         {probing && (
           <section className="section">
             <h2 className="label">{t('ui.liveValues')}</h2>
+            {shapeGroups.length > 1 && (
+              <div className="case-switch">
+                <span className="label-inline">{t('ui.shapeGroup')}</span>
+                <div className="seg shape-switch" role="group" aria-label={t('ui.shapeGroup')}>
+                  {shapeGroups.map((g, i) => (
+                    <button
+                      key={i}
+                      className={`seg-btn${i === shapeGroup ? ' is-on' : ''}`}
+                      aria-pressed={i === shapeGroup}
+                      disabled={running || busy || !!verify}
+                      title={Object.entries(g.inputs)
+                        .map(([name, shape]) => `${name} [${shape.join('×')}]`)
+                        .join(', ')}
+                      onClick={() =>
+                        // The all-zero case says little about shapes; start on a lively one.
+                        selectCase(
+                          i,
+                          Math.max(
+                            0,
+                            g.cases.findIndex((c) =>
+                              Object.values(c.inputs).some((v) => v.some((x) => x !== 0)),
+                            ),
+                          ),
+                        )
+                      }
+                    >
+                      {Object.values(g.inputs)
+                        .map((shape) => shape.join('×') || '·')
+                        .join(' · ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {testCases.length > 0 && (
               <div className="case-switch">
                 <span className="label-inline">{t('ui.inputCase')}</span>
@@ -1264,16 +1371,16 @@ function Editor({
             )}
             {Object.entries(inputs).map(([name, value]) => (
               <div
-                className={`probe-field${level.interface.inputs[name].length > 0 ? ' is-tensor' : ''}`}
+                className={`probe-field${inputShapes[name].length > 0 ? ' is-tensor' : ''}`}
                 key={name}
               >
                 <label htmlFor={`probe-${name}`} className="probe-name">
                   {name} =
                 </label>
-                {level.interface.inputs[name].length > 0 ? (
+                {inputShapes[name].length > 0 ? (
                   <TensorGrid
                     label={name}
-                    shape={level.interface.inputs[name]}
+                    shape={inputShapes[name]}
                     values={value.split(',').map(Number)}
                     format={(n) => compact(locale, n)}
                   />
@@ -1291,10 +1398,10 @@ function Editor({
                     }}
                   />
                 )}
-                {level.interface.inputs[name].length > 0 && (
-                  <span className="probe-shape">{shapeText(level.interface.inputs[name], t)}</span>
+                {inputShapes[name].length > 0 && (
+                  <span className="probe-shape">{shapeText(inputShapes[name], t)}</span>
                 )}
-                {level.interface.inputs[name].length === 0 && (
+                {inputShapes[name].length === 0 && (
                   <input
                     type="range"
                     className="probe-slider"
@@ -1441,6 +1548,52 @@ function Editor({
                 <dt>{t('ui.backend')}</dt>
                 <dd>{t(`backend.${backend}`)}</dd>
               </dl>
+              {level.generates && (
+                <div className="gen">
+                  <div className="gen-row">
+                    <label className="gen-prompt">
+                      <span className="label">{t('ui.prompt')}</span>
+                      <input
+                        className="field"
+                        value={gen.prompt}
+                        maxLength={40}
+                        spellCheck={false}
+                        onChange={(e) => setGen((g) => ({ ...g, prompt: e.target.value }))}
+                      />
+                    </label>
+                    <label className="gen-temp">
+                      <span className="label">
+                        {t('ui.temperature')} <output>{gen.temperature.toFixed(1)}</output>
+                      </span>
+                      <input
+                        type="range"
+                        min={0.2}
+                        max={2}
+                        step={0.1}
+                        value={gen.temperature}
+                        onChange={(e) =>
+                          setGen((g) => ({ ...g, temperature: Number(e.target.value) }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="btn"
+                    disabled={busy || writing || !!inside.length}
+                    onClick={() => void write()}
+                  >
+                    ✎ {t('ui.generate')}
+                  </button>
+                  {gen.text !== undefined && (
+                    <pre className="gen-out" aria-live="polite">
+                      {/* The reply repeats the (filtered) prompt; colour that part. */}
+                      <span className="gen-out-prompt">{gen.text.slice(0, gen.shown)}</span>
+                      {gen.text.slice(gen.shown)}
+                    </pre>
+                  )}
+                  <p className="hint">{t('ui.generateHelp')}</p>
+                </div>
+              )}
               {stepFlow && (
                 <p className="step-phase">
                   <span className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}>
@@ -1540,11 +1693,25 @@ function Editor({
                       {shownTests.map((r, i) => (
                         <tr
                           key={r.id}
-                          className={verify && i === verify.index ? 'is-current' : undefined}
+                          className={
+                            verify && i === verify.index
+                              ? 'is-current'
+                              : !verify && caseOfTest(r.id)
+                                ? 'is-pickable'
+                                : undefined
+                          }
+                          title={!verify && caseOfTest(r.id) ? t('ui.showCase') : undefined}
+                          onClick={() => {
+                            const at = !verify && caseOfTest(r.id);
+                            if (at) selectCase(at.group, at.index);
+                          }}
                         >
                           <td>{i + 1}</td>
                           <td title={fullValues(r.expected)}>{listText(locale, r.expected, 2)}</td>
-                          <td title={fullValues(r.actual)}>
+                          <td
+                            title={fullValues(r.actual)}
+                            className={r.errorKey ? 'cell-error' : undefined}
+                          >
                             {r.errorKey
                               ? translateDiagnostic(locale, {
                                   key: r.errorKey,
