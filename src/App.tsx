@@ -47,6 +47,7 @@ import {
   createThrottledSave,
 } from './storage';
 import './ui/theme.css';
+import { MusicToggle } from './ui/MusicToggle';
 import './ui/layout.css';
 
 type T = ReturnType<typeof createTranslator>;
@@ -136,6 +137,7 @@ export default function App() {
         >
           {t(`backend.${backend}`)}
         </span>
+        <MusicToggle t={t} chapter={entry?.chapter ?? 0} />
         <select
           className="field lang-select"
           aria-label={t('ui.language')}
