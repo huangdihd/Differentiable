@@ -1,4 +1,5 @@
 import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
+import { trainingBackward } from '../engine/training-backward';
 import { createBackend } from '../engine/backend-selection';
 import { CpuBackend } from '../engine/cpu';
 import { BackendError } from '../engine/webgpu';
@@ -90,7 +91,7 @@ export class WorkerRuntime {
     return JSON.stringify([levelId, graph]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
-    if (!level.generates) return;
+    if (!level.generates && level.chapter !== '3' && level.id !== 'xor') return;
     const values = new Map<string, { shape: number[]; data: Float32Array }>();
     for (const [id, value] of plan.parameters) {
       const data = new Float32Array(await value.read());
@@ -484,6 +485,22 @@ export class WorkerRuntime {
         return;
       }
       if (request.type === 'backward') {
+        if (level.kind === 'train') {
+          if (level.chapter !== '3' && level.id !== 'xor')
+            throw new Error('worker.training_gradient_unavailable');
+          if (this.run) throw new Error('worker.training_busy');
+          const saved = this.generationParameters;
+          this.reply(
+            request,
+            await trainingBackward(
+              level,
+              request.graph,
+              this.registry,
+              saved?.key === this.generationKey(level.id, request.graph) ? saved.values : undefined,
+            ),
+          );
+          return;
+        }
         const options = {
           registry: this.registry,
           availableComponents: level.available,

@@ -7,7 +7,7 @@ export interface GradientColumnNode {
   component: string;
   column: number;
   row: number;
-  /** On a path from a differentiated input to the output: the gradient flows through it. */
+  /** On a path from a differentiated input or parameter to the output: the gradient flows through it. */
   carries: boolean;
 }
 /** A forward wire u→v; its backward twin runs v'→u' when both ends carry gradient. */
@@ -58,11 +58,15 @@ export function gradientLayout(
       if (users.length) depth.set(n.id, Math.max(0, Math.min(...users) - 1));
     }
 
-  // Gradient flows where a differentiated input reaches the output.
+  // Gradient flows where a differentiated input or parameter reaches the output.
   const output = graph.nodes.find((n) => n.component === 'output');
   const downstream = new Set(
     graph.nodes
-      .filter((n) => n.component === 'input' && wrt.includes(String(n.attrs?.name)))
+      .filter(
+        (n) =>
+          (n.component === 'input' && wrt.includes(String(n.attrs?.name))) ||
+          (n.component === 'param' && wrt.includes(n.id)),
+      )
       .map((n) => n.id),
   );
   for (let changed = true; changed;) {

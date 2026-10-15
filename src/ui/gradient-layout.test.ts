@@ -34,6 +34,26 @@ describe('gradient graph layout', () => {
     expect(intoExp.rule).toBe('backward.rule.exp');
     expect(layout.edges.find((e) => e.from === 'w')!.rule).toBe('backward.rule.mul');
   });
+  it('differentiates parameters by ID without differentiating data or unused parameters', () => {
+    const graph = formulaGraph('x * w', ['x', 'w']);
+    const parameter = graph.nodes.find((n) => n.id === 'w')!;
+    parameter.component = 'param';
+    parameter.attrs = { name: 'display-name', shape: [], init: 'ones' };
+    graph.nodes.push({ id: 'unused', component: 'param', attrs: { shape: [], init: 'ones' } });
+    const backward = buildBackwardGraph(graph, {
+      inputShapes: { x: [] },
+      output: 'y',
+      wrt: ['w', 'unused'],
+    });
+    const layout = gradientLayout(graph, backward, ['w', 'unused']);
+    expect(layout.nodes.find((n) => n.id === 'w')!.carries).toBe(true);
+    expect(layout.nodes.find((n) => n.id === 'x')!.carries).toBe(false);
+    expect(layout.nodes.find((n) => n.id === 'unused')!.carries).toBe(false);
+    expect(layout.edges.find((e) => e.from === 'w')!.backward).toBe(true);
+    expect(gradientLayout(graph, backward, ['display-name']).nodes.some((n) => n.carries)).toBe(
+      false,
+    );
+  });
   it('marks fan-out values whose gradients are summed', () => {
     const { layout } = layoutOf('x * x', ['x'], ['x']);
     expect(layout.sums).toEqual({ x: 2 });

@@ -1,5 +1,6 @@
 {
   "app.title": "Differentiable",
+  "worker.training_gradient_unavailable": "This circuit is too big for the gradient view to finish quickly; on training levels it is only available in chapter 3 for now.",
   "app.placeholder": "Build a differentiable graph.",
   "ui.language": "Language",
   "ui.par": "Target: ≤ {n} basic operations",
@@ -463,6 +464,10 @@
   "ui.broadcastHelp": "The shapes differ: aligned from the last axis, length-1 or missing axes are copied to fill, then the op runs entry by entry.",
   "gradView.title": "Gradient graph",
   "gradView.intro": "On top is your circuit; values flow left to right. Below is the mirror the engine draws from it: gradients start at the output and flow right to left, multiplied at each part by that part's own derivative (written on the wire). A value used several times receives several gradients, added at a \"+\". That is automatic differentiation, the same thing you built by hand in 1-10.",
+  "gradView.parameters.initial": "On training levels the gradient is taken with respect to the parameters θ (what training changes), not the data. These are the parameters before training; open it again after training to see gradients at the current parameters.",
+  "gradView.parameters.current": "On training levels the gradient is taken with respect to the parameters θ (what training changes), not the data. These are the parameters you just trained.",
+  "gradView.trainingData": "Values come from one batch of this level's training data.",
+  "gradView.attachedLoss": "On this level the engine computes the loss after your output: it compares the probabilities with the right answers using cross entropy. That part is drawn too (labelled \"cross entropy\"), so the gradient starts at loss. It is only drawn for you to see; your circuit is unchanged.",
   "gradView.forward": "forward: values",
   "gradView.backward": "backward: ∂{y}/∂·",
   "gradView.sum": "gradients added",
@@ -652,5 +657,6 @@
   "loop.update.name": "Update",
   "loop.update.sgd": "Each parameter takes a small step against its gradient: w ← w − {lr}·gradient (3-1)",
   "loop.update.adam": "Adam: each parameter sizes its own step from its history, base step {lr} (3-7, 3-8)",
-  "loop.repeat": "Back to step 1, {steps} times in all. A falling loss means the parameters are learning."
+  "loop.repeat": "Back to step 1, {steps} times in all. A falling loss means the parameters are learning.",
+  "gradView.targets": "answers t"
 }

@@ -27,6 +27,8 @@ export default function GradientView({
   composite,
   format,
   intro,
+  parameterState,
+  attachedLoss,
   onClose,
 }: {
   t: T;
@@ -38,12 +40,25 @@ export default function GradientView({
   composite: (component: string) => boolean;
   format: (n: number) => string;
   intro?: string;
+  parameterState?: 'initial' | 'current';
+  attachedLoss?: boolean;
   onClose: () => void;
 }) {
   const layout = gradientLayout(graph, backward, wrt);
   const node = new Map(graph.nodes.map((n) => [n.id, n]));
   const label = (id: string) => {
     const n = node.get(id)!;
+    if (n.attrs?.engineLoss === true)
+      return t(n.component === 'const' ? 'gradView.targets' : 'components.cross_entropy');
+    if (n.component === 'param') {
+      // Same "θ shape" label as the canvas; same-shaped parameters get a subscript in graph order.
+      const tag = (m: GraphJSON['nodes'][number]) =>
+        ((m.attrs?.shape as number[] | undefined) ?? []).join('×');
+      const twins = graph.nodes.filter((m) => m.component === 'param' && tag(m) === tag(n));
+      const i = twins.indexOf(n);
+      const sub = twins.length > 1 ? ('₁₂₃₄₅₆₇₈₉'[i] ?? String(i + 1)) : '';
+      return tag(n) ? `θ${sub} ${tag(n)}` : `θ${sub}`;
+    }
     if (n.component === 'input' || n.component === 'output') return String(n.attrs?.name ?? id);
     if (n.component === 'const') {
       // A constant can be a whole tensor (e.g. 4-2's class ids); label it by length, as the canvas does.
@@ -94,7 +109,16 @@ export default function GradientView({
         <header className="gv-head">
           <div>
             <h2>{t('gradView.title')}</h2>
-            <p className="hint">{intro ?? t('gradView.intro')}</p>
+            <p className="hint">
+              {intro ?? t('gradView.intro')}
+              {parameterState && (
+                <>
+                  {' '}
+                  {t(`gradView.parameters.${parameterState}`)} {t('gradView.trainingData')}
+                </>
+              )}
+              {attachedLoss && <> {t('gradView.attachedLoss')}</>}
+            </p>
           </div>
           <button className="btn" onClick={onClose} autoFocus>
             {t('ui.close')}
@@ -225,13 +249,15 @@ export default function GradientView({
                 <div
                   key={`bc-${n.id}`}
                   className={`gv-card is-backward${
-                    node.get(n.id)!.component === 'input' ? ' is-target' : ''
+                    ['input', 'param'].includes(node.get(n.id)!.component) ? ' is-target' : ''
                   }`}
                   style={{ left: x(n.column), top: yB(n.row), width: W, height: H }}
                 >
                   <span className="gv-card-label">
                     ∂{output}/∂
-                    {node.get(n.id)!.component === 'input' ? label(n.id) : `(${label(n.id)})`}
+                    {['input', 'param'].includes(node.get(n.id)!.component)
+                      ? label(n.id)
+                      : `(${label(n.id)})`}
                   </span>
                   <span className="gv-card-value">{value('gradient', n.id)}</span>
                 </div>

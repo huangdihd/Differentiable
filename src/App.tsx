@@ -346,6 +346,9 @@ function Editor({
     backward: BackwardGraph;
     trace?: BackwardTrace;
     intro?: string;
+    wrt: string[];
+    parameterState?: 'initial' | 'current';
+    attachedLoss?: boolean;
   }>();
   const [previousBest, setPreviousBest] = useState<LevelResult['metrics']>();
   const [training, setTraining] = useState<'idle' | 'running' | 'paused'>('idle');
@@ -863,9 +866,11 @@ function Editor({
   };
 
   const gradientWrt =
-    level.kind === 'derivative'
-      ? [level.derivativeInput ?? 'x']
-      : Object.keys(level.interface.inputs);
+    level.kind === 'train'
+      ? state.graph.nodes.filter((n) => n.component === 'param').map((n) => n.id)
+      : level.kind === 'derivative'
+        ? [level.derivativeInput ?? 'x']
+        : Object.keys(level.interface.inputs);
   /** The engine's backward graph for `graph`, traced on the inputs in the live panel. */
   const openGradientView = async (graph: GraphJSON, intro?: string) => {
     const c = client.current;
@@ -878,7 +883,18 @@ function Editor({
           : (parsedInputs as Record<string, number[]>);
     try {
       const r = await c.backward(level.id, graph, inputs);
-      setGradView({ graph, backward: r.backward, trace: r.trace, intro });
+      setGradView({
+        graph: r.graph ?? graph,
+        backward: r.backward,
+        trace: r.trace,
+        intro,
+        wrt:
+          level.kind === 'train'
+            ? graph.nodes.filter((n) => n.component === 'param').map((n) => n.id)
+            : gradientWrt,
+        parameterState: r.parameterState,
+        attachedLoss: r.attachedLoss,
+      });
     } catch (e) {
       fail(e);
     }
@@ -1301,13 +1317,22 @@ function Editor({
           >
             {t('ui.fit')}
           </button>
-          {gradientViewShown && level.kind !== 'train' && (
+          {gradientViewShown && (
             <>
               <span className="tool-sep" />
               <button
                 className="tool-btn tool-wide tool-grad"
-                title={t('gradView.openHint')}
-                disabled={busy || !!inside.length || errors.some((e) => !e.soft)}
+                title={t(
+                  level.kind === 'train' && level.chapter !== '3' && level.id !== 'xor'
+                    ? 'worker.training_gradient_unavailable'
+                    : 'gradView.openHint',
+                )}
+                disabled={
+                  busy ||
+                  !!inside.length ||
+                  errors.some((e) => !e.soft) ||
+                  (level.kind === 'train' && level.chapter !== '3' && level.id !== 'xor')
+                }
                 onClick={() => openGradientView(state.graph)}
               >
                 ∂ {t('gradView.open')}
@@ -1841,8 +1866,10 @@ function Editor({
           graph={gradView.graph}
           backward={gradView.backward}
           trace={gradView.trace}
-          wrt={gradientWrt}
-          output={level.interface.output}
+          wrt={gradView.wrt}
+          output={level.kind === 'train' ? 'loss' : level.interface.output}
+          parameterState={gradView.parameterState}
+          attachedLoss={gradView.attachedLoss}
           composite={(component) => !registry.get(component)?.primitive}
           format={(n) => formatValue(locale, n)}
           intro={gradView.intro}

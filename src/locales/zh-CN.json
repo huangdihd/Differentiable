@@ -1,5 +1,6 @@
 {
   "app.title": "Differentiable",
+  "worker.training_gradient_unavailable": "这一关的电路太大，梯度图要算太久，目前只在第 3 章的训练关开放。",
   "app.placeholder": "构建可微分计算图。",
   "ui.language": "语言",
   "ui.par": "目标：≤ {n} 个基本运算",
@@ -460,6 +461,10 @@
   "ui.broadcastHelp": "两边形状不同：从最后一维对齐，长度为 1 或缺少的轴被复制铺满，然后逐元素计算。",
   "gradView.title": "梯度图",
   "gradView.intro": "上面是你的电路，数值从左往右流。下面是引擎照着它自动画出的镜像：梯度从输出出发、从右往左流，每经过一个元件，就乘上这个元件自己的导数（写在线上）。一个值被用了几次，就会收到几份梯度，在「+」处加起来。这就是自动微分——和你在 1-10 手搭的是同一件事。",
+  "gradView.parameters.initial": "训练关里，梯度对的是参数 θ（训练时被改的就是它们），不是数据。现在显示的是训练前的初始参数；训练之后再打开，就是当前参数下的梯度。",
+  "gradView.parameters.current": "训练关里，梯度对的是参数 θ（训练时被改的就是它们），不是数据。现在显示的是你刚训练到的参数。",
+  "gradView.trainingData": "用的是这一关的一批训练数据。",
+  "gradView.attachedLoss": "这一关的损失是引擎接在你的输出后面算的：输出的概率和正确答案比一比，算交叉熵。图里把这一段也画出来了（标着「交叉熵」），所以梯度从 loss 出发。它只是画出来给你看，不会改你的电路。",
   "gradView.forward": "前向：数值",
   "gradView.backward": "反向：∂{y}/∂·",
   "gradView.sum": "多份梯度相加",
@@ -649,5 +654,6 @@
   "loop.update.name": "更新",
   "loop.update.sgd": "每个参数往梯度反方向走一小步：w ← w − {lr}·梯度（3-1）",
   "loop.update.adam": "Adam：每个参数按自己的历史调步子，基础步长 {lr}（3-7、3-8）",
-  "loop.repeat": "回到第 1 步，共重复 {steps} 次。损失降下来，就是参数学到了。"
+  "loop.repeat": "回到第 1 步，共重复 {steps} 次。损失降下来，就是参数学到了。",
+  "gradView.targets": "答案 t"
 }

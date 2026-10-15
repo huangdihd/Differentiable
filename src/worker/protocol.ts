@@ -72,6 +72,9 @@ export interface ReplyData {
   compile: { outputShapes: ShapePorts; metrics: GraphMetrics; diagnostics: WorkerError[] };
   probe: { shape: readonly number[]; values: number[] };
   backward: {
+    graph?: GraphJSON;
+    parameterState?: 'initial' | 'current';
+    attachedLoss?: boolean;
     backward: ReturnType<typeof buildBackwardGraph>;
     trace?: Awaited<ReturnType<typeof traceBackward>>;
   };

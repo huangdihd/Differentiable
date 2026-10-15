@@ -29,12 +29,30 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `cpu.ts`: reference kernels and VJPs. Custom kernels can register both forward and VJP handlers.
 - `tensor.ts`: backend-independent first-order reverse autodiff. `backward(y, inputs)` computes gradients of `sum(y)`; `ge` and gather indices have zero gradients. Tied `max` chooses its first operand; tied `reduce_max` chooses the first element in row-major reduction order.
 - `graph.ts`: versioned JSON graphs, named ports, recursive component expansion, concrete shape inference and reusable execution plans. Node `ui` data is opaque to the engine. Component and error identifiers are keys, not translated text. `size(x, axis=-1)` returns a scalar shape dimension without reading tensor storage. Scalar constants, `size`, and scalar primitive arithmetic (including expanded player components) are evaluated at compile time. Optional `reshape.d0`–`d3` and `arange.n` wires override their attributes; reshape rank still comes from the `shape` array. Wired dimensions must be static and within 1e-3 of an integer; reshape retains its existing `-1` inference rules. Dimension wires and `size` have no gradients. Plans are recompiled for each concrete input-shape variant.
-- `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for future visualization. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
+- `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for the gradient view. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
 - `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named single-element graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
 - `src/levels/`: chapter 0/1/2/3/4/5/6 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
+
+### Training gradient view
+
+After autodiff is unlocked, chapter-3 training circuits can open the gradient view
+while idle. It differentiates `loss` with respect to parameter node IDs, not data
+inputs. `lossOutput` selects an existing circuit loss; otherwise the view appends
+primitive `-sum(t * log(y + 1e-7)) / rows`, matching training cross entropy.
+These engine-added nodes are labeled separately and never saved into the player circuit.
+Traces use `dataset(new Random(level.seed))`, with seed-initialized parameters or
+the latest successful training step/completion/stop snapshot for the same circuit.
+The description identifies initial versus current parameters. Training previews
+are bounded to 16 values per node (the UI shows three).
+
+Later training chapters are disabled in both toolbar and worker: the 6-4 CPU
+benchmark exceeded the 3-second budget and its test worker exited after about
+59 seconds. The skipped manual benchmark lives in `training-backward.test.ts`.
+The helper supports arbitrary-rank cross entropy and seeded evaluation batches
+for resampled levels, but those larger levels are not exposed yet.
 
 ### Gradient-descent lessons and saves
 

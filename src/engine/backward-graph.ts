@@ -376,7 +376,11 @@ export function buildBackwardGraph(graph: GraphJSON, options: BackwardGraphOptio
  */
 export async function traceBackward(
   source: GraphJSON,
-  options: BackwardGraphOptions & { inputs: Record<string, number[]> },
+  options: BackwardGraphOptions & {
+    inputs: Record<string, number[]>;
+    parameters?: Map<string, Tensor>;
+    previewLimit?: number;
+  },
 ): Promise<BackwardTrace> {
   const built = build(source, options);
   const used = new Set(built.graph.nodes.map((n) => n.id));
@@ -396,11 +400,15 @@ export async function traceBackward(
   for (const n of built.forward)
     probes.push({ id: n.id, forward: probe(n.id), gradient: probe(built.gradients[n.id]) });
   const backend = new CpuBackend();
+  const parameters = new Map<string, Tensor>();
+  for (const [id, value] of options.parameters ?? [])
+    parameters.set(id, tensor(await value.read(), [...value.shape], backend));
   const plan = compileGraph(built.graph, {
     registry: options.registry,
     inputShapes: options.inputShapes,
     backend,
     random: new Random(42),
+    parameters,
   });
   const inputs: Record<string, Tensor> = {};
   let execution: ReturnType<typeof plan.execute> | undefined;
@@ -414,12 +422,16 @@ export async function traceBackward(
     for (const p of probes)
       for (const kind of ['forward', 'gradient'] as const) {
         const value = execution[p[kind]];
-        trace[kind][p.id] = { shape: [...value.shape], values: Array.from(await value.read()) };
+        trace[kind][p.id] = {
+          shape: [...value.shape],
+          values: Array.from((await value.read()).slice(0, options.previewLimit)),
+        };
       }
     return trace;
   } finally {
     if (execution) plan.releaseExecution(execution);
     plan.dispose();
     Object.values(inputs).forEach((t) => t.dispose());
+    parameters.forEach((t) => t.dispose());
   }
 }

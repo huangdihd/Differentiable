@@ -40,8 +40,20 @@ declared, otherwise all level inputs. The selected output is
 `level.interface.output`. Supplying inputs requests a numeric trace; omitting them
 only builds the read-only graph. Registry/availability come from current progress;
 source graphs and player progress are not modified. Traces use CPU with fixed-seed
-parameter initialization, not parameters copied from live training. Errors and revision
+parameter initialization for non-training levels. Errors and revision
 filtering follow the usual RPC rules.
+
+Chapter-3 training requests ignore supplied inputs and always trace a seeded dataset.
+They additionally return `graph`, `parameterState: 'initial' | 'current'`, and
+`attachedLoss`. Targets are all top-level parameter IDs. `lossOutput` selects the
+circuit loss; otherwise a primitive cross-entropy segment is appended to the view
+only, including training's `1e-7` epsilon and mean over all non-class dimensions.
+The output is labeled `loss`. Parameters come from the latest successful step or
+continuous completion/stop snapshot for the same level and graph, falling back to
+training's seeded initialization. Reset clears the snapshot. Numeric training
+previews retain at most 16 values per node. Later training chapters are rejected
+with `worker.training_gradient_unavailable` after the 6-4 CPU benchmark exceeded
+the 3-second budget. Active continuous training rejects with `worker.training_busy`.
 
 `syncProgress(progress: Progress, revision?: number)` returns
 `Promise<{ state: 'synced' }>`. Call it after `init`, before loading/evaluating a
