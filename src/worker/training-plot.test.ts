@@ -92,7 +92,8 @@ it('maps classification rows to labels and excludes resampled batches', async ()
     targets: tensor([1, 0, 0, 1], [2, 2]),
   };
   try {
-    expect(await trainingPlot(classification, plan, batch, 'y')).toEqual({
+    const plot = await trainingPlot(classification, plan, batch, 'y');
+    expect(plot).toMatchObject({
       kind: 'classes',
       points: [
         [0, 1],
@@ -101,6 +102,17 @@ it('maps classification rows to labels and excludes resampled batches', async ()
       label: [0, 1],
       predicted: [1, 0],
     });
+    // The identity model predicts class 1 exactly where y > x: the field must agree cell by cell.
+    const field = plot?.kind === 'classes' ? plot.field : undefined;
+    expect(field).toBeDefined();
+    const { nx, ny, x0, x1, y0, y1, classes, margin } = field!;
+    expect(classes).toHaveLength(nx * ny);
+    for (let k = 0; k < nx * ny; k++) {
+      const x = x0 + (((k % nx) + 0.5) / nx) * (x1 - x0);
+      const y = y0 + ((Math.floor(k / nx) + 0.5) / ny) * (y1 - y0);
+      expect(margin![k]).toBeCloseTo(y - x, 5);
+      if (Math.abs(y - x) > 1e-6) expect(classes[k]).toBe(y > x ? 1 : 0);
+    }
     expect(await trainingPlot(classification, plan, () => batch, 'y')).toBeUndefined();
   } finally {
     plan.dispose();
@@ -155,4 +167,19 @@ it('delivers final trained predictions through progress before result, and seria
   } finally {
     await runtime.dispose();
   }
+});
+it('refreshes the decision field at most every 800ms, reusing it in between, and always when final', async () => {
+  let now = 0;
+  const refresh = new TrainingPlotRefresh(() => now);
+  const field = { nx: 1, ny: 1, x0: 0, x1: 1, y0: 0, y1: 1, classes: [0] };
+  const compute = vi.fn(async () => ({ ...field }));
+  const first = await refresh.field(compute);
+  now = 799;
+  expect(await refresh.field(compute)).toBe(first);
+  expect(compute).toHaveBeenCalledTimes(1);
+  now = 800;
+  await refresh.field(compute);
+  now = 801;
+  await refresh.field(compute, true);
+  expect(compute).toHaveBeenCalledTimes(3);
 });

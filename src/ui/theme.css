@@ -1573,6 +1573,30 @@ input[type='range'] {
   stroke: var(--bad);
   stroke-width: 1.6;
 }
+/* The model's view of the plane: faint class regions and the line where they meet. */
+.plot-region {
+  stroke: none;
+  opacity: 0.16;
+}
+.plot-region.is-class-0 {
+  fill: var(--accent);
+}
+.plot-region.is-class-1 {
+  fill: var(--grad);
+}
+.plot-region.is-class-2 {
+  fill: var(--good);
+}
+.plot-region.is-class-3 {
+  fill: var(--warn);
+}
+.plot-boundary {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
 .plot-fit {
   fill: none;
   stroke: var(--accent);

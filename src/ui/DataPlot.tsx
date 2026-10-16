@@ -14,7 +14,74 @@ export type PlotData =
       label: number[];
       /** Predicted class per point, when known. */
       predicted?: number[];
+      /** The model's class over the plane: the colors meet at its decision boundary. */
+      field?: ClassField;
     };
+
+/** Predicted class at the centres of an nx×ny grid over [x0,x1]×[y0,y1]; row 0 is the bottom. */
+export interface ClassField {
+  nx: number;
+  ny: number;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  classes: number[];
+  /** Two classes only: score of class 1 minus class 0 per cell; the boundary is where it is 0. */
+  margin?: number[];
+}
+
+/** The boundary as SVG path data in field-cell coordinates (cell centres at i + 0.5). */
+export function boundaryPath(
+  field: ClassField,
+  px: (i: number) => number,
+  py: (j: number) => number,
+): string {
+  const { nx, ny, classes, margin } = field;
+  const at = (i: number, j: number) => j * nx + i;
+  const parts: string[] = [];
+  const seg = (a: [number, number], b: [number, number]) =>
+    parts.push(
+      `M${px(a[0]).toFixed(1)},${py(a[1]).toFixed(1)}L${px(b[0]).toFixed(1)},${py(b[1]).toFixed(1)}`,
+    );
+  if (margin) {
+    // Marching squares over cell centres, interpolating the zero crossing: a smooth line.
+    const v = (i: number, j: number) => margin[at(i, j)];
+    const cross = (i0: number, j0: number, i1: number, j1: number): [number, number] => {
+      const a = v(i0, j0),
+        b = v(i1, j1),
+        k = a / (a - b);
+      return [i0 + 0.5 + (i1 - i0) * k, j0 + 0.5 + (j1 - j0) * k];
+    };
+    for (let j = 0; j + 1 < ny; j++)
+      for (let i = 0; i + 1 < nx; i++) {
+        const corners: [number, number][] = [
+          [i, j],
+          [i + 1, j],
+          [i + 1, j + 1],
+          [i, j + 1],
+        ];
+        const points: [number, number][] = [];
+        for (let k = 0; k < 4; k++) {
+          const [i0, j0] = corners[k],
+            [i1, j1] = corners[(k + 1) % 4];
+          if (v(i0, j0) > 0 !== v(i1, j1) > 0) points.push(cross(i0, j0, i1, j1));
+        }
+        if (points.length >= 2) seg(points[0], points[1]);
+        if (points.length === 4) seg(points[2], points[3]);
+      }
+  } else {
+    // Several classes: trace the cell edges where neighbours disagree.
+    for (let j = 0; j < ny; j++)
+      for (let i = 0; i < nx; i++) {
+        if (i + 1 < nx && classes[at(i, j)] !== classes[at(i + 1, j)])
+          seg([i + 1, j], [i + 1, j + 1]);
+        if (j + 1 < ny && classes[at(i, j)] !== classes[at(i, j + 1)])
+          seg([i, j + 1], [i + 1, j + 1]);
+      }
+  }
+  return parts.join('');
+}
 
 const W = 260,
   H = 180,
@@ -72,19 +139,58 @@ export default function DataPlot({ data, label }: { data: PlotData; label: strin
           ))}
         </g>
       ) : (
-        data.points.map(([a, b], i) => {
-          const wrong = data.predicted && data.predicted[i] !== data.label[i];
-          return (
-            <circle
-              key={i}
-              className={`plot-point is-class-${data.label[i] % 4}${wrong ? ' is-wrong' : ''}`}
-              cx={sx(a)}
-              cy={sy(b)}
-              r={3.2}
-            />
-          );
-        })
+        <>
+          {data.field && <ClassRegions field={data.field} sx={sx} sy={sy} />}
+          {data.points.map(([a, b], i) => {
+            const wrong = data.predicted && data.predicted[i] !== data.label[i];
+            return (
+              <circle
+                key={i}
+                className={`plot-point is-class-${data.label[i] % 4}${wrong ? ' is-wrong' : ''}`}
+                cx={sx(a)}
+                cy={sy(b)}
+                r={3.2}
+              />
+            );
+          })}
+        </>
       )}
     </svg>
+  );
+}
+
+function ClassRegions({
+  field,
+  sx,
+  sy,
+}: {
+  field: ClassField;
+  sx: (v: number) => number;
+  sy: (v: number) => number;
+}) {
+  const { nx, ny, x0, x1, y0, y1, classes } = field;
+  // Field-cell coordinates -> plot pixels.
+  const px = (i: number) => sx(x0 + (i / nx) * (x1 - x0));
+  const py = (j: number) => sy(y0 + (j / ny) * (y1 - y0));
+  return (
+    <g className="plot-field" clipPath="url(#data-plot-clip)">
+      {classes.map((c, k) => {
+        const i = k % nx,
+          j = Math.floor(k / nx);
+        const x = px(i),
+          y = py(j + 1);
+        return (
+          <rect
+            key={k}
+            className={`plot-region is-class-${c % 4}`}
+            x={x}
+            y={y}
+            width={px(i + 1) - x + 0.4}
+            height={py(j) - y + 0.4}
+          />
+        );
+      })}
+      <path className="plot-boundary" d={boundaryPath(field, px, py)} />
+    </g>
   );
 }

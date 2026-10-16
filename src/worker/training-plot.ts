@@ -1,14 +1,29 @@
 import type { GraphJSON, GraphPlan } from '../engine/graph';
 import type { TrainingBatchSource } from '../engine/training';
-import type { Tensor } from '../engine/tensor';
-import type { PlotData } from '../ui/DataPlot';
+import { tensor, type Tensor } from '../engine/tensor';
+import type { ClassField, PlotData } from '../ui/DataPlot';
 
 export const TRAINING_PLOT_INTERVAL_MS = 250;
+/** Decision-field resolution; drawn under the points of two-feature classification plots. */
+export const FIELD_NX = 32,
+  FIELD_NY = 20;
+/** The field costs ~nx·ny/n extra model runs, so it refreshes less often than the points. */
+export const FIELD_INTERVAL_MS = 800;
 
 /** Await inside the runtime queue, never launch a concurrent model execution/readback. */
 export class TrainingPlotRefresh {
   private last = -Infinity;
+  private lastField = -Infinity;
+  private cached?: ClassField;
   constructor(private readonly now: () => number = () => performance.now()) {}
+  /** Recompute the decision field at most every FIELD_INTERVAL_MS (always when final). */
+  async field(compute: () => Promise<ClassField | undefined>, final = false) {
+    const now = this.now();
+    if (!final && now - this.lastField < FIELD_INTERVAL_MS) return this.cached;
+    this.lastField = now;
+    this.cached = await compute();
+    return this.cached;
+  }
   async refresh(capture: () => Promise<PlotData | undefined>, final = false) {
     const now = this.now();
     if (!final && now - this.last < TRAINING_PLOT_INTERVAL_MS) return undefined;
@@ -23,6 +38,10 @@ export async function trainingPlot(
   plan: GraphPlan,
   batch: TrainingBatchSource,
   output: string,
+  /** Gates the decision field (e.g. TrainingPlotRefresh.field); computed every call if omitted. */
+  fieldGate: (compute: () => Promise<ClassField | undefined>) => Promise<ClassField | undefined> = (
+    compute,
+  ) => compute(),
 ): Promise<PlotData | undefined> {
   if (typeof batch === 'function') return undefined;
   const x = batch.inputs.x,
@@ -60,11 +79,17 @@ export async function trainingPlot(
         for (let j = 1; j < c; j++) if (data[i * c + j] > data[i * c + best]) best = j;
         return best;
       });
+    const points = Array.from({ length: n }, (_, i): [number, number] => [
+      xs[2 * i],
+      xs[2 * i + 1],
+    ]);
+    const field = await fieldGate(() => classField(plan, batch.inputs, x, points, output, c));
     return {
       kind: 'classes',
-      points: Array.from({ length: n }, (_, i) => [xs[2 * i], xs[2 * i + 1]]),
+      points,
       label: labels(ts),
       predicted: labels(values),
+      ...(field ? { field } : {}),
     };
   } finally {
     plan.releaseExecution(outputs, [
@@ -72,4 +97,81 @@ export async function trainingPlot(
       ...(batch.targets ? [batch.targets] : []),
     ]);
   }
+}
+
+/** Same padding as the plot's axes, so the field fills the visible plane. */
+function padded(values: number[]): [number, number] {
+  const lo = Math.min(...values),
+    hi = Math.max(...values);
+  const pad = (hi - lo || 1) * 0.08;
+  return [lo - pad, hi + pad];
+}
+
+/**
+ * Evaluate the model over a grid of the plane. The plan was compiled for the dataset's batch
+ * size, so the grid runs in chunks of exactly n rows (the last chunk padded); other inputs
+ * (targets) are passed through unchanged and only the model output is read.
+ */
+async function classField(
+  plan: GraphPlan,
+  inputs: Record<string, Tensor>,
+  x: Tensor,
+  points: [number, number][],
+  output: string,
+  classes: number,
+): Promise<ClassField | undefined> {
+  const n = points.length;
+  const [x0, x1] = padded(points.map((p) => p[0]));
+  const [y0, y1] = padded(points.map((p) => p[1]));
+  const total = FIELD_NX * FIELD_NY;
+  const cell = (k: number): [number, number] => [
+    x0 + (((k % FIELD_NX) + 0.5) / FIELD_NX) * (x1 - x0),
+    y0 + ((Math.floor(k / FIELD_NX) + 0.5) / FIELD_NY) * (y1 - y0),
+  ];
+  // Launch every chunk first, then read them together: readbacks overlap instead of
+  // each waiting for the GPU in turn.
+  const runs: { chunk: Tensor; outputs: ReturnType<GraphPlan['execute']> }[] = [];
+  const result: number[] = [],
+    margin: number[] = [];
+  try {
+    for (let start = 0; start < total; start += n) {
+      const data = new Float32Array(2 * n);
+      for (let r = 0; r < n; r++) {
+        const [a, b] = cell(Math.min(total - 1, start + r));
+        data[2 * r] = a;
+        data[2 * r + 1] = b;
+      }
+      const chunk = tensor(data, [n, 2], x.backend);
+      runs.push({ chunk, outputs: plan.execute({ ...inputs, x: chunk }, new Map()) });
+    }
+    const ys = runs.map((run) => run.outputs[output]);
+    if (ys.some((y) => !y || y.shape.length !== 2 || y.shape[0] !== n || y.shape[1] !== classes))
+      return undefined;
+    const all = await Promise.all(ys.map((y) => y!.read()));
+    for (let k = 0; k < total; k++) {
+      const values = all[Math.floor(k / n)],
+        r = k % n;
+      let best = 0;
+      for (let j = 1; j < classes; j++)
+        if (values[r * classes + j] > values[r * classes + best]) best = j;
+      if (!Number.isFinite(values[r * classes + best])) return undefined;
+      result.push(best);
+      if (classes === 2) margin.push(values[r * 2 + 1] - values[r * 2]);
+    }
+  } finally {
+    for (const run of runs) {
+      plan.releaseExecution(run.outputs, Object.values(inputs));
+      run.chunk.dispose();
+    }
+  }
+  return {
+    nx: FIELD_NX,
+    ny: FIELD_NY,
+    x0,
+    x1,
+    y0,
+    y1,
+    classes: result,
+    ...(classes === 2 ? { margin } : {}),
+  };
 }

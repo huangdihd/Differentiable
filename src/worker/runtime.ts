@@ -294,6 +294,7 @@ export class WorkerRuntime {
                 run.plan,
                 run.session.batch,
                 run.level.interface.output,
+                (compute) => run.plotRefresh.field(compute, report.step >= run.level.steps),
               ),
             report.step >= run.level.steps,
           )
