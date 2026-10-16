@@ -50,6 +50,7 @@ import {
 import './ui/theme.css';
 import { MusicToggle } from './ui/MusicToggle';
 import { MathText } from './ui/MathText';
+import { levelPapers } from './levels/papers';
 import './ui/layout.css';
 
 type T = ReturnType<typeof createTranslator>;
@@ -1242,6 +1243,23 @@ function Editor({
             <button className="hint-toggle" onClick={() => setHintsShown((n) => n + 1)}>
               {t('ui.showHint', { n: hintsShown + 1 })}
             </button>
+          )}
+          {levelPapers[level.id] && (
+            <div className="papers">
+              <h2 className="label">{t('ui.papers')}</h2>
+              <ul>
+                {levelPapers[level.id].map((paper) => (
+                  <li key={paper.url}>
+                    <a href={paper.url} target="_blank" rel="noreferrer">
+                      {paper.title}
+                    </a>
+                    <span className="paper-meta">
+                      {paper.authors} · {paper.year}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
         <section className="section">

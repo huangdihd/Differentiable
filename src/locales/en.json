@@ -384,6 +384,7 @@
   "levels.1-7.hint1": "$ln$ is the natural logarithm. Since $1+x²$ is always positive, $x$ may have either sign. The outer $ln(u)$ has derivative $1/u$; the inner value is $u=1+x²$.",
   "levels.1-7.hint2": "The inner derivative is $2x$, giving $2x/(1+x²)$. Build it with Multiply, Add and Divide. At $x=1$, output 1.",
   "ui.showHint": "Show hint {n}",
+  "ui.papers": "Papers",
   "errors.invalid_fragment": "The pasted content is not circuit parts. Copy parts on the canvas before pasting.",
   "errors.invalid_port": "These ports cannot connect. Wire a right-side output to another part’s left-side input.",
   "errors.invalid_position": "Something went wrong inside the game. Undo the last action or refresh the page; if it keeps happening, this is a game bug.",

@@ -641,6 +641,38 @@ input[type='range'] {
 .hint-toggle:hover {
   border-bottom-style: solid;
 }
+.papers {
+  margin-top: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+.papers ul {
+  list-style: none;
+  margin: var(--s1) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.papers li {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.papers a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-strong);
+}
+.papers a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.paper-meta {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
 .help {
   white-space: pre-line;
   border-top: 1px dashed var(--line);
