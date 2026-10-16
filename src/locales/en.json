@@ -712,5 +712,8 @@
   "home.revokedTitle": "Some levels need redoing",
   "home.revokedBody": "The rules changed: Reciprocal and Divide must now work for negative numbers too (before, negatives gave NaN). Your old solutions only worked for positive numbers, so the levels below are marked unfinished again. Until you redo them, those components use the standard answer, so later levels keep working.",
   "home.revokedDismiss": "Dismiss",
+  "phone.title": "Phones aren't supported yet",
+  "phone.body": "This game is about dragging components, wiring them up and watching the canvas and value panels side by side; a phone screen has no room for that. Open it in a desktop browser (Chrome or Edge recommended):",
+  "phone.anyway": "Open anyway",
   "home.credit": "Made by huangdihd"
 }

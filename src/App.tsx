@@ -112,8 +112,21 @@ export default function App() {
       window.removeEventListener('pagehide', flush);
     };
   }, [saver]);
+  const [phone, setPhone] = useState(isPhone);
   const progress = (p: Progress) => setSave((s) => ({ ...s, progress: p }));
   const entry = level && entryFor(level);
+  if (phone)
+    return (
+      <main className="phone-gate blueprint-bg">
+        <div className="phone-gate-card">
+          <span className="brand-mark">∂</span>
+          <h1>{t('phone.title')}</h1>
+          <p>{t('phone.body')}</p>
+          <p className="phone-gate-url">{window.location.host}</p>
+          <button onClick={() => setPhone(false)}>{t('phone.anyway')}</button>
+        </div>
+      </main>
+    );
   return (
     <div className="app">
       <header className="topbar">
@@ -187,6 +200,17 @@ export default function App() {
         />
       )}
     </div>
+  );
+}
+
+/** Phones get a notice instead of the editor: wiring needs a pointer and room for three panels. */
+function isPhone() {
+  if (typeof navigator === 'undefined') return false;
+  if (/iPhone|iPod|Android.*Mobile|Windows Phone|Mobile.*Firefox/i.test(navigator.userAgent))
+    return true;
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse) and (max-width: 760px)').matches
   );
 }
 

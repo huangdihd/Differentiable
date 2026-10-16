@@ -709,5 +709,8 @@
   "home.revokedTitle": "有关卡需要重做",
   "home.revokedBody": "游戏规则更新了：「倒数」和「除法」现在也要对负数算对（以前遇到负数会得到 NaN）。你原来的解答只对正数成立，下面的关卡已改回未通过。重做之前，对应元件先用标准答案代替，后面的关卡照常能用。",
   "home.revokedDismiss": "知道了",
+  "phone.title": "暂不支持手机",
+  "phone.body": "这个游戏要拖元件、连线，还要同时看画布和数值面板，手机屏幕放不下。请用电脑上的浏览器（推荐 Chrome 或 Edge）打开：",
+  "phone.anyway": "仍然打开",
   "home.credit": "制作：huangdihd"
 }

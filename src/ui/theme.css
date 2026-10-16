@@ -2064,3 +2064,43 @@ input[type='range'] {
 .revoked-close:focus-visible {
   color: var(--text);
 }
+/* Phone notice: the only screen a phone sees until the player opts in. */
+.phone-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--s5) max(16px, env(safe-area-inset-right, 0px)) var(--s5)
+    max(16px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+.phone-gate-card {
+  display: grid;
+  justify-items: start;
+  gap: var(--s3);
+  max-width: 34ch;
+  padding: var(--s5);
+  border: 1px dashed var(--accent);
+  background: var(--panel);
+  line-height: 1.7;
+}
+.phone-gate-card h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.phone-gate-card p {
+  margin: 0;
+  color: var(--muted);
+}
+.phone-gate-card .phone-gate-url {
+  font-family: var(--mono);
+  color: var(--accent);
+  user-select: all;
+}
+.phone-gate-card button {
+  all: unset;
+  cursor: pointer;
+  margin-top: var(--s2);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  border-bottom: 1px dashed var(--muted);
+}
