@@ -8,6 +8,10 @@ const recip = (x: T.Tensor) => T.mul(x, T.exp(neg(T.log(T.mul(x, x)))));
 const sigmoid = (x: T.Tensor) => recip(T.add(constant(x, 1), T.exp(neg(x))));
 
 const definitions: {
+  /** Lessons inserted after release keep a stable named ID so saved progress still lines up. */
+  id?: string;
+  /** Seed slot for generated cases; numbered lessons use their position among numbered lessons. */
+  caseIndex?: number;
   name: string;
   formula: string;
   inputs?: string[];
@@ -21,6 +25,13 @@ const definitions: {
     formula: 'a + neg(b)',
     inputs: ['a', 'b'],
     reference: ({ a, b }) => T.add(a, neg(b)),
+  },
+  {
+    id: 'square',
+    caseIndex: 8,
+    name: 'square',
+    formula: 'x * x',
+    reference: ({ x }) => T.mul(x, x),
   },
   {
     name: 'recip',
@@ -52,8 +63,13 @@ const definitions: {
 ];
 
 export const chapter0Levels: ForwardLevel[] = [];
-for (const [index, definition] of definitions.entries()) {
-  const id = `0-${index + 1}`;
+const numbered = definitions.filter((definition) => !definition.id);
+const idOf = (definition: (typeof definitions)[number]) =>
+  definition.id ?? `0-${numbered.indexOf(definition) + 1}`;
+for (const [position, definition] of definitions.entries()) {
+  const id = idOf(definition);
+  const index = definition.caseIndex ?? numbered.indexOf(definition);
+  const next = definitions[position + 1];
   const inputs = definition.inputs ?? ['x'];
   const graph =
     definition.name === 'relu'
@@ -81,14 +97,16 @@ for (const [index, definition] of definitions.entries()) {
         titleKey: `levels.${id}.title`,
         descriptionKey: `levels.${id}.description`,
         hintsKeys: [`levels.${id}.hint1`, `levels.${id}.hint2`],
-        available: index < 6 ? scalarPrimitives : [...scalarPrimitives, 'max'],
+        available: ['relu', 'sqrt'].includes(definition.name)
+          ? [...scalarPrimitives, 'max']
+          : scalarPrimitives,
         forbidden: [definition.name],
         interface: {
           inputs: Object.fromEntries(inputs.map((name) => [name, []])),
           output: 'y',
           outputShape: [],
         },
-        unlock: [index === 7 ? '1-1' : `0-${index + 2}`],
+        unlock: [next ? idOf(next) : '1-1'],
         unlockComponents: [definition.name],
         referenceGraph: graph,
         ...(definition.nonzeroInputs ? { revalidateOnLoad: true } : {}),

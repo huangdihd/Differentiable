@@ -136,7 +136,7 @@ describe('tensor curriculum', () => {
       chapter2Levels[4].referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
     ).toEqual({ axis: 0 });
     expect(preceding.map((level) => level.par)).toEqual([
-      1, 2, 5, 6, 8, 10, 1, 3, 1, 3, 3, 5, 11, 13, 9, 2, 4, 14,
+      1, 2, 1, 5, 6, 8, 10, 1, 3, 1, 3, 3, 5, 11, 13, 9, 2, 4, 14,
     ]);
     expect(chapter2Levels.map((level) => level.par)).toEqual([1, 2, 2, 10, 3, 4, 5, 11, 33]);
   });

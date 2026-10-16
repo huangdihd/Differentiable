@@ -27,6 +27,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   tanh: 'tanh',
   relu: 'ReLU',
   sqrt: '√x',
+  square: 'x²',
   recip: '1/x',
   sigmoid: 'σ',
   matmul: '@',

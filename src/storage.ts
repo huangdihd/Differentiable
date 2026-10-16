@@ -316,7 +316,10 @@ export async function loadProgressWithMigration(
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
     // New lessons must not become completed merely because a legacy milestone follows them.
-    if (['axes', 'reshape', 'neuron', 'layer'].includes(level.id) && !passed.has(level.id))
+    if (
+      ['square', 'axes', 'reshape', 'neuron', 'layer'].includes(level.id) &&
+      !passed.has(level.id)
+    )
       continue;
     const saved = progress.savedGraphs[level.id];
     // A previously completed changed-contract circuit must be repaired by the player.

@@ -8,7 +8,8 @@ it('preserves every original chapter 0/1/2 par and fixed/seeded case', () => {
   // Signed reciprocal adds two primitives, including in lessons that expand it transitively.
   expect(chapter1Levels.slice(0, 7).map((level) => level.par)).toEqual([1, 3, 3, 5, 11, 13, 9]);
   const levels = [
-    ...chapter0Levels,
+    // Lessons inserted later have named IDs; only the originals are pinned here.
+    ...chapter0Levels.filter((level) => level.id !== 'square'),
     ...chapter1Levels.slice(0, 7),
     ...chapter2Levels.filter((level) => level.unlockComponents),
   ];

@@ -28,7 +28,10 @@ const formalLevels = [...chapter0Levels, ...chapter1Levels];
 describe('formal chapter catalog', () => {
   it('contains the sequential lessons and the preserved XOR challenge', () => {
     expect(gameLevels.map((level) => level.id)).toEqual([
-      ...Array.from({ length: 8 }, (_, i) => `0-${i + 1}`),
+      '0-1',
+      '0-2',
+      'square',
+      ...Array.from({ length: 6 }, (_, i) => `0-${i + 3}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
       'axes',
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
@@ -80,6 +83,7 @@ describe('formal chapter catalog', () => {
     expect(chapter0Levels.map((level) => [level.id, level.unlockComponents])).toEqual([
       ['0-1', ['neg']],
       ['0-2', ['sub']],
+      ['square', ['square']],
       ['0-3', ['recip']],
       ['0-4', ['div']],
       ['0-5', ['sigmoid']],
@@ -139,6 +143,7 @@ describe('formal chapter catalog', () => {
     '0-6': Math.tanh,
     '0-7': (x) => Math.max(x, 0),
     '0-8': Math.sqrt,
+    square: (x) => x * x,
     '1-1': (x) => x * x,
     '1-2': (x) => x * Math.exp(x),
     '1-3': (x) => Math.exp(3 * x),

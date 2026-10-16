@@ -105,7 +105,8 @@ describe('changed-contract storage revalidation', () => {
     expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-3', '0-4']);
     expect(restored.passed).not.toContain('0-3');
     expect(restored.passed).not.toContain('0-4');
-    expect(restored.unlocked).toEqual(progress.unlocked);
+    // Passing 0-2 also opens the square lesson inserted after it.
+    expect(restored.unlocked).toEqual([...progress.unlocked, 'square']);
     expect(restored.unlockedComponents).toEqual(progress.unlockedComponents);
     expect(restored.savedGraphs).toEqual(progress.savedGraphs);
   });

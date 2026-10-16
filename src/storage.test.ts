@@ -583,9 +583,13 @@ describe('storage', () => {
       [...chapter0Levels, ...chapter1Levels],
       source,
     );
+    // The square lesson was added later: it opens up but is never marked complete for the player.
     expect(progress.passed).toEqual(
-      [...chapter0Levels, ...chapter1Levels.slice(0, 2)].map((level) => level.id),
+      [...chapter0Levels, ...chapter1Levels.slice(0, 2)]
+        .map((level) => level.id)
+        .filter((id) => id !== 'square'),
     );
+    expect(progress.unlocked).toContain('square');
     expect(progress.passedSolutions['1-2']).toEqual(derivativeSolution);
     expect(progress.unlocked).toContain('1-3');
     expect(progress.unlockedComponents).toContain('sigmoid');
