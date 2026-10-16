@@ -2104,3 +2104,35 @@ input[type='range'] {
   color: var(--muted);
   border-bottom: 1px dashed var(--muted);
 }
+/* A tool earned at the end of chapter 1, until first used. */
+.new-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+.tool-grad.is-new {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  animation: new-pulse 1.6s ease-in-out infinite;
+}
+@keyframes new-pulse {
+  50% {
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-grad.is-new {
+    animation: none;
+  }
+}

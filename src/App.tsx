@@ -214,6 +214,21 @@ function isPhone() {
   );
 }
 
+/** Tools earned mid-game wear a NEW badge until first used (a per-browser nicety). */
+const SEEN_FEATURES_KEY = 'differentiable.seenFeatures';
+function readSeenFeatures(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(SEEN_FEATURES_KEY) ?? '[]');
+    return Array.isArray(value) ? value.filter((v) => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+const FEATURE_SYMBOLS: Record<string, string> = {
+  'levels.features.autodiff': '∂',
+  'levels.features.expression': 'f(x)',
+};
+
 function Home({
   t,
   progress,
@@ -526,6 +541,17 @@ function Editor({
   }, [level]);
   const [values, setValues] = useState<Record<string, NodeValue>>({});
   const [expression, setExpression] = useState('');
+  const [seenFeatures, setSeenFeatures] = useState(readSeenFeatures);
+  const markSeen = (feature: string) => {
+    if (seenFeatures.includes(feature)) return;
+    const next = [...seenFeatures, feature];
+    setSeenFeatures(next);
+    try {
+      localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify(next));
+    } catch {
+      // Private mode: the badge just comes back next visit.
+    }
+  };
   const [inside, setInside] = useState<{ name: string; graph: GraphJSON }[]>([]);
   const [shake, setShake] = useState<{ node: string; tick: number }>();
   const [ghost, setGhost] = useState<{ component: string; x: number; y: number }>();
@@ -1283,6 +1309,7 @@ function Editor({
           >
             <label className="label" htmlFor="expression">
               {t('ui.expression')}
+              {!seenFeatures.includes('expression') && <span className="new-badge">NEW</span>}
             </label>
             <div className="expression-row">
               <input
@@ -1293,6 +1320,7 @@ function Editor({
                 disabled={!canEdit}
                 autoComplete="off"
                 spellCheck={false}
+                onFocus={() => markSeen('expression')}
                 onChange={(e) => setExpression(e.target.value)}
               />
               <button className="btn" disabled={!canEdit || !expression.trim()}>
@@ -1422,7 +1450,7 @@ function Editor({
             <>
               <span className="tool-sep" />
               <button
-                className="tool-btn tool-wide tool-grad"
+                className={`tool-btn tool-wide tool-grad ${seenFeatures.includes('autodiff') ? '' : 'is-new'}`}
                 title={t(
                   level.kind === 'train' && level.chapter !== '3' && level.id !== 'xor'
                     ? 'worker.training_gradient_unavailable'
@@ -1434,9 +1462,13 @@ function Editor({
                   errors.some((e) => !e.soft) ||
                   (level.kind === 'train' && level.chapter !== '3' && level.id !== 'xor')
                 }
-                onClick={() => openGradientView(state.graph)}
+                onClick={() => {
+                  markSeen('autodiff');
+                  openGradientView(state.graph);
+                }}
               >
                 ∂ {t('gradView.open')}
+                {!seenFeatures.includes('autodiff') && <span className="new-badge">NEW</span>}
               </button>
             </>
           )}
@@ -2067,6 +2099,15 @@ function WinModal({
           LEVEL {code} · {t('ui.complete')}
         </div>
         <h2>{t('ui.levelComplete', { title })}</h2>
+        {features.map((key) => (
+          <div className="unlock" key={key}>
+            <span className="unlock-sym">{FEATURE_SYMBOLS[key] ?? '★'}</span>
+            <div>
+              <b>{t(key)}</b>
+              <p className="hint">{t(`${key}.body`)}</p>
+            </div>
+          </div>
+        ))}
         {unlocked.length ? (
           unlocked.map((c) => (
             <div className="unlock" key={c}>
@@ -2077,7 +2118,7 @@ function WinModal({
               </div>
             </div>
           ))
-        ) : (
+        ) : features.length ? null : (
           <p className="muted">{t('ui.noUnlock')}</p>
         )}
         {par !== undefined && (
@@ -2086,11 +2127,6 @@ function WinModal({
             {t(metrics.expandedPrimitives <= par ? 'ui.parMet' : 'ui.parNotMet')}
           </p>
         )}
-        {features.map((key) => (
-          <p className="status status-pass" key={key}>
-            {t(key)}
-          </p>
-        ))}
         {onReveal && (
           <button className="btn btn-grad" onClick={onReveal}>
             ∂ {t('gradView.revealButton')} →
