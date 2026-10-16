@@ -28,7 +28,7 @@ const FUNCTIONS = new Set([
   'CE',
 ]);
 
-const SCRIPT = '[⁰-ⁿ₀-ₜᵢⱼᵀ′″ˣʸᵏⁱᵘ⁻⁺]*';
+const SCRIPT = '[⁰-ⁿ₀-ₜᵢⱼᵀ′″ˣʸᵏⁱᵘᵃᵇʷ⁻⁺]*';
 const TOKEN = new RegExp(
   [
     `(?<word>[A-Za-z_][A-Za-z_]+)${SCRIPT}`, // function names, or several letters
@@ -77,6 +77,11 @@ const SUP: Record<string, string> = {
   ᵏ: 'k',
   ⁱ: 'i',
   ᵘ: 'u',
+  ᵃ: 'a',
+  ᵇ: 'b',
+  ʷ: 'w',
+  '⁽': '(',
+  '⁾': ')',
 };
 
 /** Unicode sub/superscript characters as real <sub>/<sup>: the math font has no glyphs for them. */

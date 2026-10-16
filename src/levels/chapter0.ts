@@ -4,7 +4,7 @@ import { cases, formulaGraph, scalarPrimitives, withPar } from './level-helpers'
 
 const constant = (x: T.Tensor, value: number) => T.tensor([value], [], x.backend);
 const neg = (x: T.Tensor) => T.mul(x, constant(x, -1));
-const recip = (x: T.Tensor) => T.exp(neg(T.log(x)));
+const recip = (x: T.Tensor) => T.mul(x, T.exp(neg(T.log(T.mul(x, x)))));
 const sigmoid = (x: T.Tensor) => recip(T.add(constant(x, 1), T.exp(neg(x))));
 
 const definitions: {
@@ -12,6 +12,7 @@ const definitions: {
   formula: string;
   inputs?: string[];
   positiveInputs?: string[];
+  nonzeroInputs?: string[];
   reference: ForwardLevel['reference'];
 }[] = [
   { name: 'neg', formula: 'x * (-1)', reference: ({ x }) => neg(x) },
@@ -23,15 +24,15 @@ const definitions: {
   },
   {
     name: 'recip',
-    formula: 'exp(neg(log(x)))',
-    positiveInputs: ['x'],
+    formula: 'x * exp(neg(log(x * x)))',
+    nonzeroInputs: ['x'],
     reference: ({ x }) => recip(x),
   },
   {
     name: 'div',
     formula: 'a * recip(b)',
     inputs: ['a', 'b'],
-    positiveInputs: ['b'],
+    nonzeroInputs: ['b'],
     reference: ({ a, b }) => T.mul(a, recip(b)),
   },
   { name: 'sigmoid', formula: 'recip(1 + exp(neg(x)))', reference: ({ x }) => sigmoid(x) },
@@ -90,7 +91,8 @@ for (const [index, definition] of definitions.entries()) {
         unlock: [index === 7 ? '1-1' : `0-${index + 2}`],
         unlockComponents: [definition.name],
         referenceGraph: graph,
-        ...cases(index, definition.positiveInputs, inputs),
+        ...(definition.nonzeroInputs ? { revalidateOnLoad: true } : {}),
+        ...cases(index, definition.positiveInputs, inputs, undefined, definition.nonzeroInputs),
         reference: definition.reference,
       },
       chapter0Levels,

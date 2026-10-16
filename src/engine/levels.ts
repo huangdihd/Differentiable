@@ -28,6 +28,8 @@ export interface LevelMetadata {
   forbidden?: readonly string[];
   presets?: readonly string[];
   referenceGraph?: GraphJSON;
+  /** Recheck persisted solutions against current cases when loading progress. */
+  revalidateOnLoad?: boolean;
   par?: number;
   unlockFeatures?: readonly string[];
   /** Shown on completion as a gradient graph: "here is what you just did by hand". */

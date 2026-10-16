@@ -5,7 +5,8 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 
 it('preserves every original chapter 0/1/2 par and fixed/seeded case', () => {
-  expect(chapter1Levels.slice(0, 7).map((level) => level.par)).toEqual([1, 3, 3, 3, 9, 11, 7]);
+  // Signed reciprocal adds two primitives, including in lessons that expand it transitively.
+  expect(chapter1Levels.slice(0, 7).map((level) => level.par)).toEqual([1, 3, 3, 5, 11, 13, 9]);
   const levels = [
     ...chapter0Levels,
     ...chapter1Levels.slice(0, 7),

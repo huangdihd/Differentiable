@@ -54,7 +54,7 @@ describe('gradient descent curriculum', () => {
     ]);
     expect(
       ['3-1', '3-2', '3-3', '3-4'].map((id) => chapter3Levels.find((l) => l.id === id)!.par),
-    ).toEqual([7, 6, 11, 13]);
+    ).toEqual([7, 6, 13, 15]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);

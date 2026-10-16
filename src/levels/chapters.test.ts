@@ -119,8 +119,9 @@ describe('formal chapter catalog', () => {
         for (const [name, data] of Object.entries(test.inputs)) {
           expect(data).toHaveLength(1);
           expect(data.every(Number.isFinite)).toBe(true);
-          if (['0-3', '0-8', '1-4'].includes(level.id) || (level.id === '0-4' && name === 'b'))
-            expect(data.every((x) => x > 0)).toBe(true);
+          if (['0-8', '1-4'].includes(level.id)) expect(data.every((x) => x > 0)).toBe(true);
+          if (level.id === '0-3' || (level.id === '0-4' && name === 'b'))
+            expect(data.every((x) => x !== 0)).toBe(true);
         }
       }
       if (level.id === '0-4') expect(level.fixed.some((test) => test.inputs.a[0] < 0)).toBe(true);

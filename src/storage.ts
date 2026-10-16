@@ -202,13 +202,41 @@ function constructionUnlocks(progress: Progress, levels: readonly Level[]): stri
   ].filter((id) => levels.some((level) => level.id === id));
 }
 
-/** Load current saves synchronously elsewhere; App awaits this entry point to validate legacy solutions.
+/** Recheck changed contracts in catalog order so later lessons use repaired component fallbacks. */
+async function revalidateSolutions(
+  progress: Progress,
+  levels: readonly Level[],
+): Promise<string[]> {
+  const revoked: string[] = [];
+  for (const level of levels) {
+    const solution = progress.passedSolutions[level.id];
+    if (!level.revalidateOnLoad || !progress.passed.includes(level.id) || !solution) continue;
+    const result = await evaluateLevel(
+      { ...level, available: availableComponents(level, progress) },
+      solution,
+      { registry: buildPlayerRegistry(levels, progress) },
+    );
+    if (result.passed) continue;
+    progress.savedGraphs[level.id] ??= structuredClone(solution);
+    progress.passed = progress.passed.filter((id) => id !== level.id);
+    delete progress.passedSolutions[level.id];
+    delete progress.bestScores[level.id];
+    revoked.push(level.id);
+  }
+  return revoked;
+}
+
+/** App awaits this entry point to validate legacy and changed-contract solutions.
  * Catalog order is progression order. Legacy milestones credit their prerequisite lessons,
  * using verified reference circuits when old graphs are absent or no longer compatible.
+ * Changed-contract saved solutions are never replaced with automatic completion credit.
+ * Optional onRevoked receives revoked level IDs once, after persistence (only when nonempty).
+ * The return value remains Promise<Progress>; synchronous loadProgress does not revalidate.
  */
 export async function loadProgressWithMigration(
   levels: readonly Level[],
   source: StorageSource = browserStorage,
+  onRevoked?: (levelIds: string[]) => void,
 ): Promise<Progress> {
   let legacy: Progress;
   try {
@@ -240,7 +268,9 @@ export async function loadProgressWithMigration(
           ]),
         ],
       };
-      if (envelope.version === 2) saveProgress(restored, source);
+      const revoked = await revalidateSolutions(restored, levels);
+      if (envelope.version === 2 || revoked.length) saveProgress(restored, source);
+      if (revoked.length) onRevoked?.(revoked);
       return restored;
     }
     if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
@@ -280,6 +310,8 @@ export async function loadProgressWithMigration(
         .map(([id, settings]) => [mapId(id), { ...settings }]),
     );
   }
+  progress.unlockedComponents = [...legacy.unlockedComponents];
+  const revoked: string[] = [];
   const passed = new Set(legacy.passed.map(mapId));
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
@@ -287,14 +319,19 @@ export async function loadProgressWithMigration(
     if (['axes', 'reshape', 'neuron', 'layer'].includes(level.id) && !passed.has(level.id))
       continue;
     const saved = progress.savedGraphs[level.id];
-    for (const graph of [saved, level.referenceGraph]) {
+    // A previously completed changed-contract circuit must be repaired by the player.
+    const revalidate = level.revalidateOnLoad && passed.has(level.id) && saved;
+    for (const graph of revalidate ? [saved] : [saved, level.referenceGraph]) {
       if (!graph) continue;
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         graph,
         { registry: buildPlayerRegistry(levels, progress) },
       );
-      if (!result.passed) continue;
+      if (!result.passed) {
+        if (revalidate) revoked.push(level.id);
+        continue;
+      }
       progress.passed.push(level.id);
       progress.passedSolutions[level.id] = structuredClone(graph);
       progress.bestScores[level.id] = result.metrics;
@@ -306,6 +343,7 @@ export async function loadProgressWithMigration(
     }
   }
   saveProgress(progress, source);
+  if (revoked.length) onRevoked?.(revoked);
   return progress;
 }
 export function saveProgress(progress: Progress, source: StorageSource = browserStorage): boolean {

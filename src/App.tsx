@@ -73,6 +73,7 @@ export default function App() {
   const [backend, setBackend] = useState('pending');
   const [failure, setFailure] = useState<WorkerError>();
   const [fallback, setFallback] = useState(false);
+  const [revoked, setRevoked] = useState<string[]>([]);
   const client = useRef<WorkerClient>(null);
   const revision = useRef(0);
   const t = createTranslator(save.settings.language);
@@ -80,7 +81,7 @@ export default function App() {
     const c = new WorkerClient();
     client.current = c;
     let active = true;
-    loadProgressWithMigration(gameLevels)
+    loadProgressWithMigration(gameLevels, undefined, setRevoked)
       .then(async (progress) => {
         if (!active) return undefined;
         setSave((s) => ({ ...s, progress }));
@@ -176,7 +177,14 @@ export default function App() {
           revision={revision}
         />
       ) : (
-        <Home t={t} progress={save.progress} ready={backend !== 'pending'} onOpen={setLevel} />
+        <Home
+          t={t}
+          progress={save.progress}
+          ready={backend !== 'pending'}
+          onOpen={setLevel}
+          revoked={revoked}
+          onDismissRevoked={() => setRevoked([])}
+        />
       )}
     </div>
   );
@@ -187,11 +195,15 @@ function Home({
   progress,
   ready,
   onOpen,
+  revoked,
+  onDismissRevoked,
 }: {
   t: T;
   progress: Progress;
   ready: boolean;
   onOpen: (level: Level) => void;
+  revoked: string[];
+  onDismissRevoked: () => void;
 }) {
   const fresh = progress.passed.length === 0;
   // Where the player left off: the first unlocked, unpassed level in road order.
@@ -221,6 +233,30 @@ function Home({
             <span aria-hidden="true">→</span>
           </button>
         </section>
+        {revoked.length > 0 && (
+          <section className="revoked" role="status">
+            <div>
+              <b>{t('home.revokedTitle')}</b>
+              <p>{t('home.revokedBody')}</p>
+              <p className="revoked-levels">
+                {catalog
+                  .filter((e) => revoked.includes(e.level.id))
+                  .map((e) => (
+                    <button key={e.level.id} disabled={!ready} onClick={() => onOpen(e.level)}>
+                      <span className="level-id">{e.code}</span> {t(e.level.titleKey)} →
+                    </button>
+                  ))}
+              </p>
+            </div>
+            <button
+              className="revoked-close"
+              aria-label={t('home.revokedDismiss')}
+              onClick={onDismissRevoked}
+            >
+              ×
+            </button>
+          </section>
+        )}
         <ol className="road">
           {CHAPTERS.map((n) => {
             const levels = catalog.filter((e) => e.chapter === n);

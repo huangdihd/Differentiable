@@ -34,10 +34,13 @@ export function buildPlayerRegistry(
       const existing = definitions.get(name);
       // Native-only unlocks grant access; they are not implementations of the lesson.
       if (existing && !existing.subgraph) continue;
-      // Keep a self-contained built-in preset until the player has supplied a solution.
-      // Chapter reference graphs may depend on components the player has not earned yet.
+      // Earned components remain usable after a saved solution is revoked. Unearned presets
+      // keep their self-contained built-ins: chapter references may need unearned components.
       const source =
-        solution ?? (presets.has(name) && !existing ? level.referenceGraph : undefined);
+        solution ??
+        (progress.unlockedComponents.includes(name) || (presets.has(name) && !existing)
+          ? level.referenceGraph
+          : undefined);
       if (!source) continue;
       const output = 'out';
       const subgraph: GraphJSON = structuredClone(source);

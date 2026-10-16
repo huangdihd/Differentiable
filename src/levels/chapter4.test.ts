@@ -126,7 +126,7 @@ it('chapter contracts keep unlocks and interfaces in progression order', () => {
     ['4-5'],
     ['5-1'],
   ]);
-  expect(chapter4Levels.map((level) => level.par)).toEqual([4, 10, 10, 5, 2, 29]);
+  expect(chapter4Levels.map((level) => level.par)).toEqual([4, 10, 12, 5, 2, 33]);
   for (const level of chapter4Levels) {
     expect(level.hintsKeys).toHaveLength(2);
     expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);

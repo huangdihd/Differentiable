@@ -840,12 +840,18 @@ input[type='range'] {
   margin: var(--s3) 0;
   border: 1px dashed var(--accent);
 }
+.unlock > div {
+  min-width: 0;
+}
 .unlock .hint {
   margin: 2px 0 0;
 }
 .unlock-sym {
-  width: 40px;
+  /* Symbols range from "+" to "tanh" or "attn": size to the glyphs, never overlap the text. */
+  flex: none;
+  min-width: 40px;
   text-align: center;
+  white-space: nowrap;
   font-family: var(--mono);
   font-size: 24px;
   color: var(--accent);
@@ -1932,6 +1938,8 @@ input[type='range'] {
 .math {
   font-size: 1.12em;
   padding: 0 0.1em;
+  /* An inline formula reads as one word: never break σ′ from (x). Long ones go in $$…$$. */
+  white-space: nowrap;
 }
 .math-block {
   display: block;
@@ -2005,4 +2013,54 @@ input[type='range'] {
 }
 .home-foot .demo-tag {
   margin-right: var(--s1);
+}
+/* Home notice after a rule change revoked saved solutions; same dashed accent frame as unlocks. */
+.revoked {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  margin: var(--s4) 0 var(--s5);
+  padding: var(--s3) var(--s4);
+  border: 1px dashed var(--accent);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+.revoked > div {
+  flex: 1;
+  min-width: 0;
+}
+.revoked p {
+  margin: var(--s1) 0 0;
+  max-width: 64ch;
+  color: var(--muted);
+}
+.revoked-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.revoked-levels button {
+  all: unset;
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.revoked-levels button:hover,
+.revoked-levels button:focus-visible {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.revoked-close {
+  all: unset;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+}
+.revoked-close:hover,
+.revoked-close:focus-visible {
+  color: var(--text);
 }

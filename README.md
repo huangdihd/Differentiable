@@ -36,6 +36,22 @@ Run `npm run dev` for chapter selection, graph editing, probes, tests and resuma
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
 - Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
 
+### Signed arithmetic and save revalidation
+
+Chapter 0 reciprocal and division test positive and negative nonzero inputs. Reciprocal uses
+`x * exp(neg(log(x * x)))`; sqrt retains its positive-only cases. Levels marked
+`revalidateOnLoad` recheck saved passing circuits with the current evaluator on async load.
+Failed circuits lose completion and scores, but retain unlocks and earned components; an existing
+draft is preserved, otherwise the revoked circuit becomes the draft. Earned components without
+passing solutions use their chapter reference circuit, while unearned presets keep their
+self-contained built-ins. `loadProgressWithMigration(levels, source, onRevoked?)` optionally
+reports the revoked level IDs to its third-argument callback; the home screen lists them with
+links back to each level until dismissed.
+
+Real-valued property inputs accept decimal fractions such as `1/3` and `[1/2, -1/4]`.
+Nonfinite results (including division by zero) are invalid. Integer-only fields retain their
+existing syntax; draft text keeps the player's original spelling.
+
 ### Parameter names
 
 Parameter properties include an optional display-only name (`attrs.label`): whitespace is trimmed,

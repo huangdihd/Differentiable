@@ -122,8 +122,10 @@ export function cases(
   positiveInputs: readonly string[] = [],
   inputs: readonly string[] = ['x'],
   thirdColumn?: readonly number[],
+  nonzeroInputs: readonly string[] = [],
 ) {
   const positive = [0.1, 0.25, 0.5, 1, 2, 3, 4, 5];
+  const nonzero = [-3, -2, -0.5, -0.25, 0.25, 0.5, 1, 3];
   const first = [-3, -2, -1, -0.25, 0, 0.5, 1, 3];
   const second = [2, -1, 0.5, 3, -2, 0, -0.5, 1];
   return {
@@ -135,11 +137,13 @@ export function cases(
           [
             positiveInputs.includes(name)
               ? positive[k]
-              : i === 2 && thirdColumn
-                ? thirdColumn[k]
-                : i
-                  ? second[k]
-                  : first[k],
+              : nonzeroInputs.includes(name)
+                ? nonzero[k]
+                : i === 2 && thirdColumn
+                  ? thirdColumn[k]
+                  : i
+                    ? second[k]
+                    : first[k],
           ],
         ]),
       ),
@@ -152,7 +156,13 @@ export function cases(
         inputs: Object.fromEntries(
           inputs.map((name) => [
             name,
-            [positiveInputs.includes(name) ? 0.1 + random.uniform() * 5 : random.uniform() * 6 - 3],
+            [
+              positiveInputs.includes(name)
+                ? 0.1 + random.uniform() * 5
+                : nonzeroInputs.includes(name)
+                  ? (random.uniform() < 0.5 ? -1 : 1) * (0.1 + random.uniform() * 3)
+                  : random.uniform() * 6 - 3,
+            ],
           ]),
         ),
       }),

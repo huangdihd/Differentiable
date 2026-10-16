@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { GraphNode, Attributes } from '../engine/graph';
 import { translatePort } from '../i18n';
 import { shapeText } from './Canvas';
+import { parseRealNumber, parseRealValue } from './real-number';
 
 type Props = {
   node: GraphNode;
@@ -53,7 +54,7 @@ function draftFrom(attrs: Attributes): Draft {
   );
 }
 
-/** Blank optional fields remove the attribute; lists accept JSON or comma-separated numbers. */
+/** Blank optional fields remove attributes; real values accept fractions, integer lists stay JSON. */
 export function validateProperties(component: string, draft: Draft, base: Attributes = {}) {
   const attrs = { ...base };
   const errors: Record<string, string> = {};
@@ -83,7 +84,12 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
         attrs[key] = text;
         continue;
       }
-      const value: unknown = JSON.parse(list && !text.startsWith('[') ? `[${text}]` : text);
+      const value: unknown =
+        key === 'value' && component === 'const'
+          ? parseRealValue(text)
+          : key === 'value' || key === 'scale'
+            ? parseRealNumber(text)
+            : JSON.parse(list && !text.startsWith('[') ? `[${text}]` : text);
       const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
       if (list) {
         if (!Array.isArray(value) || !value.every(Number.isSafeInteger)) throw Error();
