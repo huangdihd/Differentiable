@@ -22,6 +22,7 @@ import { WorkerClient, WorkerClientError } from './worker/client';
 import type { WorkerError } from './worker/protocol';
 import type { TrainingReport, TrainingStepTrace } from './engine/training';
 import Canvas, {
+  nonfiniteKind,
   position,
   shapeText,
   signal,
@@ -52,6 +53,7 @@ import {
   nodeHeight,
 } from './ui/graph-geometry';
 import { TrainingLoop } from './ui/TrainingLoop';
+import { ComponentPalette } from './ui/ComponentPalette';
 import { Coach } from './ui/Coach';
 import {
   STORAGE_VERSION,
@@ -69,6 +71,7 @@ import { SfxToggle } from './ui/SfxToggle';
 import { sfx, type SfxName } from './audio/sfx';
 import { MathText } from './ui/MathText';
 import { levelPapers } from './levels/papers';
+import { levelLearningResources } from './levels/learning-resources';
 import './ui/layout.css';
 
 type T = ReturnType<typeof createTranslator>;
@@ -842,6 +845,8 @@ function Editor({
     expected && !('invalid' in parsedInputs)
       ? level.outputAxes?.(parsedInputs as Record<string, number[]>)
       : undefined;
+  // y = f(x) lessons get a plot of the target curve under their description.
+  const plotInput = level.kind === 'train' ? undefined : plottedInput(level);
 
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
   useEffect(() => {
@@ -858,7 +863,14 @@ function Editor({
         if (!c) return;
         const next: Record<string, NodeValue> = {};
         const found: WorkerError[] = [];
-        for (const node of state.graph.nodes) {
+        // Function plots evaluate their output first and publish it immediately; the remaining node
+        // labels can catch up without holding the player tangent back while the graph is scrubbed.
+        const nodes = plotInput
+          ? [...state.graph.nodes].sort(
+              (a, b) => Number(b.component === 'output') - Number(a.component === 'output'),
+            )
+          : state.graph.nodes;
+        for (const node of nodes) {
           const port =
             node.component === 'output'
               ? null
@@ -890,9 +902,12 @@ function Editor({
               text: shown,
               title: `[${r.shape.join('×') || '·'}] ${fullValues(r.values)}`,
               ok: r.values.every(Number.isFinite),
+              nonfinite: nonfiniteKind(r.values),
               shape: r.shape,
               signal: signal(r.values),
             };
+            if (plotInput && node.component === 'output')
+              setValues((current) => ({ ...current, [node.id]: next[node.id] }));
           } catch (e) {
             if (cancelled || revision.current !== probeRevision) return;
             const d = e instanceof WorkerClientError ? e.detail : undefined;
@@ -907,13 +922,13 @@ function Editor({
         setValues(next);
         setProbeErrors(found);
       },
-      verify ? 10 : 300,
+      verify ? 10 : plotInput ? 0 : 300,
     );
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [computationKey, parsedInputs, diagnostics, busy, locale]);
+  }, [computationKey, parsedInputs, diagnostics, busy, locale, plotInput]);
 
   const PHASE_MS = 1100;
   const stepOnce = async () => {
@@ -985,6 +1000,7 @@ function Editor({
         text: traceText(v),
         title: `[${v.shape.join('×') || '·'}] ${fullValues(v.values)}${v.size > v.values.length ? ' …' : ''}`,
         ok: v.values.every(Number.isFinite),
+        nonfinite: nonfiniteKind(v.values),
         shape: v.shape,
         signal: signal(v.values),
       };
@@ -1162,47 +1178,71 @@ function Editor({
     }
   };
 
+  const addPaletteComponent = (
+    component: string,
+    at: { x: number; y: number },
+    findRoom: boolean,
+  ) => {
+    const attrs = defaults(component);
+    let position = { x: at.x - NODE_W / 2, y: at.y - 13 };
+    if (findRoom) {
+      // A drag drops exactly where the player let go; a click or keypress looks for room nearby.
+      const placed = layoutGraph(state.graph, registry);
+      const rects = state.graph.nodes.flatMap((n) => {
+        const p = placed.get(n.id);
+        return p ? [{ ...p, w: NODE_W, h: nodeHeight(n, registry) }] : [];
+      });
+      const h = nodeHeight({ id: '', component, attrs }, registry);
+      position = freeSpot(position, NODE_W, h, rects);
+    }
+    command({ type: 'addNode', component, attrs, position });
+  };
+  const activatePaletteComponent = (component: string) => {
+    if (busy || inside.length) return;
+    const rect = document.querySelector('.canvas')?.getBoundingClientRect();
+    const at = rect
+      ? canvas.current?.toGraph(rect.left + rect.width * 0.45, rect.top + rect.height * 0.45)
+      : null;
+    if (at) addPaletteComponent(component, at, true);
+  };
   // Palette: press on an item and drag it onto the canvas; a plain click drops it near the middle.
   const startPaletteDrag = (component: string, e: React.PointerEvent) => {
     if (busy || inside.length || e.button !== 0) return;
     e.preventDefault();
-    const sx = e.clientX,
+    const pointerId = e.pointerId,
+      sx = e.clientX,
       sy = e.clientY;
     let moved = false;
     setGhost({ component, x: sx, y: sy });
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('blur', cancel);
+    };
+    const cancel = () => {
+      cleanup();
+      setGhost(undefined);
+    };
     const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 3) moved = true;
       setGhost({ component, x: ev.clientX, y: ev.clientY });
     };
     const up = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      setGhost(undefined);
-      const at = moved
-        ? canvas.current?.toGraph(ev.clientX, ev.clientY)
-        : (() => {
-            const r = document.querySelector('.canvas')?.getBoundingClientRect();
-            return r
-              ? canvas.current?.toGraph(r.left + r.width * 0.45, r.top + r.height * 0.45)
-              : null;
-          })();
-      if (!at) return;
-      const attrs = defaults(component);
-      let position = { x: at.x - NODE_W / 2, y: at.y - 13 };
+      if (ev.pointerId !== pointerId) return;
+      cancel();
       if (!moved) {
-        // A drag drops exactly where the player let go; a click looks for room near the middle.
-        const placed = layoutGraph(state.graph, registry);
-        const rects = state.graph.nodes.flatMap((n) => {
-          const p = placed.get(n.id);
-          return p ? [{ ...p, w: NODE_W, h: nodeHeight(n, registry) }] : [];
-        });
-        const h = nodeHeight({ id: '', component, attrs }, registry);
-        position = freeSpot(position, NODE_W, h, rects);
+        activatePaletteComponent(component);
+        return;
       }
-      command({ type: 'addNode', component, attrs, position });
+      const at = canvas.current?.toGraph(ev.clientX, ev.clientY);
+      if (at) addPaletteComponent(component, at, false);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('blur', cancel);
   };
 
   const insertExpression = () => {
@@ -1246,7 +1286,8 @@ function Editor({
   const primitives = available.filter(
     (name) => !playerComponents.includes(name) && !presets.includes(name),
   );
-  const outputValue = values[state.graph.nodes.find((n) => n.component === 'output')?.id ?? ''];
+  const outputNodeId = state.graph.nodes.find((n) => n.component === 'output')?.id ?? '';
+  const outputValue = values[outputNodeId];
   const outputActual = outputValue?.shape && {
     shape: outputValue.shape,
     values: outputValue.title
@@ -1254,9 +1295,16 @@ function Editor({
       .split(', ')
       .map(Number),
   };
+  const changeScalarInput = (name: string, value: string) => {
+    setInputCase('');
+    setValues((current) => {
+      const next = { ...current };
+      delete next[outputNodeId];
+      return next;
+    });
+    setInputs((current) => ({ ...current, [name]: value }));
+  };
   const canEdit = !busy && !inside.length;
-  // y = f(x) lessons get a plot of the target curve under their description.
-  const plotInput = level.kind === 'train' ? undefined : plottedInput(level);
   const coaching =
     level.id === '0-1' && !progress.passed.includes('0-1') && !coachSkipped && !inside.length;
   // The empty-canvas hint is for the very first look only: any edit (even wiring x straight to y)
@@ -1299,15 +1347,14 @@ function Editor({
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
           {plotInput && level.kind !== 'train' && (
             <FunctionPlot
+              key={level.id}
               t={t}
               level={level}
               input={plotInput}
               x={'invalid' in parsedInputs ? undefined : parsedInputs[plotInput]?.[0]}
+              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
               actual={outputActual?.values[0]}
-              onPick={(x) => {
-                setInputCase('');
-                setInputs((s) => ({ ...s, [plotInput]: String(x) }));
-              }}
+              onPick={(x) => changeScalarInput(plotInput, String(x))}
             />
           )}
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
@@ -1324,84 +1371,58 @@ function Editor({
               {t('ui.showHint', { n: hintsShown + 1 })}
             </button>
           )}
-          {levelPapers[level.id] && (
-            <div className="papers">
-              <h2 className="label">{t('ui.papers')}</h2>
-              <ul>
-                {levelPapers[level.id].map((paper) => (
-                  <li key={paper.url}>
-                    <a href={paper.url} target="_blank" rel="noreferrer">
-                      {paper.title}
-                    </a>
-                    <span className="paper-meta">
-                      {paper.authors} · {paper.year}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+          {(levelPapers[level.id] || levelLearningResources[level.id]) && (
+            <div className="further-reading">
+              {levelPapers[level.id] && (
+                <div className="papers">
+                  <h2 className="label">{t('ui.papers')}</h2>
+                  <ul>
+                    {levelPapers[level.id].map((paper) => (
+                      <li key={paper.url}>
+                        <a href={paper.url} target="_blank" rel="noreferrer">
+                          {paper.title}
+                        </a>
+                        <span className="paper-meta">
+                          {paper.authors} · {paper.year}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {levelLearningResources[level.id] && (
+                <div className="learning-resources">
+                  <h2 className="label">{t('ui.learnMore')}</h2>
+                  <ul>
+                    {levelLearningResources[level.id].map((resource) => (
+                      <li key={resource.titleKey}>
+                        <a href={resource.url[locale]} target="_blank" rel="noreferrer">
+                          {t(resource.titleKey)}
+                        </a>
+                        <span className="paper-meta">{t(resource.descriptionKey)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
-        <section className="section">
-          <h2 className="label">{t('ui.primitives')}</h2>
-          <div className="palette">
-            {primitives.map((name) => (
-              <PaletteItem
-                key={name}
-                name={name}
-                t={t}
-                disabled={!canEdit}
-                onPress={startPaletteDrag}
-              />
-            ))}
-          </div>
+        <section className="section component-library">
+          <h2 className="label">{t('ui.components')}</h2>
+          <ComponentPalette
+            entries={[
+              ...primitives.map((name) => ({ name })),
+              ...playerComponents.map((name) => ({ name, player: true })),
+              ...(level.unlockComponents ?? []).map((name) => ({ name, locked: true })),
+              ...presets.map((name) => ({ name })),
+            ]}
+            t={t}
+            disabled={!canEdit}
+            onPress={startPaletteDrag}
+            onActivate={activatePaletteComponent}
+          />
         </section>
-        {(playerComponents.length > 0 || (level.unlockComponents ?? []).length > 0) && (
-          <section className="section">
-            <h2 className="label">{t('ui.player')}</h2>
-            <div className="palette">
-              {playerComponents.map((name) => (
-                <PaletteItem
-                  key={name}
-                  name={name}
-                  t={t}
-                  player
-                  disabled={!canEdit}
-                  onPress={startPaletteDrag}
-                />
-              ))}
-              {(level.unlockComponents ?? []).map((name) => (
-                <div
-                  className="palette-item is-locked"
-                  key={name}
-                  data-category={categoryOf(name)}
-                  title={t('ui.producedHere')}
-                >
-                  <span className="sym">{SYMBOLS[name] ?? '?'}</span>
-                  <span className="name">
-                    {t(`components.${name}`)} · {t('ui.producedHere')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-        {presets.length > 0 && (
-          <section className="section">
-            <h2 className="label">{t('ui.presets')}</h2>
-            <div className="palette">
-              {presets.map((name) => (
-                <PaletteItem
-                  key={name}
-                  name={name}
-                  t={t}
-                  disabled={!canEdit}
-                  onPress={startPaletteDrag}
-                />
-              ))}
-            </div>
-          </section>
-        )}
         {expressionUnlocked && (
           <form
             className="section expression"
@@ -1732,10 +1753,7 @@ function Editor({
                     aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
                     spellCheck={false}
                     disabled={!!verify}
-                    onChange={(e) => {
-                      setInputCase('');
-                      setInputs((s) => ({ ...s, [name]: e.target.value }));
-                    }}
+                    onChange={(e) => changeScalarInput(name, e.target.value)}
                   />
                 )}
                 {inputShapes[name].length > 0 && (
@@ -1751,10 +1769,7 @@ function Editor({
                     step={0.05}
                     disabled={!!verify}
                     value={Number(value) || 0}
-                    onChange={(e) => {
-                      setInputCase('');
-                      setInputs((s) => ({ ...s, [name]: e.target.value }));
-                    }}
+                    onChange={(e) => changeScalarInput(name, e.target.value)}
                   />
                 )}
               </div>
@@ -2149,34 +2164,6 @@ function Editor({
   );
 }
 
-function PaletteItem({
-  name,
-  t,
-  player,
-  disabled,
-  onPress,
-}: {
-  name: string;
-  t: T;
-  player?: boolean;
-  disabled: boolean;
-  onPress: (component: string, e: React.PointerEvent) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`palette-item ${player ? 'is-player' : ''}`}
-      data-component={name}
-      data-category={categoryOf(name)}
-      disabled={disabled}
-      onPointerDown={(e) => onPress(name, e)}
-    >
-      <span className="sym">{SYMBOLS[name] ?? '?'}</span>
-      <span className="name">{t(`components.${name}`)}</span>
-    </button>
-  );
-}
-
 function WinModal({
   t,
   locale,
@@ -2221,7 +2208,11 @@ function WinModal({
         <h2>{t('ui.levelComplete', { title })}</h2>
         {features.map((key) => (
           <div className="unlock" key={key}>
-            <span className="unlock-sym">{FEATURE_SYMBOLS[key] ?? '★'}</span>
+            <span
+              className={`unlock-sym ${(FEATURE_SYMBOLS[key] ?? '★').length > 3 ? 'is-long' : ''}`}
+            >
+              {FEATURE_SYMBOLS[key] ?? '★'}
+            </span>
             <div>
               <b>{t(key)}</b>
               <p className="hint">{t(`${key}.body`)}</p>
@@ -2230,8 +2221,10 @@ function WinModal({
         ))}
         {unlocked.length ? (
           unlocked.map((c) => (
-            <div className="unlock" key={c}>
-              <span className="unlock-sym">{SYMBOLS[c] ?? '?'}</span>
+            <div className="unlock" data-category={categoryOf(c)} key={c}>
+              <span className={`unlock-sym ${(SYMBOLS[c] ?? '?').length > 3 ? 'is-long' : ''}`}>
+                {SYMBOLS[c] ?? '?'}
+              </span>
               <div>
                 <b>{t('ui.addedToLibrary', { name: t(`components.${c}`) })}</b>
                 <p className="hint">{t('ui.addedHint')}</p>

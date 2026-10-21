@@ -22,6 +22,15 @@ it('reshape dimension ports and node height follow the target rank', () => {
   expect(nodePorts({ id: 'r', component: 'reshape' }, registry, 'inputs')).toEqual(['x', 'd0']);
 });
 
+it('uses consistent binary-expression symbols for four arithmetic operations', () => {
+  expect({ add: SYMBOLS.add, sub: SYMBOLS.sub, mul: SYMBOLS.mul, div: SYMBOLS.div }).toEqual({
+    add: 'a+b',
+    sub: 'a−b',
+    mul: 'a×b',
+    div: 'a÷b',
+  });
+});
+
 it('size is available wherever reshape is available', () => {
   for (const level of gameLevels.filter((level) => level.available.includes('reshape')))
     expect(level.available).toContain('size');

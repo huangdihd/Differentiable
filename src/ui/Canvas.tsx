@@ -35,12 +35,16 @@ export interface Viewport {
   y: number;
   zoom: number;
 }
+export type NonfiniteKind = 'positive' | 'negative' | 'invalid';
+
 export interface NodeValue {
   /** Short text for the node foot. */
   text: string;
   /** Full text for the tooltip. */
   title: string;
   ok: boolean;
+  /** Distinguishes positive overflow, negative overflow and indeterminate NaN values. */
+  nonfinite?: NonfiniteKind;
   /** Output shape; shown on the node once tensors are bigger than a scalar. */
   shape?: readonly number[];
   /** What the outgoing wires show: the value's sign and size (see `signal`). */
@@ -51,6 +55,15 @@ export interface NodeValue {
 export function signal(values: readonly number[]): number | undefined {
   const finite = values.filter(Number.isFinite);
   return finite.length ? finite.reduce((a, b) => a + b, 0) / finite.length : undefined;
+}
+
+/** The colour family for a failed numeric value; mixed infinities are indeterminate like NaN. */
+export function nonfiniteKind(values: readonly number[]): NonfiniteKind | undefined {
+  if (values.some(Number.isNaN)) return 'invalid';
+  const positive = values.includes(Infinity);
+  const negative = values.includes(-Infinity);
+  if (positive && negative) return 'invalid';
+  return positive ? 'positive' : negative ? 'negative' : undefined;
 }
 
 /**
@@ -181,10 +194,14 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     const [c1, c2] = controls(a, b);
     return `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
   };
-  /** The curve's halfway point, where an overflowing wire snaps. */
-  const middle = (a: Point, b: Point): Point => {
+  /** The curve's halfway point and tangent, where an overflowing wire tears open. */
+  const rupture = (a: Point, b: Point): Point & { angle: number } => {
     const [c1, c2] = controls(a, b);
-    return { x: (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8, y: (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8 };
+    const x = (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8;
+    const y = (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8;
+    const dx = 0.75 * (c1.x - a.x + c2.x - c1.x + b.x - c2.x);
+    const dy = 0.75 * (c1.y - a.y + c2.y - c1.y + b.y - c2.y);
+    return { x, y, angle: (Math.atan2(dy, dx) * 180) / Math.PI };
   };
 
   function track(
@@ -369,10 +386,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
             const a = endpoint(edge.from, true),
               b = endpoint(edge.to, false);
             const d = path(a, b);
-            const sign = wireStyle(p.values?.[edge.from.node]?.signal);
-            // A value that overflowed to ∞ or NaN is too much for the wire: it swells and snaps.
-            const burst = p.values?.[edge.from.node]?.ok === false;
-            const spark = burst ? middle(a, b) : undefined;
+            const value = p.values?.[edge.from.node];
+            const sign = wireStyle(value?.signal);
+            // A nonfinite value tears its wire open; colour preserves +∞, −∞ and NaN semantics.
+            const nonfinite = value?.ok === false ? (value.nonfinite ?? 'invalid') : undefined;
+            const breakAt = nonfinite ? rupture(a, b) : undefined;
             return (
               <g key={`${edge.from.node}:${edge.from.port}>${edge.to.node}:${edge.to.port}`}>
                 <path
@@ -382,9 +400,9 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   onClick={() => !p.readonly && p.onDeleteEdge(i)}
                 />
                 <path
-                  style={live(edge.from.node) ? sign.style : undefined}
-                  pathLength={burst ? 100 : undefined}
-                  className={`wire ${burst ? 'is-burst' : ''} ${live(edge.from.node) ? `is-live ${sign.className}` : ''} ${
+                  style={!nonfinite && live(edge.from.node) ? sign.style : undefined}
+                  pathLength={nonfinite ? 100 : undefined}
+                  className={`wire ${nonfinite ? `is-burst is-overflow-${nonfinite}` : ''} ${live(edge.from.node) ? `is-live ${sign.className}` : ''} ${
                     p.flow?.phase === 'forward'
                       ? 'is-flow-forward'
                       : p.flow?.phase === 'backward' &&
@@ -395,11 +413,16 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   }`}
                   d={d}
                 />
-                {spark && (
-                  <g className="wire-spark" transform={`translate(${spark.x} ${spark.y})`}>
-                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
-                      <line key={angle} x1={5} x2={15} transform={`rotate(${angle})`} />
-                    ))}
+                {breakAt && (
+                  <g
+                    className={`wire-rupture is-overflow-${nonfinite}`}
+                    transform={`translate(${breakAt.x} ${breakAt.y}) rotate(${breakAt.angle})`}
+                  >
+                    <path d="M -18 0 C -12 0 -10 -2 -7 -7 L -2 -2" />
+                    <path d="M 18 0 C 12 0 10 2 7 7 L 2 2" />
+                    <line x1={-5} y1={-10} x2={-3} y2={-15} />
+                    <line x1={5} y1={10} x2={3} y2={15} />
+                    <line x1={0} y1={-8} x2={1} y2={-12} />
                   </g>
                 )}
               </g>
@@ -513,7 +536,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 <span className={`node-sym ${sym.length > 3 ? 'is-long' : ''}`}>{sym}</span>
               </div>
               <div
-                className={`node-foot ${value ? (value.ok ? 'is-ok' : 'is-bad') : ''}`}
+                className={`node-foot ${
+                  value
+                    ? value.ok
+                      ? 'is-ok'
+                      : `is-bad is-overflow-${value.nonfinite ?? 'invalid'}`
+                    : ''
+                }`}
                 title={value?.title}
               >
                 {displayShape && displayShape.length > 0 && (

@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 /** What a training level learns from, in the plane: the points and what the model makes of them. */
 export type PlotData =
   | {
@@ -102,6 +104,7 @@ export default function DataPlot({
   /** What the horizontal and vertical axes are, e.g. which column of x. */
   axisLabels?: { x: string; y: string };
 }) {
+  const clipId = `data-plot-${useId().replace(/:/g, '')}`;
   const xs = data.kind === 'regression' ? data.x : data.points.map((p) => p[0]);
   const ys =
     data.kind === 'regression'
@@ -131,13 +134,13 @@ export default function DataPlot({
   return (
     <svg className="data-plot" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       <defs>
-        <clipPath id="data-plot-clip">
+        <clipPath id={clipId}>
           <rect x={0} y={0} width={W} height={H} />
         </clipPath>
       </defs>
       {axes}
       {data.kind === 'regression' ? (
-        <g clipPath="url(#data-plot-clip)">
+        <g clipPath={`url(#${clipId})`}>
           {data.p && data.p.every(Number.isFinite) && (
             <polyline
               className="plot-fit"
@@ -162,7 +165,7 @@ export default function DataPlot({
         </g>
       ) : (
         <>
-          {data.field && <ClassRegions field={data.field} sx={sx} sy={sy} />}
+          {data.field && <ClassRegions field={data.field} sx={sx} sy={sy} clipId={clipId} />}
           {data.points.map(([a, b], i) => {
             const wrong = data.predicted && data.predicted[i] !== data.label[i];
             return (
@@ -205,17 +208,19 @@ function ClassRegions({
   field,
   sx,
   sy,
+  clipId,
 }: {
   field: ClassField;
   sx: (v: number) => number;
   sy: (v: number) => number;
+  clipId: string;
 }) {
   const { nx, ny, x0, x1, y0, y1, classes } = field;
   // Field-cell coordinates -> plot pixels.
   const px = (i: number) => sx(x0 + (i / nx) * (x1 - x0));
   const py = (j: number) => sy(y0 + (j / ny) * (y1 - y0));
   return (
-    <g className="plot-field" clipPath="url(#data-plot-clip)">
+    <g className="plot-field" clipPath={`url(#${clipId})`}>
       {classes.map((c, k) => {
         const i = k % nx,
           j = Math.floor(k / nx);

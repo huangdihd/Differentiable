@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildBackwardGraph, traceBackward } from './backward-graph';
 import { compileGraph, createDefaultRegistry, type ShapePorts, type GraphJSON } from './graph';
 import { CpuBackend } from './cpu';
@@ -6,6 +6,9 @@ import { Random } from './random';
 import * as T from './tensor';
 import { gameLevels } from '../levels/catalog';
 import { referenceRegistry } from '../levels/level-helpers';
+
+// Nested attention/GPT graphs can exceed Vitest's 5s default under full-suite contention.
+vi.setConfig({ testTimeout: 30_000 });
 
 const registry = referenceRegistry(gameLevels.filter((l) => l.kind !== 'train'));
 const square: GraphJSON = {

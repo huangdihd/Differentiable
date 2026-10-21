@@ -1,14 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { chapter0Levels } from '../levels/chapter0';
 import { chapter1Levels } from '../levels/chapter1';
-import { plottedInput, sampleXs, segments, yRange } from './function-plot';
+import {
+  functionAsymptotes,
+  functionPoint,
+  plottedInput,
+  sampleValue,
+  sampleXs,
+  segments,
+  yRange,
+} from './function-plot';
 
 const level = (id: string) => [...chapter0Levels, ...chapter1Levels].find((l) => l.id === id)!;
 
 describe('function plot', () => {
-  it('applies to one-input scalar lessons only', () => {
+  it('plots one-input functions and the differentiated input of partial-derivative lessons', () => {
     expect(plottedInput(level('0-5'))).toBe('x');
     expect(plottedInput(level('0-2'))).toBeUndefined();
+    expect(plottedInput(level('1-8'))).toBe('a');
+    expect(plottedInput(level('1-9'))).toBe('b');
+    expect(plottedInput(level('1-10'))).toBe('w');
+  });
+
+  it('evaluates an off-grid probe exactly, including the original function behind a derivative', async () => {
+    const x = 0.037;
+    const forward = await functionPoint(level('0-5'), 'x', x);
+    expect(forward.target).toBeCloseTo(1 / (1 + Math.exp(-x)), 6);
+    expect(forward.original).toBeUndefined();
+    const derivative = await functionPoint(level('1-1'), 'x', x);
+    expect(derivative.target).toBeCloseTo(2 * x, 6);
+    expect(derivative.original).toBeCloseTo(x * x, 6);
+  });
+
+  it('evaluates a partial-derivative slice while holding the other inputs fixed', async () => {
+    const a = 0.5,
+      b = 2;
+    const point = await functionPoint(level('1-8'), 'a', a, { a: [a], b: [b] });
+    expect(point.target).toBeCloseTo(b + Math.exp(a), 6);
+    expect(point.original).toBeCloseTo(a * b + Math.exp(a), 6);
   });
 
   it('samples around the level cases, never at 0, and stays positive for √x', () => {
@@ -24,6 +53,39 @@ describe('function plot', () => {
     const range = yRange(ys);
     expect(range[1] - range[0]).toBeLessThan(10);
     expect(segments(xs, ys, range).length).toBe(2);
+  });
+
+  it('interpolates a live probe without crossing an explicit discontinuity', () => {
+    expect(sampleValue([0, 1, 2], [0, 2, 4], 1.5)).toBe(3);
+    expect(sampleValue([-1, 1], [-1, 1], 0, [0])).toBeUndefined();
+    expect(sampleValue([0, 1], [0, NaN], 0.5)).toBeUndefined();
+  });
+
+  it('declares asymptotes separately for target and original curves', () => {
+    expect(functionAsymptotes(level('0-5'))).toEqual([
+      { axis: 'y', value: 0 },
+      { axis: 'y', value: 1 },
+    ]);
+    expect(functionAsymptotes(level('0-6'))).toEqual([
+      { axis: 'y', value: -1 },
+      { axis: 'y', value: 1 },
+    ]);
+    expect(functionAsymptotes(level('1-4'), 'target')).toEqual([
+      { axis: 'x', value: 0 },
+      { axis: 'y', value: 0 },
+    ]);
+    expect(functionAsymptotes(level('1-4'), 'original')).toEqual([{ axis: 'x', value: 0 }]);
+    expect(functionAsymptotes(level('1-5'), 'target')).toEqual([{ axis: 'y', value: 0 }]);
+    expect(functionAsymptotes(level('1-5'), 'original')).toEqual([
+      { axis: 'y', value: 0 },
+      { axis: 'y', value: 1 },
+    ]);
+    expect(functionAsymptotes(level('1-6'), 'original')).toEqual([
+      { axis: 'y', value: -1 },
+      { axis: 'y', value: 1 },
+    ]);
+    expect(functionAsymptotes(level('1-1'))).toEqual([]);
+    expect(functionAsymptotes(level('1-1'), 'original')).toEqual([]);
   });
 
   it('skips undefined points', () => {

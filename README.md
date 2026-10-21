@@ -226,10 +226,10 @@ with a sorted 27-character vocabulary. Its exact empirical bigram conditional
 entropy is **2.0315743966 nats** (uniform guessing: `log(27) = 3.295837`).
 All initialization and sampling are seeded.
 
-| Level | Data | Steps | Loss threshold | Adam LR min–max (default) | Measured loss |
-| --- | --- | --- | --- | --- | --- |
-| 4-3 | All 1,610 adjacent pairs; parameter seed 4103 | 180 | 2.181574 (H + .15) | .001–.1 (.03) | 2.059719 |
-| 4-6 | 512 contexts sampled with seed 4505; parameter seed 4105 | 160 | 1.639788 | .001–.1 (.03) | .738885 |
+| Level | Data                                                     | Steps | Loss threshold     | Adam LR min–max (default) | Measured loss |
+| ----- | -------------------------------------------------------- | ----- | ------------------ | ------------------------- | ------------- |
+| 4-3   | All 1,610 adjacent pairs; parameter seed 4103            | 180   | 2.181574 (H + .15) | .001–.1 (.03)             | 2.059719      |
+| 4-6   | 512 contexts sampled with seed 4505; parameter seed 4105 | 160   | 1.639788           | .001–.1 (.03)             | .738885       |
 
 Both train and evaluate on their declared empirical distribution; these are not
 held-out generalization claims. No accuracy threshold is imposed. The 4-6 model
@@ -246,11 +246,11 @@ Both models support the worker `generate` API documented in
 
 ### Classification lesson calibration (CPU, seeded reference circuits; stable level IDs)
 
-| Level | Data / seed | Steps | Threshold | LR min–max (default) | Optimizer default |
-| --- | --- | --- | --- | --- | --- |
-| 3-6 | 40 points, separated clusters / 3106 | 80 | loss < 0.15, accuracy 100% | 0.001–1 (0.001) | SGD |
-| 3-8 | 40 points; label feature ×0.05, nuisance feature ×20 / 3108 | 600 | loss < 0.15, accuracy 100% | 0.001–0.1 (0.05) | SGD; Adam selectable |
-| 3-9 | 64 points, radii near 0.6 and 2 / 3109 | 300 | loss < 0.15, accuracy ≥95% | 0.001–0.1 (0.05) | Adam; SGD selectable |
+| Level | Data / seed                                                 | Steps | Threshold                  | LR min–max (default) | Optimizer default    |
+| ----- | ----------------------------------------------------------- | ----- | -------------------------- | -------------------- | -------------------- |
+| 3-6   | 40 points, separated clusters / 3106                        | 80    | loss < 0.15, accuracy 100% | 0.001–1 (0.001)      | SGD                  |
+| 3-8   | 40 points; label feature ×0.05, nuisance feature ×20 / 3108 | 600   | loss < 0.15, accuracy 100% | 0.001–0.1 (0.05)     | SGD; Adam selectable |
+| 3-9   | 64 points, radii near 0.6 and 2 / 3109                      | 300   | loss < 0.15, accuracy ≥95% | 0.001–0.1 (0.05)     | Adam; SGD selectable |
 
 3-6: default loss 0.583232 / accuracy 100% fails; SGD 0.1 gives 0.021978 / 100%.
 3-8: SGD rates 0.001, 0.005, 0.01, 0.05, 0.1 give losses 0.692122,
@@ -316,6 +316,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. The learning-rate control and single-step animation UI are not included yet; the engine/worker APIs are ready for them. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling, reshape practice and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. Training levels include learning-rate controls, single-step forward/backward/update animation, loss and data plots, and player-facing dataset cards. Scalar function lessons plot their target and explicit asymptotes without bridging discontinuities; derivative lessons switch between the derivative curve and the original function with target/player tangents. Multivariable derivative lessons visualize a labeled one-dimensional slice along the differentiated input while holding the other inputs fixed. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling, reshape practice and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture.

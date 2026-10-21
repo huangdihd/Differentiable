@@ -1,5 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { boundaryPath, type ClassField } from './DataPlot';
+import DataPlot, { boundaryPath, type ClassField, type PlotData } from './DataPlot';
 
 const field = (nx: number, ny: number, f: (i: number, j: number) => number): ClassField => {
   const margin = Array.from({ length: nx * ny }, (_, k) => f(k % nx, Math.floor(k / nx)));
@@ -45,6 +47,22 @@ it('outlines disagreeing cells when there are more than two classes', () => {
       ),
     ),
   ).toEqual([[1, 0, 1, 1]]);
+});
+
+it('gives each rendered plot its own clipping path', () => {
+  const data: PlotData = { kind: 'regression', x: [0, 1], t: [0, 1] };
+  const html = renderToStaticMarkup(
+    createElement(
+      'div',
+      null,
+      createElement(DataPlot, { data, label: 'first' }),
+      createElement(DataPlot, { data, label: 'second' }),
+    ),
+  );
+  const ids = [...html.matchAll(/<clipPath id="([^"]+)"/g)].map((match) => match[1]);
+  expect(ids).toHaveLength(2);
+  expect(new Set(ids).size).toBe(2);
+  for (const id of ids) expect(html).toContain(`clip-path="url(#${id})"`);
 });
 
 it('draws nothing when the model predicts one class everywhere', () => {
