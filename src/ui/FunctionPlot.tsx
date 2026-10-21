@@ -12,7 +12,8 @@ const W = 260,
 /**
  * The lesson's target y = f(x) as a curve (and, for derivative lessons, the original f(x) behind
  * it), with the probe input marked: where the target sits and where the player's circuit lands.
- * Clicking or dragging on the plot moves the probe input.
+ * Derivative lessons also draw the tangent to f at the probe, whose slope is the answer, and the
+ * line the player's slope would draw. Clicking or dragging on the plot moves the probe input.
  */
 export default function FunctionPlot({
   t,
@@ -59,10 +60,29 @@ export default function FunctionPlot({
   const line = (ys: readonly number[]) =>
     segments(xs, ys, [y0, y1]).map((run) => run.map(([a, b]) => `${sx(a)},${sy(b)}`).join(' '));
   const inside = (v?: number): v is number => v !== undefined && Number.isFinite(v);
-  const expected =
+  const at = (ys: readonly number[]) =>
     inside(x) && x >= x0 && x <= x1
-      ? curve.target[Math.round(((x - x0) / (x1 - x0)) * (xs.length - 1))]
+      ? ys[Math.round(((x - x0) / (x1 - x0)) * (xs.length - 1))]
       : undefined;
+  const expected = at(curve.target);
+  const matches =
+    inside(expected) &&
+    inside(actual) &&
+    Math.abs(actual - expected) <= 1e-4 + 1e-3 * Math.abs(expected);
+  // The tangent to f at the probe: its slope is f′(x), the value the circuit should output.
+  const fx = curve.original && at(curve.original);
+  const reach = (x1 - x0) * 0.22;
+  const tangent = (slope: number, className: string) =>
+    inside(x) &&
+    inside(fx) && (
+      <line
+        className={className}
+        x1={sx(x - reach)}
+        y1={sy(fx - slope * reach)}
+        x2={sx(x + reach)}
+        y2={sy(fx + slope * reach)}
+      />
+    );
   const clampY = (v: number) => Math.min(H - 3, Math.max(3, sy(v)));
   const pick = (e: React.PointerEvent<SVGSVGElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -115,16 +135,17 @@ export default function FunctionPlot({
             <polyline key={`t${i}`} className="plot-fit" points={points} />
           ))}
           {inside(x) && <line className="plot-probe" x1={sx(x)} x2={sx(x)} y1={0} y2={H} />}
+          {inside(expected) && tangent(expected, `plot-tangent${matches ? ' is-ok' : ''}`)}
+          {inside(actual) && !matches && tangent(actual, 'plot-tangent is-yours')}
+          {inside(x) && inside(fx) && (
+            <circle className="plot-touch" cx={sx(x)} cy={clampY(fx)} r={2.6} />
+          )}
           {inside(x) && inside(expected) && (
             <circle className="plot-target" cx={sx(x)} cy={clampY(expected)} r={5} />
           )}
           {inside(x) && inside(actual) && (
             <circle
-              className={`plot-actual ${
-                inside(expected) && Math.abs(actual - expected) <= 1e-4 + 1e-3 * Math.abs(expected)
-                  ? 'is-ok'
-                  : 'is-off'
-              }`}
+              className={`plot-actual ${matches ? 'is-ok' : 'is-off'}`}
               cx={sx(x)}
               cy={clampY(actual)}
               r={3.2}
@@ -137,6 +158,7 @@ export default function FunctionPlot({
           {t(level.kind === 'derivative' ? 'plot.derivative' : 'plot.target')}
         </span>
         {curve.original && <span className="plot-key is-original">{t('plot.original')}</span>}
+        {curve.original && <span className="plot-key is-tangent">{t('plot.tangent')}</span>}
         <span className="plot-key is-actual">{t('plot.yours')}</span>
         <span className="plot-help">{t('plot.help')}</span>
       </figcaption>

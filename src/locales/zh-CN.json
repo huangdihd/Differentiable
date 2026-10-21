@@ -694,6 +694,7 @@
   "plot.target": "目标 y",
   "plot.derivative": "目标 y = f′(x)",
   "plot.original": "原函数 f(x)",
+  "plot.tangent": "f 的切线：斜率就是 f′(x)",
   "plot.yours": "你的电路",
   "plot.help": "点或拖动图像可以换输入 x",
   "training.learning_rate_range": "大于 0 的有限数",
