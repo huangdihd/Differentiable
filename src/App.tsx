@@ -40,7 +40,14 @@ import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
-import { NODE_W, SYMBOLS, freeSpot, layoutGraph, nodeHeight } from './ui/graph-geometry';
+import {
+  NODE_W,
+  SYMBOLS,
+  categoryOf,
+  freeSpot,
+  layoutGraph,
+  nodeHeight,
+} from './ui/graph-geometry';
 import { TrainingLoop } from './ui/TrainingLoop';
 import { Coach } from './ui/Coach';
 import {
@@ -194,6 +201,7 @@ export default function App() {
           progress={save.progress}
           onProgress={progress}
           onExit={() => setLevel(undefined)}
+          onNext={nextOf(level) ? () => setLevel(nextOf(level)) : undefined}
           locale={save.settings.language}
           backend={backend}
           client={client}
@@ -390,11 +398,17 @@ function Home({
   );
 }
 
+/** The level a pass leads to: the first one it unlocks. */
+const nextOf = (level: Level) =>
+  level.unlock.map((id) => gameLevels.find((l) => l.id === id)).find(Boolean);
+
 type EditorProps = {
   level: Level;
   progress: Progress;
   onProgress: (p: Progress) => void;
   onExit: () => void;
+  /** Opens the level this one unlocks; absent after the last level. */
+  onNext?: () => void;
   locale: Locale;
   backend: string;
   client: React.RefObject<WorkerClient | null>;
@@ -434,6 +448,7 @@ function Editor({
   progress,
   onProgress,
   onExit,
+  onNext,
   locale,
   backend,
   client,
@@ -1338,7 +1353,12 @@ function Editor({
                 />
               ))}
               {(level.unlockComponents ?? []).map((name) => (
-                <div className="palette-item is-locked" key={name} title={t('ui.producedHere')}>
+                <div
+                  className="palette-item is-locked"
+                  key={name}
+                  data-category={categoryOf(name)}
+                  title={t('ui.producedHere')}
+                >
                   <span className="sym">{SYMBOLS[name] ?? '?'}</span>
                   <span className="name">
                     {t(`components.${name}`)} · {t('ui.producedHere')}
@@ -2071,8 +2091,12 @@ function Editor({
           features={level.unlockFeatures ?? []}
           metrics={result.metrics}
           previous={previousBest}
+          ioNodes={
+            state.graph.nodes.filter((n) => ['input', 'output'].includes(n.component)).length
+          }
           onClose={() => setModal(false)}
           onExit={onExit}
+          onNext={onNext}
           onReveal={
             level.revealGraph
               ? () => {
@@ -2121,6 +2145,7 @@ function PaletteItem({
       type="button"
       className={`palette-item ${player ? 'is-player' : ''}`}
       data-component={name}
+      data-category={categoryOf(name)}
       disabled={disabled}
       onPointerDown={(e) => onPress(name, e)}
     >
@@ -2140,8 +2165,10 @@ function WinModal({
   features,
   metrics,
   previous,
+  ioNodes,
   onClose,
   onExit,
+  onNext,
   onReveal,
 }: {
   t: T;
@@ -2153,14 +2180,19 @@ function WinModal({
   features: readonly string[];
   metrics: LevelResult['metrics'];
   previous?: LevelResult['metrics'];
+  /** Input and output nodes come with the level, so the node count leaves them out. */
+  ioNodes: number;
   onClose: () => void;
   onExit: () => void;
+  onNext?: () => void;
   onReveal?: () => void;
 }) {
   const rows = ['topNodes', 'expandedPrimitives', 'parameterCount'] as const;
+  const shown = (m: LevelResult['metrics'], k: (typeof rows)[number]) =>
+    k === 'topNodes' ? Math.max(0, m[k] - ioNodes) : m[k];
   return (
     <div className="modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="modal is-win" role="dialog" aria-modal="true" aria-label={title}>
         <div className="level-id">
           LEVEL {code} · {t('ui.complete')}
         </div>
@@ -2213,10 +2245,12 @@ function WinModal({
                 <tr key={k}>
                   <td className="score-name">{t(`metrics.${k}`)}</td>
                   <td className={better ? 'ok' : ''}>
-                    {formatNumber(locale, metrics[k])}
+                    {formatNumber(locale, shown(metrics, k))}
                     {better ? ' ↓' : ''}
                   </td>
-                  <td className="muted">{previous ? formatNumber(locale, previous[k]) : '—'}</td>
+                  <td className="muted">
+                    {previous ? formatNumber(locale, shown(previous, k)) : '—'}
+                  </td>
                 </tr>
               );
             })}
@@ -2227,9 +2261,18 @@ function WinModal({
           <button className="btn" onClick={onClose}>
             {t('ui.keepImproving')}
           </button>
-          <button className="btn btn-primary" onClick={onExit} autoFocus>
-            {t('ui.backToLevels')} →
+          <button
+            className={`btn ${onNext ? '' : 'btn-primary'}`}
+            onClick={onExit}
+            autoFocus={!onNext}
+          >
+            {t('ui.backToLevels')}
           </button>
+          {onNext && (
+            <button className="btn btn-primary" onClick={onNext} autoFocus>
+              {t('ui.nextLevel')} →
+            </button>
+          )}
         </div>
       </section>
     </div>

@@ -53,6 +53,65 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   transformer_block: 'block',
 };
 
+/**
+ * Families of components, each with its own colour strip on palette tiles and node headers, so
+ * a circuit shows at a glance where the arithmetic, activations, tensor plumbing, derivatives,
+ * learning parts and attention sit. Inputs, outputs and unknown names have no family.
+ */
+export type Category = 'op' | 'act' | 'tensor' | 'grad' | 'learn' | 'attn';
+const FAMILIES: Record<Category, readonly string[]> = {
+  op: [
+    'const',
+    'add',
+    'mul',
+    'max',
+    'ge',
+    'exp',
+    'log',
+    'neg',
+    'sub',
+    'div',
+    'sqrt',
+    'square',
+    'recip',
+  ],
+  act: ['sigmoid', 'tanh', 'relu', 'softmax'],
+  tensor: [
+    'sum',
+    'reduce_max',
+    'reshape',
+    'size',
+    'unsqueeze',
+    'transpose',
+    'gather',
+    'scatter_add',
+    'arange',
+    'matmul',
+    'dot',
+    'outer',
+    'mean',
+    'layernorm',
+    'one_hot',
+    'embedding',
+  ],
+  grad: ['dsigmoid', 'dtanh'],
+  learn: ['param', 'linear', 'mse', 'cross_entropy'],
+  attn: [
+    'sample',
+    'attn_scores',
+    'causal_mask',
+    'attention',
+    'embed_pos',
+    'multi_head',
+    'feed_forward',
+    'transformer_block',
+  ],
+};
+const CATEGORY = new Map(
+  Object.entries(FAMILIES).flatMap(([cat, names]) => names.map((n) => [n, cat as Category])),
+);
+export const categoryOf = (component: string): Category | undefined => CATEGORY.get(component);
+
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */
 export const NODE_W = 150;
 export const HEAD_H = 26;

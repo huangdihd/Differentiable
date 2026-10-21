@@ -7,6 +7,7 @@ import {
   NODE_W,
   SYMBOLS,
   bodyHeight,
+  categoryOf,
   graphBounds,
   layoutGraph,
   nearestInput,
@@ -166,12 +167,24 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
       y: a.y + portOffset(n, output ? 'outputs' : 'inputs', e.port),
     };
   };
-  const path = (a: Point, b: Point) => {
+  const controls = (a: Point, b: Point): [Point, Point] => {
     // Forward wires are nearly straight, like the lines of a textbook network diagram, and stay
     // within the gap; backward wires still swing out far enough to wrap around.
     const gap = b.x - a.x;
     const dx = gap > 0 ? gap * 0.25 : Math.max(40, -gap * 0.5);
-    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+    return [
+      { x: a.x + dx, y: a.y },
+      { x: b.x - dx, y: b.y },
+    ];
+  };
+  const path = (a: Point, b: Point) => {
+    const [c1, c2] = controls(a, b);
+    return `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
+  };
+  /** The curve's halfway point, where an overflowing wire snaps. */
+  const middle = (a: Point, b: Point): Point => {
+    const [c1, c2] = controls(a, b);
+    return { x: (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8, y: (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8 };
   };
 
   function track(
@@ -353,8 +366,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
       >
         <svg className="wires">
           {p.graph.edges.map((edge, i) => {
-            const d = path(endpoint(edge.from, true), endpoint(edge.to, false));
+            const a = endpoint(edge.from, true),
+              b = endpoint(edge.to, false);
+            const d = path(a, b);
             const sign = wireStyle(p.values?.[edge.from.node]?.signal);
+            // A value that overflowed to ∞ or NaN is too much for the wire: it swells and snaps.
+            const burst = p.values?.[edge.from.node]?.ok === false;
+            const spark = burst ? middle(a, b) : undefined;
             return (
               <g key={`${edge.from.node}:${edge.from.port}>${edge.to.node}:${edge.to.port}`}>
                 <path
@@ -365,7 +383,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 />
                 <path
                   style={live(edge.from.node) ? sign.style : undefined}
-                  className={`wire ${live(edge.from.node) ? `is-live ${sign.className}` : ''} ${
+                  pathLength={burst ? 100 : undefined}
+                  className={`wire ${burst ? 'is-burst' : ''} ${live(edge.from.node) ? `is-live ${sign.className}` : ''} ${
                     p.flow?.phase === 'forward'
                       ? 'is-flow-forward'
                       : p.flow?.phase === 'backward' &&
@@ -376,6 +395,13 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   }`}
                   d={d}
                 />
+                {spark && (
+                  <g className="wire-spark" transform={`translate(${spark.x} ${spark.y})`}>
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                      <line key={angle} x1={5} x2={15} transform={`rotate(${angle})`} />
+                    ))}
+                  </g>
+                )}
               </g>
             );
           })}
@@ -424,6 +450,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
             <div
               key={shaking?.node === n.id ? `${n.id}:${shaking.tick}` : n.id}
               data-node={n.id}
+              data-category={categoryOf(n.component)}
               className={classes}
               style={{ left: a.x, top: a.y, width: NODE_W }}
               onDoubleClick={() => p.onInspect(n)}

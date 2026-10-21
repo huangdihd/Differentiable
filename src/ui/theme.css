@@ -31,6 +31,13 @@
   --bad: #ff8fa3;
   --warn: #ffb86b;
   --grad: #6fe3ff; /* backward flow: gradients */
+  /* component families: a colour strip on palette tiles and node headers */
+  --cat-op: #9fb6d9;
+  --cat-act: #8ef0c0;
+  --cat-tensor: #b9a2ff;
+  --cat-grad: #6fe3ff;
+  --cat-learn: #ffb86b;
+  --cat-attn: #ff8fb8;
   --pos: #ffad5c; /* wires carrying positive values */
   --neg: #7cb6ff; /* wires carrying negative values */
 
@@ -417,6 +424,31 @@ input[type='range'] {
   border-style: dashed;
 }
 
+[data-category='op'] {
+  --cat: var(--cat-op);
+}
+[data-category='act'] {
+  --cat: var(--cat-act);
+}
+[data-category='tensor'] {
+  --cat: var(--cat-tensor);
+}
+[data-category='grad'] {
+  --cat: var(--cat-grad);
+}
+[data-category='learn'] {
+  --cat: var(--cat-learn);
+}
+[data-category='attn'] {
+  --cat: var(--cat-attn);
+}
+.palette-item[data-category] {
+  box-shadow: inset 3px 0 0 var(--cat);
+}
+.node[data-category] .node-head {
+  box-shadow: inset 4px 0 0 var(--cat);
+}
+
 /* ---------- graph editor ---------- */
 .canvas {
   position: relative;
@@ -436,6 +468,39 @@ input[type='range'] {
 }
 .wire.is-neg {
   stroke: var(--neg);
+}
+/* Overflow (∞ or NaN): the wire swells past its maximum width and snaps in the middle. */
+.wire.is-burst {
+  stroke: var(--bad);
+  stroke-width: 7;
+  stroke-dasharray: 43 14 43;
+  filter: drop-shadow(0 0 4px var(--bad));
+  animation: wire-strain 0.5s ease-in-out infinite alternate;
+}
+.wire-spark line {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.wire-spark {
+  pointer-events: none;
+  animation: wire-spark 0.6s steps(3) infinite;
+}
+@keyframes wire-strain {
+  to {
+    stroke-width: 8.5;
+  }
+}
+@keyframes wire-spark {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wire.is-burst,
+  .wire-spark {
+    animation: none;
+  }
 }
 .wire.is-error {
   stroke: var(--bad);
@@ -917,6 +982,74 @@ input[type='range'] {
 }
 .score-table {
   margin-top: var(--s3);
+}
+
+/* Level complete: the card rises in, then the new component is stamped into the library. */
+.modal.is-win {
+  animation: win-in 0.42s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+.modal.is-win .unlock {
+  animation: win-fade 0.4s 0.2s both;
+}
+.modal.is-win .unlock-sym {
+  position: relative;
+  animation: win-stamp 0.5s 0.32s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+.modal.is-win .unlock-sym::after {
+  content: '';
+  position: absolute;
+  inset: -6px -2px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: win-ring 0.7s 0.55s ease-out;
+}
+.modal.is-win .score-table tbody tr {
+  animation: win-fade 0.3s both;
+}
+.modal.is-win .score-table tbody tr:nth-child(1) {
+  animation-delay: 0.5s;
+}
+.modal.is-win .score-table tbody tr:nth-child(2) {
+  animation-delay: 0.58s;
+}
+.modal.is-win .score-table tbody tr:nth-child(3) {
+  animation-delay: 0.66s;
+}
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+}
+@keyframes win-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes win-stamp {
+  from {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+@keyframes win-ring {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal.is-win,
+  .modal.is-win *,
+  .modal.is-win .unlock-sym::after {
+    animation: none;
+  }
 }
 .score-table td:first-child,
 .score-table th:first-child {
