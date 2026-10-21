@@ -436,6 +436,11 @@ input[type='range'] {
   stroke: var(--accent);
   stroke-dasharray: 5 4;
 }
+/* Once the loose end has caught a port, the wire draws solid: letting go will connect. */
+.wire.is-pending.is-snapped {
+  stroke-dasharray: none;
+  stroke-width: 2.2;
+}
 .wire-hit {
   fill: none;
   stroke: transparent;
@@ -513,6 +518,16 @@ input[type='range'] {
   background: var(--bg);
   border: 2px solid var(--wire-dead);
   cursor: crosshair;
+  transition:
+    transform 0.12s,
+    background 0.12s,
+    border-color 0.12s;
+}
+/* The visible square stays small; the grab area around it is about twice as wide. */
+.port::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
 }
 .port.is-in {
   left: -7px;
@@ -528,6 +543,9 @@ input[type='range'] {
 .port.is-target {
   border-color: var(--accent);
   background: var(--accent);
+}
+.port.is-target {
+  transform: scale(1.5);
 }
 .port.is-error {
   border-color: var(--bad);
@@ -1924,6 +1942,10 @@ input[type='range'] {
   color: var(--accent);
   border-color: var(--accent);
 }
+.sfx-btn.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 /* Three level-meter bars: flat when off, breathing while sound plays. */
 .music-bars {
   display: flex;
@@ -2069,6 +2091,18 @@ input[type='range'] {
 }
 .home-foot .demo-tag {
   margin-right: var(--s1);
+}
+.home-community {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--s5);
+}
+.home-community a {
+  color: var(--text);
+  text-underline-offset: 3px;
+}
+.home-community a:hover {
+  color: var(--accent);
 }
 /* Home notice after a rule change revoked saved solutions; same dashed accent frame as unlocks. */
 .revoked {

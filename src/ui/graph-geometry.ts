@@ -180,3 +180,80 @@ export function graphBounds(
   }
   return Number.isFinite(x0) ? { x0, y0, x1, y1 } : null;
 }
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Room left around a placed node for its value notes and for wires to pass between nodes. */
+const PLACE_GAP = 24;
+
+/**
+ * Where a clicked-in node of size `w`×`h` should go: `want` if nothing is there, otherwise the
+ * nearest free spot found by walking outward in rows below and columns beside `want`. Without
+ * this, clicking the palette twice stacks the second node exactly over the first.
+ */
+export function freeSpot(want: Point, w: number, h: number, occupied: readonly Rect[]): Point {
+  const clear = (p: Point) =>
+    occupied.every(
+      (r) =>
+        p.x + w + PLACE_GAP <= r.x ||
+        r.x + r.w + PLACE_GAP <= p.x ||
+        p.y + h + PLACE_GAP <= r.y ||
+        r.y + r.h + PLACE_GAP <= p.y,
+    );
+  const stepX = NODE_W + 40,
+    stepY = 60;
+  for (let ring = 0; ring <= 12; ring++) {
+    const candidates: Point[] = [];
+    for (let dx = -ring; dx <= ring; dx++)
+      for (let dy = -ring; dy <= ring; dy++)
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === ring)
+          candidates.push({ x: want.x + dx * stepX, y: want.y + dy * stepY });
+    // Nearest first; at equal distance prefer spots below, where a chain usually has room.
+    const cost = (p: Point) =>
+      Math.hypot((p.x - want.x) / stepX, (p.y - want.y) / stepY) - (p.y > want.y ? 0.1 : 0);
+    candidates.sort((a, b) => cost(a) - cost(b));
+    const spot = candidates.find(clear);
+    if (spot) return spot;
+  }
+  return want;
+}
+
+/**
+ * The input port nearest to `at` within `radius` (graph units), for snapping a wire being dragged.
+ * Free ports win over occupied ones at similar distance, so a drop near a half-wired node lands
+ * on its empty input.
+ */
+export function nearestInput(
+  graph: GraphJSON,
+  registry: ComponentRegistry,
+  positions: Map<string, Point>,
+  at: Point,
+  radius: number,
+  skip?: string,
+): { node: string; port: string; point: Point } | undefined {
+  let best: { node: string; port: string; point: Point } | undefined;
+  let bestScore = Infinity;
+  for (const n of graph.nodes) {
+    if (n.id === skip) continue;
+    const p = positions.get(n.id);
+    if (!p) continue;
+    const list = nodePorts(n, registry, 'inputs');
+    list.forEach((port, i) => {
+      const point = { x: p.x, y: p.y + sidePortY(n, registry, i, list.length) };
+      const d = Math.hypot(point.x - at.x, point.y - at.y);
+      if (d > radius) return;
+      const taken = graph.edges.some((e) => e.to.node === n.id && e.to.port === port);
+      const score = d + (taken ? radius / 3 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { node: n.id, port, point };
+      }
+    });
+  }
+  return best;
+}

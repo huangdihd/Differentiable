@@ -51,3 +51,11 @@ look-ahead window. Start after stop begins the current bar afresh.
 Vitest covers score constraints and a minimal fake AudioContext. Real-browser
 listening, long-session comfort and device-specific audio behavior still need
 manual acceptance; fake nodes cannot establish sound quality.
+
+# Sound effects
+
+`sfx.ts` synthesizes short interface sounds in the same A minor pentatonic palette:
+`place`, `connect`, `disconnect`, `remove`, `reject`, `pass` (climbs one scale degree per
+passing test case), `fail` and `win`. The shared `sfx` instance creates its context on the first
+sound and resumes it on each play. `SfxToggle` in the topbar turns it on and off; the choice is
+stored under `differentiable.sfx`, independently of the music.

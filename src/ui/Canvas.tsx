@@ -9,6 +9,7 @@ import {
   bodyHeight,
   graphBounds,
   layoutGraph,
+  nearestInput,
   nodePorts,
   sidePortY,
   type Point,
@@ -79,13 +80,16 @@ export interface CanvasProps {
   shake?: { node: string; tick: number };
 }
 
+/** A wire being dragged; `snap` is the input port its loose end has jumped onto. */
+type PendingWire = { from: GraphEndpoint; previous?: GraphEndpoint; snap?: GraphEndpoint } & Point;
+
 const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
   const registry = p.registry;
   const root = useRef<HTMLDivElement>(null);
   const view = p.viewport,
     setView = p.onViewport;
   const [preview, setPreview] = useState<Record<string, Point>>({});
-  const [wire, setWire] = useState<{ from: GraphEndpoint; previous?: GraphEndpoint } & Point>();
+  const [wire, setWire] = useState<PendingWire>();
   const [box, setBox] = useState<{ x: number; y: number; w: number; h: number }>();
   const space = useRef(false);
   const stopTracking = useRef<(() => void) | null>(null);
@@ -190,28 +194,47 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     e.stopPropagation();
     if (p.readonly || e.button !== 0) return;
     root.current?.focus();
-    setWire({ from, previous, ...point(e.clientX, e.clientY) });
+    // Within this many screen pixels of an input port, the wire end jumps onto it.
+    const SNAP_PX = 28;
+    const aim = (clientX: number, clientY: number): PendingWire => {
+      const at = point(clientX, clientY);
+      const hit = nearestInput(p.graph, registry, layout, at, SNAP_PX / view.zoom, from.node);
+      return hit
+        ? { from, previous, snap: { node: hit.node, port: hit.port }, ...hit.point }
+        : { from, previous, ...at };
+    };
+    let current = aim(e.clientX, e.clientY);
+    setWire(current);
     track(
       e,
-      (event) => setWire({ from, previous, ...point(event.clientX, event.clientY) }),
+      (event) => {
+        current = aim(event.clientX, event.clientY);
+        setWire(current);
+      },
       (event) => {
         setWire(undefined);
         const target = document
           .elementFromPoint(event.clientX, event.clientY)
           ?.closest<HTMLElement>('[data-node]');
-        if (!target || !root.current?.contains(target) || target.dataset.output) return;
-        const id = target.dataset.node!;
-        let port = target.dataset.input;
-        if (!port) {
-          const n = p.graph.nodes.find((n) => n.id === id);
-          // Dropping on a node body connects to its first free input.
-          port = n
-            ? ports(n, 'inputs').find(
-                (port) =>
-                  !p.graph.edges.some((edge) => edge.to.node === id && edge.to.port === port),
-              )
-            : undefined;
+        const inside = target && root.current?.contains(target) ? target : undefined;
+        // An exact drop on a port wins; otherwise the snapped port; otherwise a node body.
+        if (inside?.dataset.input) {
+          p.onConnect(from, { node: inside.dataset.node!, port: inside.dataset.input }, previous);
+          return;
         }
+        if (current.snap) {
+          p.onConnect(from, current.snap, previous);
+          return;
+        }
+        if (!inside || inside.dataset.output) return;
+        const id = inside.dataset.node!;
+        const n = p.graph.nodes.find((n) => n.id === id);
+        // Dropping on a node body connects to its first free input.
+        const port = n
+          ? ports(n, 'inputs').find(
+              (port) => !p.graph.edges.some((edge) => edge.to.node === id && edge.to.port === port),
+            )
+          : undefined;
         if (port) p.onConnect(from, { node: id, port }, previous);
       },
       () => setWire(undefined),
@@ -333,7 +356,12 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               </g>
             );
           })}
-          {wire && <path className="wire is-pending" d={path(endpoint(wire.from, true), wire)} />}
+          {wire && (
+            <path
+              className={`wire is-pending ${wire.snap ? 'is-snapped' : ''}`}
+              d={path(endpoint(wire.from, true), wire)}
+            />
+          )}
         </svg>
         {p.graph.nodes.map((n) => {
           const a = pos(n);
@@ -498,6 +526,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                           'port',
                           side === 'inputs' ? 'is-in' : 'is-out',
                           connected && 'is-connected',
+                          side === 'inputs' &&
+                            wire?.snap?.node === n.id &&
+                            wire.snap.port === port &&
+                            'is-target',
                           errors.some((e) => e.port === port) && 'is-error',
                         ]
                           .filter(Boolean)

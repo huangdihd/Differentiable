@@ -34,7 +34,7 @@ import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
-import { NODE_W, SYMBOLS } from './ui/graph-geometry';
+import { NODE_W, SYMBOLS, freeSpot, layoutGraph, nodeHeight } from './ui/graph-geometry';
 import { TrainingLoop } from './ui/TrainingLoop';
 import { Coach } from './ui/Coach';
 import {
@@ -49,6 +49,8 @@ import {
 } from './storage';
 import './ui/theme.css';
 import { MusicToggle } from './ui/MusicToggle';
+import { SfxToggle } from './ui/SfxToggle';
+import { sfx, type SfxName } from './audio/sfx';
 import { MathText } from './ui/MathText';
 import { levelPapers } from './levels/papers';
 import './ui/layout.css';
@@ -157,6 +159,7 @@ export default function App() {
         >
           {t(`backend.${backend}`)}
         </span>
+        <SfxToggle t={t} />
         <MusicToggle t={t} chapter={entry?.chapter ?? 0} />
         <select
           className="field lang-select"
@@ -368,6 +371,12 @@ function Home({
           <p>
             <span className="tag demo-tag">DEMO</span> {t('home.demoNote')}
           </p>
+          <p className="home-community">
+            <a href="https://www.bilibili.com/video/BV13BJt6SEVx" target="_blank" rel="noreferrer">
+              {t('home.promoVideo')}
+            </a>
+            <span>{t('home.qqGroup', { number: '1130870192' })}</span>
+          </p>
           <p>{t('home.credit')}</p>
         </footer>
       </div>
@@ -388,6 +397,16 @@ type EditorProps = {
 
 /** Time each test case stays on the canvas during step-through verification. */
 const STEP_MS = 420;
+/** Editor commands that make a sound when they change the graph. */
+const COMMAND_SOUNDS: Partial<Record<EditorCommand['type'], SfxName>> = {
+  addNode: 'place',
+  paste: 'place',
+  insertExpression: 'place',
+  connect: 'connect',
+  rewire: 'connect',
+  disconnect: 'disconnect',
+  removeNodes: 'remove',
+};
 
 function compact(locale: Locale, n: number) {
   if (!Number.isFinite(n)) return Number.isNaN(n) ? 'NaN' : n > 0 ? '∞' : '−∞';
@@ -646,6 +665,15 @@ function Editor({
   const busy = training !== 'idle';
   const command = (cmd: EditorCommand) => {
     if (busy || inside.length) return;
+    const sound = COMMAND_SOUNDS[cmd.type];
+    if (sound) {
+      // Preview the edit (the reducer is pure) so a refused wire buzzes instead of clicking.
+      const next = editorReducer(state, cmd, registry);
+      const removedNothing =
+        cmd.type === 'removeNodes' && next.graph.nodes.length === state.graph.nodes.length;
+      if (!next.error && !removedNothing) sfx.play(sound);
+      else if (cmd.type === 'connect' || cmd.type === 'rewire') sfx.play('reject');
+    }
     setState((s) => editorReducer(s, cmd, registry));
   };
   const fail = (e: unknown) => {
@@ -661,6 +689,9 @@ function Editor({
   const finish = (r: LevelResult) => {
     setResult(r);
     setTraining('idle');
+    // Stopping a training run is not a failure, so only graded checks play the miss.
+    if (r.passed) sfx.play('win');
+    else if (level.kind !== 'train' && r.tests.length) sfx.play('fail');
     if (r.passed) {
       setPreviousBest(latest.current.progress.bestScores[level.id]);
       latest.current.onProgress(
@@ -1091,6 +1122,7 @@ function Editor({
           }
           // Stop on the first failing case and leave its values on the canvas to debug.
           if (!r.tests[i].passed) break;
+          if (!skip.current) sfx.play('pass', i);
           if (!skip.current) await new Promise((done) => setTimeout(done, STEP_MS));
         }
         setVerify(null);
@@ -1129,12 +1161,19 @@ function Editor({
               : null;
           })();
       if (!at) return;
-      command({
-        type: 'addNode',
-        component,
-        attrs: defaults(component),
-        position: { x: at.x - NODE_W / 2, y: at.y - 13 },
-      });
+      const attrs = defaults(component);
+      let position = { x: at.x - NODE_W / 2, y: at.y - 13 };
+      if (!moved) {
+        // A drag drops exactly where the player let go; a click looks for room near the middle.
+        const placed = layoutGraph(state.graph, registry);
+        const rects = state.graph.nodes.flatMap((n) => {
+          const p = placed.get(n.id);
+          return p ? [{ ...p, w: NODE_W, h: nodeHeight(n, registry) }] : [];
+        });
+        const h = nodeHeight({ id: '', component, attrs }, registry);
+        position = freeSpot(position, NODE_W, h, rects);
+      }
+      command({ type: 'addNode', component, attrs, position });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -1372,7 +1411,7 @@ function Editor({
           onDeleteEdge={(index) => command({ type: 'disconnect', edge: state.graph.edges[index] })}
           onDeleteNode={(id) => {
             command({ type: 'select', ids: [id], shift: false });
-            command({ type: 'removeNodes' });
+            command({ type: 'removeNodes', ids: [id] });
           }}
           onConnect={(from, to, previous) => {
             const base = {
@@ -1384,6 +1423,7 @@ function Editor({
               ),
             };
             if (connectionError(base, { from, to }, registry) === 'cycle') {
+              sfx.play('reject');
               setShake((s) => ({ node: to.node, tick: (s?.tick ?? 0) + 1 }));
               setError({ key: 'cycle', params: {} });
               return;
