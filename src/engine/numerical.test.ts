@@ -11,6 +11,7 @@ import {
   log,
   max,
   mul,
+  recip,
   reduceMax,
   reshape,
   sum,
@@ -157,6 +158,12 @@ describe('primitive autodiff: central finite differences', () => {
     await finiteDifference([input([0.2, 0.7, 1.4, 2])], (x) => {
       const y = log(x);
       return add(exp(y), mul(y, y));
+    });
+  });
+  it('recip on both signs, including reuse of its output', async () => {
+    await finiteDifference([input([-2.5, -0.6, 0.4, 1.7])], (x) => {
+      const y = recip(x);
+      return add(y, mul(y, x));
     });
   });
   it('sigmoid gradients at negative, zero, and positive inputs', async () => {

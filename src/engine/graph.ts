@@ -626,6 +626,9 @@ export function staticScalar(
     case 'log':
       value = Math.log(x);
       break;
+    case 'recip':
+      value = 1 / x;
+      break;
     case 'reshape':
     case 'transpose':
     case 'sum':
@@ -783,7 +786,7 @@ export function createDefaultRegistry(): ComponentRegistry {
       (i) => ({ out: broadcast(i.a, i.b) }),
       (i) => ({ out: T[name](i.a, i.b) }),
     );
-  for (const name of ['exp', 'log'] as const)
+  for (const name of ['exp', 'log', 'recip'] as const)
     register(
       name,
       ['x'],

@@ -109,6 +109,9 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
       };`,
     );
   }
+  if (op === 'recip') {
+    return finish(`out[i] = ${vjp ? `-${g}[i] * ${y}[i] * ${y}[i]` : '1.0 / x0[i]'};`);
+  }
   if (op === 'reshape') return finish(`out[i] = ${vjp ? g : 'x0'}[i];`);
   if (op === 'transpose') {
     const perm = attrs.perm as number[];

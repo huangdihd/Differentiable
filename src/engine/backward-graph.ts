@@ -50,6 +50,7 @@ const supported = new Set([
   'max',
   'ge',
   'exp',
+  'recip',
   'log',
   'sum',
   'reduce_max',
@@ -306,6 +307,12 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
       }
       case 'exp':
         send('x', () => binary('mul', grad, n.id));
+        break;
+      case 'recip':
+        // d(1/x)/dx = -1/x²: the node's own output, squared and negated.
+        send('x', () =>
+          binary('mul', grad, binary('mul', constant(-1), binary('mul', n.id, n.id))),
+        );
         break;
       case 'log':
         send('x', () =>

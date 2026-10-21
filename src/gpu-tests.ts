@@ -47,7 +47,7 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
     [[], [2, 3]],
   ])
     for (const op of ['add', 'mul', 'max', 'ge']) fixtures.push({ op, shapes });
-  for (const op of ['exp', 'log', 'softmax', 'layernorm'])
+  for (const op of ['exp', 'log', 'recip', 'softmax', 'layernorm'])
     for (const shape of [
       [3, 7],
       [2, 3, 33],
@@ -125,7 +125,11 @@ async function operations(cpu: CpuBackend, gpu: WebGpuBackend) {
         f.data?.[i]?.length
           ? f.data[i]
           : Array.from({ length: size(s) }, () =>
-              f.op === 'log' ? 0.2 + rng.uniform() : rng.normal() * 0.4,
+              f.op === 'log'
+                ? 0.2 + rng.uniform()
+                : f.op === 'recip'
+                  ? (rng.uniform() < 0.5 ? -1 : 1) * (0.3 + rng.uniform())
+                  : rng.normal() * 0.4,
             ),
       );
       const shape = infer(f.op, f.shapes, attrs);

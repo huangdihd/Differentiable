@@ -164,6 +164,9 @@ function execute(
         : op === 'exp'
           ? Math.exp(a[i])
           : Math.log(a[i]);
+  } else if (op === 'recip') {
+    // d(1/x)/dx = -1/x², which is -y².
+    for (let i = 0; i < out.length; i++) out[i] = vjp ? -g[i] * y[i] * y[i] : 1 / a[i];
   } else if (op === 'reshape') out.set(vjp ? g : a);
   else if (op === 'transpose') {
     const p = attrs.perm as number[],

@@ -253,111 +253,6 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       {
         "id": "fixed-0",
         "inputs": {
-          "x": [
-            -3,
-          ],
-        },
-      },
-      {
-        "id": "fixed-1",
-        "inputs": {
-          "x": [
-            -2,
-          ],
-        },
-      },
-      {
-        "id": "fixed-2",
-        "inputs": {
-          "x": [
-            -0.5,
-          ],
-        },
-      },
-      {
-        "id": "fixed-3",
-        "inputs": {
-          "x": [
-            -0.25,
-          ],
-        },
-      },
-      {
-        "id": "fixed-4",
-        "inputs": {
-          "x": [
-            0.25,
-          ],
-        },
-      },
-      {
-        "id": "fixed-5",
-        "inputs": {
-          "x": [
-            0.5,
-          ],
-        },
-      },
-      {
-        "id": "fixed-6",
-        "inputs": {
-          "x": [
-            1,
-          ],
-        },
-      },
-      {
-        "id": "fixed-7",
-        "inputs": {
-          "x": [
-            3,
-          ],
-        },
-      },
-    ],
-    "generated": [
-      {
-        "id": "seeded-0",
-        "inputs": {
-          "x": [
-            -1.7020802308339626,
-          ],
-        },
-      },
-      {
-        "id": "seeded-1",
-        "inputs": {
-          "x": [
-            -1.2842901562340558,
-          ],
-        },
-      },
-      {
-        "id": "seeded-2",
-        "inputs": {
-          "x": [
-            -1.9161906332243235,
-          ],
-        },
-      },
-      {
-        "id": "seeded-3",
-        "inputs": {
-          "x": [
-            -0.6611381048802286,
-          ],
-        },
-      },
-    ],
-    "id": "0-3",
-    "par": 5,
-    "seed": 1002,
-  },
-  {
-    "fixed": [
-      {
-        "id": "fixed-0",
-        "inputs": {
           "a": [
             -3,
           ],
@@ -491,7 +386,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "0-4",
-    "par": 6,
+    "par": 2,
     "seed": 1003,
   },
   {
@@ -596,7 +491,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "0-5",
-    "par": 8,
+    "par": 4,
     "seed": 1004,
   },
   {
@@ -701,7 +596,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "0-6",
-    "par": 10,
+    "par": 6,
     "seed": 1005,
   },
   {
@@ -1331,7 +1226,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "1-4",
-    "par": 5,
+    "par": 1,
     "seed": 1011,
   },
   {
@@ -1436,7 +1331,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "1-5",
-    "par": 11,
+    "par": 7,
     "seed": 1012,
   },
   {
@@ -1541,7 +1436,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "1-6",
-    "par": 13,
+    "par": 9,
     "seed": 1013,
   },
   {
@@ -1646,7 +1541,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "1-7",
-    "par": 9,
+    "par": 5,
     "seed": 1014,
   },
   {
@@ -2132,7 +2027,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "2-2",
-    "par": 10,
+    "par": 6,
     "seed": 2001,
   },
   {
@@ -2937,7 +2832,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "2-5",
-    "par": 11,
+    "par": 7,
     "seed": 2004,
   },
   {
@@ -3297,7 +3192,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "2-6",
-    "par": 33,
+    "par": 21,
     "seed": 2005,
   },
 ]

@@ -79,7 +79,7 @@ export function formulaGraph(formula: string, inputs: readonly string[] = ['x'])
   };
 }
 
-export const scalarPrimitives = ['const', 'add', 'mul', 'exp', 'log'] as const;
+export const scalarPrimitives = ['const', 'add', 'mul', 'exp', 'log', 'recip'] as const;
 
 export function componentAnswer(graph: GraphJSON): GraphJSON {
   const copy = structuredClone(graph);

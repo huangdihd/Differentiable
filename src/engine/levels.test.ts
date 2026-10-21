@@ -20,7 +20,7 @@ describe('level runner and progression', () => {
     expect(a).toEqual(b);
     expect(a.passed).toBe(true);
     expect(a.tests).toHaveLength(4);
-    expect(a.metrics).toEqual({ topNodes: 7, expandedPrimitives: 6, parameterCount: 0 });
+    expect(a.metrics).toEqual({ topNodes: 7, expandedPrimitives: 4, parameterCount: 0 });
   });
   it('saves graph snapshots and unlocks only on successful unlocked results', async () => {
     const initial = initialProgress(['sigmoid']);

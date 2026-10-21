@@ -4,14 +4,15 @@ import { cases, formulaGraph, scalarPrimitives, withPar } from './level-helpers'
 
 const constant = (x: T.Tensor, value: number) => T.tensor([value], [], x.backend);
 const neg = (x: T.Tensor) => T.mul(x, constant(x, -1));
-const recip = (x: T.Tensor) => T.mul(x, T.exp(neg(T.log(T.mul(x, x)))));
-const sigmoid = (x: T.Tensor) => recip(T.add(constant(x, 1), T.exp(neg(x))));
+const sigmoid = (x: T.Tensor) => T.recip(T.add(constant(x, 1), T.exp(neg(x))));
 
 const definitions: {
   /** Lessons inserted after release keep a stable named ID so saved progress still lines up. */
   id?: string;
   /** Seed slot for generated cases; numbered lessons use their position among numbered lessons. */
   caseIndex?: number;
+  /** Retired lessons keep their slot so later numbered IDs stay stable; they build no level. */
+  retired?: boolean;
   name: string;
   formula: string;
   inputs?: string[];
@@ -33,18 +34,14 @@ const definitions: {
     formula: 'x * x',
     reference: ({ x }) => T.mul(x, x),
   },
-  {
-    name: 'recip',
-    formula: 'x * exp(neg(log(x * x)))',
-    nonzeroInputs: ['x'],
-    reference: ({ x }) => recip(x),
-  },
+  // Reciprocal is now a basic primitive, so its lesson (0-3) is retired.
+  { name: 'recip', retired: true, formula: '', reference: ({ x }) => T.recip(x) },
   {
     name: 'div',
     formula: 'a * recip(b)',
     inputs: ['a', 'b'],
     nonzeroInputs: ['b'],
-    reference: ({ a, b }) => T.mul(a, recip(b)),
+    reference: ({ a, b }) => T.mul(a, T.recip(b)),
   },
   { name: 'sigmoid', formula: 'recip(1 + exp(neg(x)))', reference: ({ x }) => sigmoid(x) },
   {
@@ -66,10 +63,11 @@ export const chapter0Levels: ForwardLevel[] = [];
 const numbered = definitions.filter((definition) => !definition.id);
 const idOf = (definition: (typeof definitions)[number]) =>
   definition.id ?? `0-${numbered.indexOf(definition) + 1}`;
-for (const [position, definition] of definitions.entries()) {
+const live = definitions.filter((definition) => !definition.retired);
+for (const [position, definition] of live.entries()) {
   const id = idOf(definition);
   const index = definition.caseIndex ?? numbered.indexOf(definition);
-  const next = definitions[position + 1];
+  const next = live[position + 1];
   const inputs = definition.inputs ?? ['x'];
   const graph =
     definition.name === 'relu'

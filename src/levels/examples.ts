@@ -21,17 +21,12 @@ class Builder {
     return this.graph;
   }
 }
-function unaryGraph(kind: 'neg' | 'recip' | 'sigmoid'): GraphJSON {
+function unaryGraph(kind: 'neg' | 'sigmoid'): GraphJSON {
   const b = new Builder(),
     x = b.node('input', 'input', { name: 'x' });
   if (kind === 'neg') {
     const minus = b.node('minus', 'const', { value: -1 });
     return b.output(b.node('product', 'mul', {}, { a: x, b: minus }));
-  }
-  if (kind === 'recip') {
-    const log = b.node('log', 'log', {}, { x });
-    const neg = b.node('neg', 'neg', {}, { x: log });
-    return b.output(b.node('exp', 'exp', {}, { x: neg }));
   }
   const neg = b.node('neg', 'neg', {}, { x });
   const exp = b.node('exp', 'exp', {}, { x: neg });
@@ -41,7 +36,7 @@ function unaryGraph(kind: 'neg' | 'recip' | 'sigmoid'): GraphJSON {
 }
 export function createExampleRegistry() {
   const registry = createDefaultRegistry();
-  for (const name of ['neg', 'recip', 'sigmoid'] as const)
+  for (const name of ['neg', 'sigmoid'] as const)
     registry.register({
       name,
       inputs: ['x'],

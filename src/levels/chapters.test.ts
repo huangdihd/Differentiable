@@ -31,7 +31,7 @@ describe('formal chapter catalog', () => {
       '0-1',
       '0-2',
       'square',
-      ...Array.from({ length: 6 }, (_, i) => `0-${i + 3}`),
+      ...Array.from({ length: 5 }, (_, i) => `0-${i + 4}`),
       ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
       'axes',
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
@@ -84,7 +84,6 @@ describe('formal chapter catalog', () => {
       ['0-1', ['neg']],
       ['0-2', ['sub']],
       ['square', ['square']],
-      ['0-3', ['recip']],
       ['0-4', ['div']],
       ['0-5', ['sigmoid']],
       ['0-6', ['tanh']],
@@ -109,6 +108,7 @@ describe('formal chapter catalog', () => {
         'mul',
         'exp',
         'log',
+        'recip',
         ...(level.chapter === '1' || ['0-7', '0-8'].includes(level.id) ? ['max'] : []),
       ]);
       const random = new Random(level.generated!.seed);
@@ -124,8 +124,7 @@ describe('formal chapter catalog', () => {
           expect(data).toHaveLength(1);
           expect(data.every(Number.isFinite)).toBe(true);
           if (['0-8', '1-4'].includes(level.id)) expect(data.every((x) => x > 0)).toBe(true);
-          if (level.id === '0-3' || (level.id === '0-4' && name === 'b'))
-            expect(data.every((x) => x !== 0)).toBe(true);
+          if (level.id === '0-4' && name === 'b') expect(data.every((x) => x !== 0)).toBe(true);
         }
       }
       if (level.id === '0-4') expect(level.fixed.some((test) => test.inputs.a[0] < 0)).toBe(true);
@@ -137,7 +136,6 @@ describe('formal chapter catalog', () => {
   const functions: Record<string, (x: number, b: number, bias: number) => number> = {
     '0-1': (x) => -x,
     '0-2': (a, b) => a - b,
-    '0-3': (x) => 1 / x,
     '0-4': (a, b) => a / b,
     '0-5': (x) => 1 / (1 + Math.exp(-x)),
     '0-6': Math.tanh,

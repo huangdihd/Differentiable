@@ -81,6 +81,7 @@ export const max = (a: Tensor, b: Tensor) => operation('max', [a, b]);
 export const ge = (a: Tensor, b: Tensor) => operation('ge', [a, b]);
 export const exp = (x: Tensor) => operation('exp', [x]);
 export const log = (x: Tensor) => operation('log', [x]);
+export const recip = (x: Tensor) => operation('recip', [x]);
 export const sum = (x: Tensor, axes: number[], keepdims = false) =>
   operation('sum', [x], { axes, keepdims });
 export const reduceMax = (x: Tensor, axes: number[], keepdims = false) =>

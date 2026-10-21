@@ -37,6 +37,7 @@ describe('graph compiler', () => {
         'output',
         'const',
         'param',
+        'recip',
         'add',
         'mul',
         'exp',

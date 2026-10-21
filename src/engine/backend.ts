@@ -58,7 +58,7 @@ export function axesFor(shape: Shape, axes: number[]): number[] {
 export function infer(op: string, shapes: Shape[], attrs: Attributes = {}): number[] {
   const a = shapes[0] ?? [];
   if (['add', 'mul', 'max', 'ge'].includes(op)) return broadcast(a, shapes[1]);
-  if (['exp', 'log', 'softmax', 'layernorm'].includes(op)) {
+  if (['exp', 'log', 'recip', 'softmax', 'layernorm'].includes(op)) {
     if (['softmax', 'layernorm'].includes(op) && (!a.length || a[a.length - 1] === 0))
       throw new Error('engine.shape.lastAxis');
     if (op === 'layernorm' && !(Number(attrs.eps ?? 1e-5) > 0))

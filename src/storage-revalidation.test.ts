@@ -11,20 +11,17 @@ import {
   STORAGE_VERSION,
 } from './storage';
 
-const recip = chapter0Levels.find((level) => level.id === '0-3')!;
 const div = chapter0Levels.find((level) => level.id === '0-4')!;
+// Saves from before reciprocal became a basic primitive still carry the retired 0-3 lesson.
 const oldRecip = formulaGraph('exp(neg(log(x)))');
 const oldDiv = formulaGraph('a * exp(neg(log(b)))', ['a', 'b']);
-function fixture(version: number, modern = false) {
+function fixture(version: number) {
   const progress = {
     ...createInitialProgress(),
     unlocked: ['0-1', '0-2', '0-3', '0-4', '0-5'],
     unlockedComponents: ['neg', 'sub', 'recip', 'div'],
     passed: ['0-3', '0-4'],
-    passedSolutions: {
-      '0-3': modern ? recip.referenceGraph! : oldRecip,
-      '0-4': div.referenceGraph!,
-    },
+    passedSolutions: { '0-3': oldRecip, '0-4': div.referenceGraph! },
     savedGraphs: {},
     bestScores: { '0-3': { topNodes: 1, expandedPrimitives: 1, parameterCount: 0 } },
   };
@@ -40,47 +37,35 @@ function fixture(version: number, modern = false) {
 
 describe('changed-contract storage revalidation', () => {
   it.each([2, STORAGE_VERSION])(
-    'revokes old reciprocal before checking dependent division in v%s',
+    'keeps sign-safe division in v%s even when the old reciprocal was positive-only',
     async (version) => {
-      const { source, progress } = fixture(version);
+      const { source } = fixture(version);
       const onRevoked = vi.fn();
       const restored = await loadProgressWithMigration(chapter0Levels, source, onRevoked);
-      expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-3']);
-      expect(restored.passed).toEqual(['0-4']);
-      expect(restored.passedSolutions['0-3']).toBeUndefined();
-      expect(restored.bestScores['0-3']).toBeUndefined();
-      expect(restored.savedGraphs['0-3']).toEqual(oldRecip);
-      expect(restored.unlocked).toEqual(progress.unlocked);
-      expect(restored.unlockedComponents).toEqual(progress.unlockedComponents);
-      expect(loadProgress(source)).toEqual(restored);
+      expect(onRevoked).not.toHaveBeenCalled();
+      expect(restored.passed).toContain('0-4');
+      expect(restored.passedSolutions['0-4']).toEqual(div.referenceGraph);
+      const registry = buildPlayerRegistry(chapter0Levels, restored);
+      // The retired lesson's saved solution no longer replaces the native primitive.
+      expect(registry.get('recip')?.subgraph).toBeUndefined();
       const negative = {
         ...div,
         fixed: [{ id: 'negative-denominator', inputs: { a: [6], b: [-2] } }],
         generated: undefined,
         shapeVariants: undefined,
       };
-      // The complete level includes negative denominators; its implementation uses the fallback recip.
       expect(
         (
           await evaluateLevel(
             { ...negative, available: availableComponents(div, restored) },
             div.referenceGraph!,
-            { registry: buildPlayerRegistry(chapter0Levels, restored) },
+            { registry },
           )
         ).passed,
       ).toBe(true);
-      onRevoked.mockClear();
-      expect(await loadProgressWithMigration(chapter0Levels, source, onRevoked)).toEqual(restored);
-      expect(onRevoked).not.toHaveBeenCalled();
+      expect(loadProgress(source)).toEqual(restored);
     },
   );
-
-  it.each([2, STORAGE_VERSION])('keeps new sign-safe solutions in v%s', async (version) => {
-    const { source, progress } = fixture(version, true);
-    const onRevoked = vi.fn();
-    expect(await loadProgressWithMigration(chapter0Levels, source, onRevoked)).toEqual(progress);
-    expect(onRevoked).not.toHaveBeenCalled();
-  });
 
   it('revokes directly embedded positive-only division and preserves an existing editor draft', async () => {
     const { source, data, progress } = fixture(STORAGE_VERSION);
@@ -90,8 +75,8 @@ describe('changed-contract storage revalidation', () => {
     data.set(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, progress }));
     const onRevoked = vi.fn();
     const restored = await loadProgressWithMigration(chapter0Levels, source, onRevoked);
-    expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-3', '0-4']);
-    expect(restored.passed).toEqual([]);
+    expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-4']);
+    expect(restored.passed).not.toContain('0-4');
     expect(restored.savedGraphs).toEqual({ '0-3': draft, '0-4': oldDiv });
     expect(restored.unlockedComponents).toEqual(progress.unlockedComponents);
   });
@@ -102,30 +87,12 @@ describe('changed-contract storage revalidation', () => {
     data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress }));
     const onRevoked = vi.fn();
     const restored = await loadProgressWithMigration(chapter0Levels, source, onRevoked);
-    expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-3', '0-4']);
-    expect(restored.passed).not.toContain('0-3');
+    expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-4']);
     expect(restored.passed).not.toContain('0-4');
-    // Passing 0-2 also opens the square lesson inserted after it.
-    expect(restored.unlocked).toEqual([...progress.unlocked, 'square']);
+    // The retired lesson drops out; passing 0-2 also opens the square lesson inserted after it.
+    expect(restored.unlocked).toEqual(['0-1', '0-2', '0-4', '0-5', 'square']);
     expect(restored.unlockedComponents).toEqual(progress.unlockedComponents);
-    expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    // Drafts for the retired lesson are dropped with it.
+    expect(restored.savedGraphs).toEqual({ '0-4': oldDiv });
   });
-
-  it.each([false, true])(
-    'validates legacy reciprocal without auto-crediting a replacement (modern=%s)',
-    async (modern) => {
-      const { source, data, progress } = fixture(1, modern);
-      progress.savedGraphs = { ...progress.passedSolutions };
-      data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress }));
-      const onRevoked = vi.fn();
-      const restored = await loadProgressWithMigration(chapter0Levels, source, onRevoked);
-      expect(restored.passed.includes('0-3')).toBe(modern);
-      expect(restored.passed).toContain('0-4');
-      expect(restored.savedGraphs).toEqual(progress.savedGraphs);
-      expect(restored.unlockedComponents).toEqual(progress.unlockedComponents);
-      if (modern) expect(onRevoked).not.toHaveBeenCalled();
-      else expect(onRevoked).toHaveBeenCalledExactlyOnceWith(['0-3']);
-      expect(loadProgress(source)).toEqual(restored);
-    },
-  );
 });

@@ -12,14 +12,14 @@ describe('function plot', () => {
   });
 
   it('samples around the level cases, never at 0, and stays positive for √x', () => {
-    const xs = sampleXs(level('0-3'), 'x');
+    const xs = sampleXs(level('0-5'), 'x');
     expect(xs.includes(0)).toBe(false);
     expect(Math.min(...xs)).toBeLessThanOrEqual(-5);
     expect(Math.min(...sampleXs(level('0-8'), 'x'))).toBeGreaterThan(0);
   });
 
   it('keeps the shape of 1/x visible and breaks it at the pole', () => {
-    const xs = sampleXs(level('0-3'), 'x');
+    const xs = sampleXs(level('0-5'), 'x');
     const ys = xs.map((x) => 1 / x);
     const range = yRange(ys);
     expect(range[1] - range[0]).toBeLessThan(10);
