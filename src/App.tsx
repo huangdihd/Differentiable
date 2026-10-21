@@ -21,7 +21,13 @@ import {
 import { WorkerClient, WorkerClientError } from './worker/client';
 import type { WorkerError } from './worker/protocol';
 import type { TrainingReport, TrainingStepTrace } from './engine/training';
-import Canvas, { position, shapeText, type CanvasHandle, type NodeValue } from './ui/Canvas';
+import Canvas, {
+  position,
+  shapeText,
+  signal,
+  type CanvasHandle,
+  type NodeValue,
+} from './ui/Canvas';
 import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
@@ -867,6 +873,7 @@ function Editor({
               title: `[${r.shape.join('×') || '·'}] ${fullValues(r.values)}`,
               ok: r.values.every(Number.isFinite),
               shape: r.shape,
+              signal: signal(r.values),
             };
           } catch (e) {
             if (cancelled || revision.current !== probeRevision) return;
@@ -961,6 +968,7 @@ function Editor({
         title: `[${v.shape.join('×') || '·'}] ${fullValues(v.values)}${v.size > v.values.length ? ' …' : ''}`,
         ok: v.values.every(Number.isFinite),
         shape: v.shape,
+        signal: signal(v.values),
       };
     }
     return next;

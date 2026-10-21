@@ -31,6 +31,8 @@
   --bad: #ff8fa3;
   --warn: #ffb86b;
   --grad: #6fe3ff; /* backward flow: gradients */
+  --pos: #ffad5c; /* wires carrying positive values */
+  --neg: #7cb6ff; /* wires carrying negative values */
 
   /* wires */
   --wire: #eaf1ff;
@@ -429,6 +431,12 @@ input[type='range'] {
 .wire.is-live {
   stroke: var(--wire);
 }
+.wire.is-pos {
+  stroke: var(--pos);
+}
+.wire.is-neg {
+  stroke: var(--neg);
+}
 .wire.is-error {
   stroke: var(--bad);
 }
@@ -517,6 +525,7 @@ input[type='range'] {
   height: 12px;
   background: var(--bg);
   border: 2px solid var(--wire-dead);
+  border-radius: 50%;
   cursor: crosshair;
   transition:
     transform 0.12s,

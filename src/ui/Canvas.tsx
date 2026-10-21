@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { translatePort } from '../i18n';
 import { parameterName } from './parameter-label';
 import {
@@ -42,6 +42,27 @@ export interface NodeValue {
   ok: boolean;
   /** Output shape; shown on the node once tensors are bigger than a scalar. */
   shape?: readonly number[];
+  /** What the outgoing wires show: the value's sign and size (see `signal`). */
+  signal?: number;
+}
+
+/** One number standing for a node's output: the value itself, or a tensor's mean. */
+export function signal(values: readonly number[]): number | undefined {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((a, b) => a + b, 0) / finite.length : undefined;
+}
+
+/**
+ * Wires read like a neural-network diagram: warm for positive values, blue for negative, and
+ * thicker the larger the value (log scale, so 0.01 and 1000 both stay readable).
+ */
+function wireStyle(v: number | undefined): { className: string; style?: CSSProperties } {
+  if (v === undefined || v === 0) return { className: '' };
+  const size = Math.min(1, Math.log10(1 + Math.abs(v)) / 1.3);
+  return {
+    className: v > 0 ? 'is-pos' : 'is-neg',
+    style: { strokeWidth: 1.6 + size * 3.4 },
+  };
 }
 export interface CanvasHandle {
   /** Converts browser client coordinates to graph coordinates, or null when outside the canvas. */
@@ -146,10 +167,10 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     };
   };
   const path = (a: Point, b: Point) => {
-    // Forward wires bend within the gap, so close ports get a short clean S instead of a
-    // loop past both ends; backward wires still swing out far enough to wrap around.
+    // Forward wires are nearly straight, like the lines of a textbook network diagram, and stay
+    // within the gap; backward wires still swing out far enough to wrap around.
     const gap = b.x - a.x;
-    const dx = gap > 0 ? gap * 0.5 : Math.max(40, -gap * 0.5);
+    const dx = gap > 0 ? gap * 0.25 : Math.max(40, -gap * 0.5);
     return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
   };
 
@@ -333,6 +354,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
         <svg className="wires">
           {p.graph.edges.map((edge, i) => {
             const d = path(endpoint(edge.from, true), endpoint(edge.to, false));
+            const sign = wireStyle(p.values?.[edge.from.node]?.signal);
             return (
               <g key={`${edge.from.node}:${edge.from.port}>${edge.to.node}:${edge.to.port}`}>
                 <path
@@ -342,7 +364,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   onClick={() => !p.readonly && p.onDeleteEdge(i)}
                 />
                 <path
-                  className={`wire ${live(edge.from.node) ? 'is-live' : ''} ${
+                  style={live(edge.from.node) ? sign.style : undefined}
+                  className={`wire ${live(edge.from.node) ? `is-live ${sign.className}` : ''} ${
                     p.flow?.phase === 'forward'
                       ? 'is-flow-forward'
                       : p.flow?.phase === 'backward' &&
