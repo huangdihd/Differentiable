@@ -1743,6 +1743,73 @@ input[type='range'] {
   stroke: var(--line);
   stroke-width: 1;
 }
+/* y = f(x) lessons: the target curve, the probe input and where the circuit lands. */
+.function-plot {
+  margin: var(--s3) 0 var(--s2);
+}
+.function-plot .data-plot {
+  cursor: crosshair;
+  touch-action: none;
+}
+.plot-tick {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--faint);
+}
+.plot-original {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+.plot-probe {
+  stroke: var(--line-strong);
+  stroke-dasharray: 2 3;
+}
+.plot-target {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.plot-actual {
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+.plot-actual.is-ok {
+  fill: var(--good);
+}
+.plot-actual.is-off {
+  fill: var(--bad);
+}
+.plot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+}
+.plot-key::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-top: 2px solid var(--accent);
+}
+.plot-key.is-original::before {
+  border-top: 1.5px dashed var(--faint);
+}
+.plot-key.is-actual::before {
+  width: 7px;
+  height: 7px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--good);
+}
+.plot-help {
+  flex-basis: 100%;
+  color: var(--faint);
+}
 .plot-point {
   fill: var(--text);
   stroke: var(--panel);

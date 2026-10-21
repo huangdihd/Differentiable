@@ -40,6 +40,8 @@ import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
+import FunctionPlot from './ui/FunctionPlot';
+import { plottedInput } from './ui/function-plot';
 import {
   NODE_W,
   SYMBOLS,
@@ -1252,6 +1254,8 @@ function Editor({
       .map(Number),
   };
   const canEdit = !busy && !inside.length;
+  // y = f(x) lessons get a plot of the target curve under their description.
+  const plotInput = level.kind === 'train' ? undefined : plottedInput(level);
   const coaching =
     level.id === '0-1' && !progress.passed.includes('0-1') && !coachSkipped && !inside.length;
   // The empty-canvas hint is for the very first look only: any edit (even wiring x straight to y)
@@ -1292,6 +1296,19 @@ function Editor({
             <MathText text={t(level.descriptionKey)} />
           </div>
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
+          {plotInput && level.kind !== 'train' && (
+            <FunctionPlot
+              t={t}
+              level={level}
+              input={plotInput}
+              x={'invalid' in parsedInputs ? undefined : parsedInputs[plotInput]?.[0]}
+              actual={outputActual?.values[0]}
+              onPick={(x) => {
+                setInputCase('');
+                setInputs((s) => ({ ...s, [plotInput]: String(x) }));
+              }}
+            />
+          )}
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
             <p className="hint hint-open" key={key}>
               <span className="hint-n">{i + 1}</span>
