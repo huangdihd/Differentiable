@@ -1,3 +1,4 @@
+import { gardenRhyme } from '../datasets';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
@@ -241,6 +242,7 @@ export const chapter4TrainLevels: (TrainLevel & { generates: true })[] = [3, 5].
       },
       threshold: { loss: index === 3 ? bigramEntropy + 0.15 : contextBigramEntropy - 0.15 },
       dataset: index === 3 ? corpusPairs : contextBatch,
+      data: { dataset: gardenRhyme, context: index === 3 ? 1 : 2 },
       evaluationDataset: index === 3 ? corpusPairs : contextBatch,
     },
     [...preceding, ...chapter4ForwardLevels.filter((level) => Number(level.id.slice(2)) < index)],

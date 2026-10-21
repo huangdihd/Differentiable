@@ -1,3 +1,4 @@
+import { noisyLine, rings, smallAndLarge, trainOn, twoBlobs } from '../datasets';
 import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
@@ -153,11 +154,7 @@ export const chapter3TrainLevel = withPar<TrainLevel>(
     tunable: { learningRate: { min: 0.001, max: 2, default: 0.01 } },
     lossOutput: 'loss',
     threshold: { loss: 0.05 },
-    dataset: (random) => {
-      const x = Array.from({ length: 16 }, (_, i) => -2 + (4 * i) / 15);
-      const t = x.map((value) => 1.5 * value - 0.5 + (random.uniform() - 0.5) * 0.1);
-      return { inputs: { x: T.tensor(x, [16]), t: T.tensor(t, [16]) } };
-    },
+    ...trainOn(noisyLine),
   },
   [...preceding, ...chapter3ForwardLevels],
 );
@@ -389,30 +386,7 @@ export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) 
             }),
       },
       threshold: { loss: 0.15, accuracy: index === 9 ? 0.95 : 1 },
-      dataset: (random) => {
-        const x: number[] = [],
-          targets: number[] = [];
-        for (let i = 0; i < count; i++) {
-          const label = i % 2,
-            sign = label ? 1 : -1;
-          if (index === 9) {
-            const angle =
-              (2 * Math.PI * (Math.floor(i / 2) + random.uniform() * 0.2)) / (count / 2);
-            const radius = (label ? 2 : 0.6) + (random.uniform() - 0.5) * 0.1;
-            x.push(radius * Math.cos(angle), radius * Math.sin(angle));
-          } else if (index === 8) {
-            // The small feature determines the label; the large nuisance feature is balanced.
-            x.push(
-              sign * (0.8 + random.uniform() * 0.4) * 0.05,
-              (Math.floor(i / 2) % 2 ? 1 : -1) * (0.8 + random.uniform() * 0.4) * 20,
-            );
-          } else {
-            x.push(sign * (1 + random.uniform() * 0.5), sign * (1 + random.uniform() * 0.5));
-          }
-          targets.push(1 - label, label);
-        }
-        return { inputs: { x: T.tensor(x, [count, 2]) }, targets: T.tensor(targets, [count, 2]) };
-      },
+      ...trainOn(index === 9 ? rings : index === 8 ? smallAndLarge : twoBlobs),
     },
     [...preceding, ...chapter3ForwardLevels],
   );

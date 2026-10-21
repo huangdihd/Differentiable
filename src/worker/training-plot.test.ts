@@ -133,6 +133,8 @@ it('delivers final trained predictions through progress before result, and seria
     steps: 3,
     optimizer: { kind: 'sgd', learningRate: 0.1 },
     dataset,
+    // Only declared coordinate data is plotted.
+    data: { dataset: { id: 'plot', modality: 'line' } },
     lossOutput: 'loss',
     threshold: { loss: 1 },
   };

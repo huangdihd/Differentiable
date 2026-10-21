@@ -1,3 +1,4 @@
+import { gardenRhyme } from '../datasets';
 import type { Attributes, GraphJSON } from '../engine/graph';
 import type { Random } from '../engine/random';
 import type { TrainLevel } from '../engine/levels';
@@ -125,6 +126,7 @@ export const chapter6TrainLevels: TrainLevel[] = [
       tunable: { learningRate: { min: 0.001, max: 0.05, default: 0.01 }, optimizer: ['adam'] },
       threshold: { loss: 1.1 },
       dataset: gptBatch,
+      data: { dataset: gardenRhyme, context },
       evaluationDataset: () => gptBatch(),
     },
     gptPreceding,

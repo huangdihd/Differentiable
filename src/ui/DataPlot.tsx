@@ -87,7 +87,21 @@ const W = 260,
   H = 180,
   PAD = 14;
 
-export default function DataPlot({ data, label }: { data: PlotData; label: string }) {
+export default function DataPlot({
+  data,
+  label,
+  highlight,
+  onHover,
+  axisLabels,
+}: {
+  data: PlotData;
+  label: string;
+  /** Sample index to ring, e.g. the row the player points at in a table. */
+  highlight?: number;
+  onHover?: (index: number | undefined) => void;
+  /** What the horizontal and vertical axes are, e.g. which column of x. */
+  axisLabels?: { x: string; y: string };
+}) {
   const xs = data.kind === 'regression' ? data.x : data.points.map((p) => p[0]);
   const ys =
     data.kind === 'regression'
@@ -135,7 +149,15 @@ export default function DataPlot({ data, label }: { data: PlotData; label: strin
             />
           )}
           {data.x.map((x, i) => (
-            <circle key={i} className="plot-point" cx={sx(x)} cy={sy(data.t[i])} r={3} />
+            <circle
+              key={i}
+              className="plot-point"
+              cx={sx(x)}
+              cy={sy(data.t[i])}
+              r={3}
+              onMouseEnter={onHover && (() => onHover(i))}
+              onMouseLeave={onHover && (() => onHover(undefined))}
+            />
           ))}
         </g>
       ) : (
@@ -150,9 +172,29 @@ export default function DataPlot({ data, label }: { data: PlotData; label: strin
                 cx={sx(a)}
                 cy={sy(b)}
                 r={3.2}
+                onMouseEnter={onHover && (() => onHover(i))}
+                onMouseLeave={onHover && (() => onHover(undefined))}
               />
             );
           })}
+        </>
+      )}
+      {highlight !== undefined && (
+        <circle
+          className="plot-highlight"
+          cx={sx(data.kind === 'regression' ? data.x[highlight] : data.points[highlight][0])}
+          cy={sy(data.kind === 'regression' ? data.t[highlight] : data.points[highlight][1])}
+          r={7}
+        />
+      )}
+      {axisLabels && (
+        <>
+          <text className="plot-label" x={W - 4} y={H - 4} textAnchor="end">
+            {axisLabels.x} →
+          </text>
+          <text className="plot-label" x={4} y={11}>
+            ↑ {axisLabels.y}
+          </text>
         </>
       )}
     </svg>

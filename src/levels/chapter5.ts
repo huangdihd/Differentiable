@@ -1,3 +1,4 @@
+import { gardenRhyme } from '../datasets';
 import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
@@ -266,6 +267,7 @@ export const chapter5TrainLevels: TrainLevel[] = [
       tunable: { learningRate: { min: 0.001, max: 0.1, default: 0.03 }, optimizer: ['adam'] },
       threshold: { loss: 1.75 },
       dataset: attentionBatch,
+      data: { dataset: gardenRhyme, context },
       evaluationDataset: attentionBatch,
     },
     [...preceding, ...chapter5ForwardLevels],

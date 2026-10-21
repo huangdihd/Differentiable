@@ -32,6 +32,7 @@ import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import DataPlot, { type PlotData } from './ui/DataPlot';
+import DatasetCard from './ui/DatasetCard';
 import { VOCAB } from './levels/corpus';
 import { caseInputs, fullValues } from './ui/tensor-values';
 import { diagnosticNode, graphDiagnostic } from './ui/diagnostic';
@@ -549,8 +550,9 @@ function Editor({
   const [trainingPlot, setTrainingPlot] = useState<PlotData>();
   useEffect(() => {
     setPlotBase(undefined);
-    // Language models take token ids, not coordinates: nothing to plot.
-    if (level.kind !== 'train' || level.generates) return;
+    // Text datasets are token ids, not coordinates: their card shows the text instead.
+    const modality = level.kind === 'train' ? level.data?.dataset.modality : undefined;
+    if (level.kind !== 'train' || !modality || modality === 'text') return;
     let cancelled = false;
     const batch = level.dataset(new Random(level.seed));
     const x = batch.inputs.x,
@@ -561,9 +563,8 @@ function Editor({
         const xs = Array.from(await x.read()),
           ts = Array.from(await t.read());
         if (cancelled) return;
-        if (x.shape.length === 1 && t.shape.join() === x.shape.join())
-          setPlotBase({ kind: 'regression', x: xs, t: ts });
-        else if (x.shape.length === 2 && x.shape[1] === 2 && t.shape.length === 2) {
+        if (modality === 'line') setPlotBase({ kind: 'regression', x: xs, t: ts });
+        else {
           const classes = t.shape[1];
           setPlotBase({
             kind: 'classes',
@@ -1838,7 +1839,11 @@ function Editor({
                 resample={!!level.resample}
                 running={training === 'running'}
               />
-              {plot && <DataPlot data={plot} label={t('ui.data')} />}
+              {level.data ? (
+                <DatasetCard t={t} data={level.data} inputs={level.interface.inputs} plot={plot} />
+              ) : (
+                plot && <DataPlot data={plot} label={t('ui.data')} />
+              )}
               {optimizers && optimizers.length > 1 && (
                 <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
                   <span className="label">{t('ui.optimizer')}</span>

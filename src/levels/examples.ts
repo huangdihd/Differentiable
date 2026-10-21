@@ -1,3 +1,4 @@
+import { trainOn, xorTable } from '../datasets';
 import { createDefaultRegistry, type GraphJSON, type Attributes } from '../engine/graph';
 import type { ForwardLevel, TrainLevel, Level } from '../engine/levels';
 import * as T from '../engine/tensor';
@@ -141,30 +142,7 @@ export const xorLevel: TrainLevel = {
   steps: 400,
   optimizer: { kind: 'adam', learningRate: 0.05 },
   threshold: { loss: 0.05, accuracy: 1 },
-  dataset: (random) => {
-    const rows = [
-      [0, 0, 1, 0],
-      [0, 1, 0, 1],
-      [1, 0, 0, 1],
-      [1, 1, 1, 0],
-    ];
-    for (let i = rows.length - 1; i > 0; i--) {
-      const j = Math.floor(random.uniform() * (i + 1));
-      [rows[i], rows[j]] = [rows[j], rows[i]];
-    }
-    return {
-      inputs: {
-        x: T.tensor(
-          rows.flatMap((r) => r.slice(0, 2)),
-          [4, 2],
-        ),
-      },
-      targets: T.tensor(
-        rows.flatMap((r) => r.slice(2)),
-        [4, 2],
-      ),
-    };
-  },
+  ...trainOn(xorTable),
 };
 export const exampleLevels: Level[] = [sigmoidLevel, derivativeLevel, xorLevel];
 export const exampleSolutions: Record<string, GraphJSON> = {

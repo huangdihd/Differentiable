@@ -6,6 +6,7 @@ import {
   type GraphJSON,
   type ShapePorts,
 } from './graph';
+import type { DatasetUse } from '../datasets';
 import { Random } from './random';
 import * as T from './tensor';
 import {
@@ -81,6 +82,8 @@ export interface TrainLevel extends LevelMetadata {
   /** Fixed evaluation report interval for resampled training (default 50). */
   evaluationEvery?: number;
   dataset: (random: Random) => TrainingBatch;
+  /** The named dataset behind `dataset`, for the player-facing card and plots. */
+  data?: DatasetUse;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
   threshold: { loss: number; accuracy?: number };

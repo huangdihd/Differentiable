@@ -286,19 +286,22 @@ export class WorkerRuntime {
           )
         : await run.session.run(1, { reportEvery: 1 });
       // This is awaited on the same queue as updates, stop/reset and revision changes.
-      const plot = !run.level.generates
-        ? await run.plotRefresh.refresh(
-            () =>
-              trainingPlot(
-                run.request.graph,
-                run.plan,
-                run.session.batch,
-                run.level.interface.output,
-                (compute) => run.plotRefresh.field(compute, report.step >= run.level.steps),
-              ),
-            report.step >= run.level.steps,
-          )
-        : undefined;
+      // Only coordinate data is plotted; text datasets are token ids.
+      const modality = run.level.data?.dataset.modality;
+      const plot =
+        modality && modality !== 'text'
+          ? await run.plotRefresh.refresh(
+              () =>
+                trainingPlot(
+                  run.request.graph,
+                  run.plan,
+                  run.session.batch,
+                  run.level.interface.output,
+                  (compute) => run.plotRefresh.field(compute, report.step >= run.level.steps),
+                ),
+              report.step >= run.level.steps,
+            )
+          : undefined;
       // Chart the step first so the player sees the loss blow up before the run stops.
       if (Number.isFinite(report.loss))
         this.emit({

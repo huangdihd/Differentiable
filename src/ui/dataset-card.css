@@ -1,0 +1,166 @@
+/* ---------- dataset card: what a training level learns from ---------- */
+.dataset-card {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+.dataset-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.dataset-kind {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--on-accent);
+  background: var(--accent);
+  padding: 0 5px;
+}
+.dataset-name {
+  color: var(--text);
+}
+.dataset-source,
+.dataset-note,
+.dataset-shapes {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dataset-shapes {
+  font-family: var(--mono);
+  color: var(--faint);
+}
+.dataset-card .data-plot {
+  border: none;
+}
+.dataset-table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 100%;
+}
+.dataset-table th,
+.dataset-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 6px;
+  text-align: center;
+}
+.dataset-table th {
+  color: var(--muted);
+  font-weight: normal;
+}
+.dataset-table .is-right {
+  color: var(--good);
+}
+.dataset-table .is-wrong {
+  color: var(--bad);
+}
+.char-samples {
+  display: grid;
+  gap: 3px;
+  overflow-x: auto;
+}
+.char-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.char-label {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 2.5em;
+}
+.char-cell {
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 14px;
+  text-align: center;
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 0 1px;
+}
+.char-cell.is-answer {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.char-arrow {
+  color: var(--muted);
+  padding: 0 4px;
+}
+.dataset-text summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dataset-text pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+.dataset-text mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+.dataset-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+  vertical-align: middle;
+}
+.legend-dot.is-class-0 {
+  background: var(--accent);
+}
+.legend-dot.is-class-1 {
+  background: var(--grad);
+}
+.legend-line {
+  display: inline-block;
+  width: 14px;
+  border-top: 2px solid var(--accent);
+  vertical-align: middle;
+}
+.dataset-table-wrap {
+  max-height: 150px;
+  overflow-y: auto;
+}
+.dataset-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.dataset-table tr.is-highlight td {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.dataset-table .row-index {
+  color: var(--faint);
+}
+.plot-highlight {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.plot-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--muted);
+  pointer-events: none;
+}
