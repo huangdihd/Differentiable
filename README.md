@@ -19,6 +19,22 @@ npm run format
 
 Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT calibration test takes roughly 67 seconds on the development machine (reference plus control), with a 360-second timeout.
 
+## Demo deployment
+
+The GitHub repository is private. `main` holds development history; the `demo` branch is the only
+source branch that triggers `.github/workflows/deploy-demo.yml`. Each push to `demo` installs the
+locked dependencies, runs `npm run build:demo` to build and obfuscate `dist/`, then uploads that
+untracked output to the existing `differentiable` Cloudflare Pages production project. The workflow
+requires repository Actions secrets `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`; the latter
+must be scoped to Account → Cloudflare Pages → Edit. Neither the token nor generated `dist/` belongs
+in Git.
+
+To release an approved `main` commit without committing generated assets:
+
+```sh
+git push origin main:demo
+```
+
 ## Editor shell
 
 Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, eleven derivative lessons, nine tensor lessons and twelve learning lessons unlock sequentially, followed by the XOR challenge (3-13, stable ID `xor`) and six sequence lessons (4-1–4-6), then five attention lessons (5-1–5-5). Derivative lesson 1-10 builds a gradient by wiring the named `∂a` and `∂b` outputs. Lesson 1-11 uses the forward context `z=w·x+b`, `f=σ(z)`: the player receives `w`, `x`, and the upstream gradient `∂f/∂z`, then backpropagates only through the multiply-and-add calculation `z=w·x+b` to output `∂f/∂w`, `∂f/∂x`, and `∂f/∂b`. The value of `b` is not needed because `∂z/∂b=1`. Passing reveals an engine-generated first-order backward graph for the independent full `z=w·x+b → f=σ(z)` calculation and unlocks the existing autodiff and expression tools; the player's backward circuit is never differentiated. Chapter 2 follows with shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Lesson outputs with domain meaning use semantic interface names such as `probabilities`, `loss`, and `attentionScores`; player-facing labels are localized while graph keys remain stable identifiers. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
