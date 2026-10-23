@@ -13,6 +13,7 @@ import {
   type Progress,
 } from './engine/levels';
 import { parseExpression } from './engine/expression';
+import { levelTracker } from './analytics';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
 import { CHAPTERS, catalog, entryFor, gameLevels } from './levels/catalog';
 import {
@@ -507,6 +508,12 @@ function Editor({
   revision,
 }: EditorProps) {
   const entry = entryFor(level);
+  const tracker = useRef<ReturnType<typeof levelTracker>>(null);
+  useEffect(() => {
+    const t = levelTracker(level.id, entry.chapter);
+    tracker.current = t;
+    return () => t.dispose();
+  }, [level.id]);
   const registry = useMemo(
     () => buildPlayerRegistry(gameLevels, progress),
     [progress.passedSolutions, progress.unlockedComponents],
@@ -774,6 +781,7 @@ function Editor({
   const finish = (r: LevelResult) => {
     setResult(r);
     setTraining('idle');
+    if (r.passed || r.tests.length) tracker.current?.attempt(r.passed);
     // Stopping a training run is not a failure, so only graded checks play the miss.
     if (r.passed) sfx.play('win');
     else if (level.kind !== 'train' && r.tests.length) sfx.play('fail');
