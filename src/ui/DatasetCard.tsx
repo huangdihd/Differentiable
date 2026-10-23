@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ShapePorts } from '../engine/graph';
 import type { DatasetUse } from '../datasets';
 import { corpus } from '../levels/corpus';
+import { shapeText } from './Canvas';
 import DataPlot, { type PlotData } from './DataPlot';
 import './dataset-card.css';
 
@@ -43,7 +44,7 @@ export default function DatasetCard({
       {dataset.modality === 'text' && <TextSamples t={t} context={data.context ?? 1} />}
       <p className="dataset-shapes">
         {Object.entries(inputs)
-          .map(([name, shape]) => `${name} [${shape.join('×') || '·'}]`)
+          .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
           .join(' · ')}
       </p>
     </div>

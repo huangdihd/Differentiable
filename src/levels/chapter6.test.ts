@@ -67,12 +67,19 @@ it('GPT calibration, seeded parameters, text quality and single-head control', a
     const batch =
       level.evaluationDataset?.(new Random(level.seed + 1)) ??
       (typeof source === 'function' ? await source(0) : source);
-    const session = new TrainingSession(plan, source, crossEntropy, level.optimizer, 'y', {
-      accuracy: false,
-      evaluationBatch: batch,
-      evaluationModel: trainingEvaluationModel(level, graph, plan, batch, registry),
-      evaluationReports: true,
-    });
+    const session = new TrainingSession(
+      plan,
+      source,
+      crossEntropy,
+      level.optimizer,
+      level.interface.output,
+      {
+        accuracy: false,
+        evaluationBatch: batch,
+        evaluationModel: trainingEvaluationModel(level, graph, plan, batch, registry),
+        evaluationReports: true,
+      },
+    );
     let evaluationMs = 0;
     const evaluate = session.evaluate.bind(session);
     vi.spyOn(session, 'evaluate').mockImplementation(async (...args) => {
@@ -104,7 +111,7 @@ it('GPT calibration, seeded parameters, text quality and single-head control', a
           inputShapes: { x: inputShape },
         });
         try {
-          expect(inference.outputShapes.y).toEqual([...inputShape, vocabularySize]);
+          expect(inference.outputShapes.probabilities).toEqual([...inputShape, vocabularySize]);
           const vocabulary = new Set(CORPUS.split(/[^a-zA-Z]+/).filter(Boolean));
           for (const prompt of ['little moth', 'penny wren', 'round the pond']) {
             const tokens = encode(prompt);
@@ -115,7 +122,7 @@ it('GPT calibration, seeded parameters, text quality and single-head control', a
               const x = T.tensor(context, inputShape);
               const outputs = inference.execute({ x });
               try {
-                const probabilities = (await outputs.y.read()).slice(-vocabularySize);
+                const probabilities = (await outputs.probabilities.read()).slice(-vocabularySize);
                 const maximum = Math.max(...probabilities);
                 tokens.push(
                   sampleToken(

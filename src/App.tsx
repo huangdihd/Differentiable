@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { computationGraph, type GraphJSON, type GraphNode } from './engine/graph';
-import { applyResult, type Level, type LevelResult, type Progress } from './engine/levels';
+import {
+  computationGraph,
+  expandComponentSubgraph,
+  type GraphJSON,
+  type GraphNode,
+} from './engine/graph';
+import {
+  applyResult,
+  levelOutputShapes,
+  type Level,
+  type LevelResult,
+  type Progress,
+} from './engine/levels';
 import { parseExpression } from './engine/expression';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
 import { CHAPTERS, catalog, entryFor, gameLevels } from './levels/catalog';
@@ -12,7 +23,9 @@ import {
 } from './editor/state';
 import {
   createTranslator,
+  translate,
   translateDiagnostic,
+  translateValueName,
   formatNumber,
   locales,
   localeNames,
@@ -41,9 +54,17 @@ import { formatValue } from './ui/format-value';
 import TensorGrid from './ui/TensorGrid';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
-import { expectedOutput, matchesExpected, offIndices } from './ui/expected-output';
+import {
+  expectedOutputs,
+  matchesExpected,
+  offIndices,
+  type ExpectedValue,
+} from './ui/expected-output';
 import FunctionPlot from './ui/FunctionPlot';
-import { plottedInput } from './ui/function-plot';
+import GradientSurfacePlot from './ui/GradientSurfacePlot';
+import LossLandscapePlot from './ui/LossLandscapePlot';
+import SelectedNodeIO, { selectedNodePorts, type SelectedPortProbe } from './ui/SelectedNodeIO';
+import { gradientSurfaceInputs, plottedInput } from './ui/function-plot';
 import {
   NODE_W,
   SYMBOLS,
@@ -54,6 +75,7 @@ import {
 } from './ui/graph-geometry';
 import { TrainingLoop } from './ui/TrainingLoop';
 import { ComponentPalette } from './ui/ComponentPalette';
+import TensorTransformView, { tensorTransformKind } from './ui/TensorTransformView';
 import { Coach } from './ui/Coach';
 import {
   STORAGE_VERSION,
@@ -72,6 +94,13 @@ import { sfx, type SfxName } from './audio/sfx';
 import { MathText } from './ui/MathText';
 import { levelPapers } from './levels/papers';
 import { levelLearningResources } from './levels/learning-resources';
+import { testCaseLocation } from './ui/test-case-location';
+import {
+  componentSeenKey,
+  initializeSeenComponents,
+  isNewComponent,
+  newlyIntroducedComponents,
+} from './ui/new-components';
 import './ui/layout.css';
 
 type T = ReturnType<typeof createTranslator>;
@@ -448,6 +477,23 @@ function listText(locale: Locale, values: number[], max = 5) {
       .join(', ') + (values.length > max ? ', …' : '')
   );
 }
+function nodeValue(
+  locale: Locale,
+  result: { shape: readonly number[]; values: number[] },
+): NodeValue {
+  return {
+    text:
+      result.values.length === 1
+        ? formatValue(locale, result.values[0])
+        : listText(locale, result.values, 2),
+    title: `${result.shape.length ? `[${result.shape.join('×')}]` : translate(locale, 'ui.scalar')} ${fullValues(result.values)}`,
+    ok: result.values.every(Number.isFinite),
+    nonfinite: nonfiniteKind(result.values),
+    shape: result.shape,
+    values: result.values,
+    signal: signal(result.values),
+  };
+}
 
 function Editor({
   level,
@@ -491,6 +537,10 @@ function Editor({
     trace?: BackwardTrace;
     intro?: string;
     wrt: string[];
+    output: string;
+    playerBackwardStart?: string;
+    playerBackwardLabelKey?: string;
+    engineBackwardLabelKey?: string;
     parameterState?: 'initial' | 'current';
     attachedLoss?: boolean;
   }>();
@@ -588,16 +638,31 @@ function Editor({
   }, [level]);
   const [values, setValues] = useState<Record<string, NodeValue>>({});
   const [expression, setExpression] = useState('');
-  const [seenFeatures, setSeenFeatures] = useState(readSeenFeatures);
-  const markSeen = (feature: string) => {
-    if (seenFeatures.includes(feature)) return;
-    const next = [...seenFeatures, feature];
-    setSeenFeatures(next);
-    try {
-      localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify(next));
-    } catch {
-      // Private mode: the badge just comes back next visit.
-    }
+  const [seenFeatures, setSeenFeatures] = useState(() => {
+    const stored = readSeenFeatures();
+    const initialized = initializeSeenComponents(stored, [
+      ...available,
+      ...progress.unlockedComponents,
+    ]);
+    if (initialized.length !== stored.length)
+      try {
+        localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify(initialized));
+      } catch {
+        // Private mode: badges are kept for this tab only.
+      }
+    return initialized;
+  });
+  const markSeen = (...features: string[]) => {
+    setSeenFeatures((current) => {
+      const next = [...new Set([...current, ...features])];
+      if (next.length === current.length) return current;
+      try {
+        localStorage.setItem(SEEN_FEATURES_KEY, JSON.stringify(next));
+      } catch {
+        // Private mode: the badge just comes back next visit.
+      }
+      return next;
+    });
   };
   const [inside, setInside] = useState<{ name: string; graph: GraphJSON }[]>([]);
   const [shake, setShake] = useState<{ node: string; tick: number }>();
@@ -649,13 +714,6 @@ function Editor({
     setShapeGroup(group);
     setInputCase(String(index));
     setInputs(caseInputs(c.inputs));
-  };
-  /** The shape group and case a result row came from (`shape-N/` prefixes variant ids). */
-  const caseOfTest = (id: string) => {
-    const m = /^shape-(\d+)\/(.*)$/.exec(id);
-    const group = m ? Number(m[1]) : 0;
-    const index = shapeGroups[group]?.cases.findIndex((c) => c.id === (m ? m[2] : id)) ?? -1;
-    return index < 0 ? undefined : { group, index };
   };
   const [inputs, setInputs] = useState(() =>
     Object.fromEntries(
@@ -828,25 +886,42 @@ function Editor({
   }, [inputs, level, inputShapes]);
 
   // The answer for the same inputs, so the player can compare without running the tests.
-  const [expected, setExpected] = useState<{ shape: number[]; values: number[] }>();
+  const [expected, setExpected] = useState<Record<string, ExpectedValue>>();
   useEffect(() => {
     setExpected(undefined);
     if (level.kind === 'train' || 'invalid' in parsedInputs) return;
     let cancelled = false;
-    expectedOutput(level, parsedInputs as Record<string, number[]>, inputShapes).then(
-      (r) => !cancelled && setExpected(r),
+    expectedOutputs(level, parsedInputs as Record<string, number[]>, inputShapes).then(
+      (result) => !cancelled && setExpected(result),
       () => {},
     );
     return () => {
       cancelled = true;
     };
   }, [level, parsedInputs]);
+  const primaryExpected = expected?.[level.interface.output];
   const outputAxes =
-    expected && !('invalid' in parsedInputs)
+    primaryExpected && !('invalid' in parsedInputs)
       ? level.outputAxes?.(parsedInputs as Record<string, number[]>)
       : undefined;
-  // y = f(x) lessons get a plot of the target curve under their description.
+  // Scalar lessons use a curve; two-input gradient lessons use a surface and vector field.
   const plotInput = level.kind === 'train' ? undefined : plottedInput(level);
+  const surfaceInputs = level.kind === 'train' ? undefined : gradientSurfaceInputs(level);
+  const transformKind = level.kind === 'train' ? undefined : tensorTransformKind(level.id);
+  const transformInputName =
+    transformKind === 'mse' || transformKind === 'cross_entropy' ? 'p' : 'x';
+  const transformInput =
+    transformKind && !('invalid' in parsedInputs) ? parsedInputs[transformInputName] : undefined;
+  const transformTargets =
+    (transformKind === 'mse' || transformKind === 'cross_entropy') && !('invalid' in parsedInputs)
+      ? parsedInputs.t
+      : undefined;
+  const lossLandscape = level.kind !== 'train' && ['loss-intro', '3-1'].includes(level.id);
+  const visualPlot =
+    plotInput !== undefined ||
+    surfaceInputs !== undefined ||
+    transformKind !== undefined ||
+    lossLandscape;
 
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
   useEffect(() => {
@@ -894,19 +969,8 @@ function Editor({
               shapeGroup ? (inputShapes as Record<string, number[]>) : undefined,
             );
             if (cancelled || revision.current !== probeRevision) return;
-            const shown =
-              r.values.length === 1
-                ? formatValue(locale, r.values[0])
-                : listText(locale, r.values, 2);
-            next[node.id] = {
-              text: shown,
-              title: `[${r.shape.join('×') || '·'}] ${fullValues(r.values)}`,
-              ok: r.values.every(Number.isFinite),
-              nonfinite: nonfiniteKind(r.values),
-              shape: r.shape,
-              signal: signal(r.values),
-            };
-            if (plotInput && node.component === 'output')
+            next[node.id] = nodeValue(locale, r);
+            if (visualPlot && node.component === 'output')
               setValues((current) => ({ ...current, [node.id]: next[node.id] }));
           } catch (e) {
             if (cancelled || revision.current !== probeRevision) return;
@@ -922,13 +986,13 @@ function Editor({
         setValues(next);
         setProbeErrors(found);
       },
-      verify ? 10 : plotInput ? 0 : 300,
+      verify ? 10 : visualPlot ? 0 : 300,
     );
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [computationKey, parsedInputs, diagnostics, busy, locale, plotInput]);
+  }, [computationKey, parsedInputs, diagnostics, busy, locale, visualPlot]);
 
   const PHASE_MS = 1100;
   const stepOnce = async () => {
@@ -998,10 +1062,11 @@ function Editor({
       if (!v) continue;
       next[node.id] = {
         text: traceText(v),
-        title: `[${v.shape.join('×') || '·'}] ${fullValues(v.values)}${v.size > v.values.length ? ' …' : ''}`,
+        title: `${v.shape.length ? `[${v.shape.join('×')}]` : t('ui.scalar')} ${fullValues(v.values)}${v.size > v.values.length ? ' …' : ''}`,
         ok: v.values.every(Number.isFinite),
         nonfinite: nonfiniteKind(v.values),
         shape: v.shape,
+        values: v.values,
         signal: signal(v.values),
       };
     }
@@ -1061,26 +1126,39 @@ function Editor({
         ? [level.derivativeInput ?? 'x']
         : Object.keys(level.interface.inputs);
   /** The engine's backward graph for `graph`, traced on the inputs in the live panel. */
-  const openGradientView = async (graph: GraphJSON, intro?: string) => {
+  const openGradientView = async (
+    graph: GraphJSON,
+    intro?: string,
+    reveal?: NonNullable<Level['revealGraph']>,
+  ) => {
     const c = client.current;
     if (!c) return;
-    const inputs =
-      level.kind === 'train'
+    const inputs = reveal
+      ? reveal.inputs
+      : level.kind === 'train'
         ? undefined
         : 'invalid' in parsedInputs || shapeGroup
           ? level.fixed[0]?.inputs
           : (parsedInputs as Record<string, number[]>);
+    const contract = reveal
+      ? { inputShapes: reveal.inputShapes, output: reveal.output, wrt: [...reveal.wrt] }
+      : undefined;
     try {
-      const r = await c.backward(level.id, graph, inputs);
+      const r = await c.backward(level.id, graph, inputs, contract);
       setGradView({
         graph: r.graph ?? graph,
         backward: r.backward,
         trace: r.trace,
         intro,
-        wrt:
-          level.kind === 'train'
-            ? graph.nodes.filter((n) => n.component === 'param').map((n) => n.id)
+        wrt: reveal
+          ? [...reveal.wrt]
+          : level.kind === 'train'
+            ? (r.wrt ?? graph.nodes.filter((n) => n.component === 'param').map((n) => n.id))
             : gradientWrt,
+        output: reveal?.output ?? (level.kind === 'train' ? 'loss' : level.interface.output),
+        playerBackwardStart: reveal?.playerBackwardStart,
+        playerBackwardLabelKey: reveal?.playerBackwardLabelKey,
+        engineBackwardLabelKey: reveal?.engineBackwardLabelKey,
         parameterState: r.parameterState,
         attachedLoss: r.attachedLoss,
       });
@@ -1090,6 +1168,73 @@ function Editor({
   };
 
   const selected = state.graph.nodes.find((n) => n.id === state.selection[0]);
+  const selectedPorts = useMemo(
+    () => (selected ? selectedNodePorts(state.graph, selected, registry) : []),
+    [selected, state.graph, registry],
+  );
+  const [selectedProbes, setSelectedProbes] = useState<Record<string, SelectedPortProbe>>({});
+  useEffect(() => {
+    const endpoints = selectedPorts.filter((port) => port.endpoint);
+    if (!selected || !endpoints.length) {
+      setSelectedProbes({});
+      return;
+    }
+    if (busy || 'invalid' in parsedInputs) {
+      setSelectedProbes(
+        Object.fromEntries(endpoints.map((port) => [port.key, { status: 'unavailable' }])),
+      );
+      return;
+    }
+    const c = client.current;
+    if (!c) return;
+    let cancelled = false;
+    setSelectedProbes(
+      Object.fromEntries(endpoints.map((port) => [port.key, { status: 'loading' }])),
+    );
+    const byEndpoint = new Map<string, typeof endpoints>();
+    for (const port of endpoints) {
+      const key = JSON.stringify([port.endpoint!.node, port.endpoint!.port]);
+      byEndpoint.set(key, [...(byEndpoint.get(key) ?? []), port]);
+    }
+    for (const ports of byEndpoint.values()) {
+      const endpoint = ports[0].endpoint!;
+      void c
+        .probe(
+          level.id,
+          state.graph,
+          endpoint,
+          parsedInputs as Record<string, number[]>,
+          shapeGroup ? (inputShapes as Record<string, number[]>) : undefined,
+        )
+        .then((result) => {
+          if (cancelled) return;
+          const value = nodeValue(locale, result);
+          setSelectedProbes((current) => ({
+            ...current,
+            ...Object.fromEntries(
+              ports.map((port) => [port.key, { status: 'value' as const, value }]),
+            ),
+          }));
+        })
+        .catch((caught) => {
+          if (cancelled) return;
+          const detail = caught instanceof WorkerClientError ? caught.detail : undefined;
+          const probe: SelectedPortProbe = {
+            status: 'error',
+            message: detail
+              ? graphDiagnostic(locale, state.graph, detail, registry, false)
+              : t('ui.valueUnavailable'),
+          };
+          setSelectedProbes((current) => ({
+            ...current,
+            ...Object.fromEntries(ports.map((port) => [port.key, probe])),
+          }));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, selectedPorts, computationKey, parsedInputs, shapeGroup, busy, locale]);
   const display = inside.at(-1)?.graph ?? state.graph;
   // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
   const SOFT = new Set(['missing_port', 'missing_input']);
@@ -1124,8 +1269,7 @@ function Editor({
     const def = registry.get(node.component);
     if (!def?.subgraph) return;
     try {
-      const graph =
-        typeof def.subgraph === 'function' ? def.subgraph(node.attrs ?? {}) : def.subgraph;
+      const graph = expandComponentSubgraph(def, node.attrs ?? {})!;
       setInside((s) => [...s, { name: node.component, graph }]);
     } catch (e) {
       fail(e);
@@ -1155,13 +1299,8 @@ function Editor({
         skip.current = false;
         for (let i = 0; i < r.tests.length; i++) {
           setVerify({ index: i, result: r });
-          const c = testCases[i];
-          if (c) {
-            setInputCase(String(i));
-            setInputs(
-              Object.fromEntries(Object.entries(c.inputs).map(([k, v]) => [k, v.join(', ')])),
-            );
-          }
+          const at = testCaseLocation(r.tests, i, shapeGroups);
+          if (at) selectCase(at.group, at.index);
           // Stop on the first failing case and leave its values on the canvas to debug.
           if (!r.tests[i].passed) break;
           if (!skip.current) sfx.play('pass', i);
@@ -1183,7 +1322,11 @@ function Editor({
     at: { x: number; y: number },
     findRoom: boolean,
   ) => {
-    const attrs = defaults(component);
+    const attrs = defaults(
+      component,
+      registry.get(component),
+      level.componentDefaults?.[component],
+    );
     let position = { x: at.x - NODE_W / 2, y: at.y - 13 };
     if (findRoom) {
       // A drag drops exactly where the player let go; a click or keypress looks for room nearby.
@@ -1196,6 +1339,7 @@ function Editor({
       position = freeSpot(position, NODE_W, h, rects);
     }
     command({ type: 'addNode', component, attrs, position });
+    markSeen(componentSeenKey(component));
   };
   const activatePaletteComponent = (component: string) => {
     if (busy || inside.length) return;
@@ -1267,12 +1411,24 @@ function Editor({
         availableComponents: available,
       });
       const y = Math.max(...state.graph.nodes.map((n) => position(n).y), 0) + 160;
+      const target =
+        state.graph.nodes.find(
+          (node) =>
+            node.component === 'output' &&
+            !state.graph.edges.some((edge) => edge.to.node === node.id),
+        ) ?? state.graph.nodes.find((node) => node.component === 'output')!;
       command({
         type: 'insertExpression',
         expression: fragment,
         position: { x: 60, y },
-        to: { node: state.graph.nodes.find((n) => n.component === 'output')!.id, port: 'x' },
+        to: { node: target.id, port: 'x' },
       });
+      markSeen(
+        ...fragment.nodes
+          .map((node) => node.component)
+          .filter((component) => available.includes(component))
+          .map(componentSeenKey),
+      );
       setExpression('');
     } catch (e) {
       fail(e);
@@ -1286,24 +1442,28 @@ function Editor({
   const primitives = available.filter(
     (name) => !playerComponents.includes(name) && !presets.includes(name),
   );
-  const outputNodeId = state.graph.nodes.find((n) => n.component === 'output')?.id ?? '';
-  const outputValue = values[outputNodeId];
-  const outputActual = outputValue?.shape && {
-    shape: outputValue.shape,
-    values: outputValue.title
-      .replace(/^\[[^\]]*\]\s*/, '')
-      .split(', ')
-      .map(Number),
-  };
-  const changeScalarInput = (name: string, value: string) => {
+  const outputNodes = state.graph.nodes.filter((node) => node.component === 'output');
+  const outputValues = Object.fromEntries(
+    outputNodes.map((node) => [String(node.attrs?.name), values[node.id]]),
+  );
+  const outputActuals = Object.fromEntries(
+    Object.entries(outputValues).flatMap(([name, value]) =>
+      value?.shape && value.values
+        ? [[name, { shape: [...value.shape], values: [...value.values] }]]
+        : [],
+    ),
+  ) as Record<string, ExpectedValue>;
+  const outputActual = outputActuals[level.interface.output];
+  const changeScalarInputs = (changes: Readonly<Record<string, string>>) => {
     setInputCase('');
     setValues((current) => {
       const next = { ...current };
-      delete next[outputNodeId];
+      outputNodes.forEach((node) => delete next[node.id]);
       return next;
     });
-    setInputs((current) => ({ ...current, [name]: value }));
+    setInputs((current) => ({ ...current, ...changes }));
   };
+  const changeScalarInput = (name: string, value: string) => changeScalarInputs({ [name]: value });
   const canEdit = !busy && !inside.length;
   const coaching =
     level.id === '0-1' && !progress.passed.includes('0-1') && !coachSkipped && !inside.length;
@@ -1321,6 +1481,7 @@ function Editor({
     l.unlockFeatures?.includes('levels.features.autodiff'),
   );
   const gradientViewShown =
+    !('derivativeInputs' in level && level.derivativeInputs?.length) &&
     isAutodiffUnlocked(progress, gameLevels) &&
     gameLevels.findIndex((l) => l.id === level.id) > autodiffLevel;
   const ioShapes = Object.fromEntries(
@@ -1328,7 +1489,14 @@ function Editor({
       n.component === 'input'
         ? [[n.id, inputShapes[String(n.attrs?.name)] ?? []]]
         : n.component === 'output'
-          ? [[n.id, shapeGroup ? (expected?.shape ?? []) : level.interface.outputShape]]
+          ? [
+              [
+                n.id,
+                shapeGroup
+                  ? (expected?.[String(n.attrs?.name)]?.shape ?? [])
+                  : (levelOutputShapes(level)[String(n.attrs?.name)] ?? []),
+              ],
+            ]
           : [],
     ),
   );
@@ -1345,6 +1513,22 @@ function Editor({
             <MathText text={t(level.descriptionKey)} />
           </div>
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
+          {lossLandscape && (
+            <LossLandscapePlot
+              key={level.id}
+              t={t}
+              levelId={level.id}
+              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
+              actual={outputActual}
+              onPick={(changes) =>
+                changeScalarInputs(
+                  Object.fromEntries(
+                    Object.entries(changes).map(([name, value]) => [name, String(value)]),
+                  ),
+                )
+              }
+            />
+          )}
           {plotInput && level.kind !== 'train' && (
             <FunctionPlot
               key={level.id}
@@ -1355,6 +1539,33 @@ function Editor({
               inputs={'invalid' in parsedInputs ? {} : parsedInputs}
               actual={outputActual?.values[0]}
               onPick={(x) => changeScalarInput(plotInput, String(x))}
+            />
+          )}
+          {surfaceInputs && level.kind !== 'train' && (
+            <GradientSurfacePlot
+              key={level.id}
+              t={t}
+              level={level}
+              names={surfaceInputs}
+              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
+              actual={outputActuals}
+              onPick={(next) =>
+                changeScalarInputs(
+                  Object.fromEntries(
+                    Object.entries(next).map(([name, value]) => [name, String(value)]),
+                  ),
+                )
+              }
+            />
+          )}
+          {transformKind && transformInput && (
+            <TensorTransformView
+              kind={transformKind}
+              values={transformInput}
+              targets={transformTargets}
+              shape={inputShapes[transformInputName] ?? []}
+              t={t}
+              format={(value) => compact(locale, value)}
             />
           )}
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
@@ -1412,10 +1623,20 @@ function Editor({
           <h2 className="label">{t('ui.components')}</h2>
           <ComponentPalette
             entries={[
-              ...primitives.map((name) => ({ name })),
-              ...playerComponents.map((name) => ({ name, player: true })),
+              ...primitives.map((name) => ({
+                name,
+                isNew: isNewComponent(seenFeatures, name),
+              })),
+              ...playerComponents.map((name) => ({
+                name,
+                player: true,
+                isNew: isNewComponent(seenFeatures, name),
+              })),
               ...(level.unlockComponents ?? []).map((name) => ({ name, locked: true })),
-              ...presets.map((name) => ({ name })),
+              ...presets.map((name) => ({
+                name,
+                isNew: isNewComponent(seenFeatures, name),
+              })),
             ]}
             t={t}
             disabled={!canEdit}
@@ -1639,6 +1860,16 @@ function Editor({
               {e.message}
             </p>
           ))}
+        {selected && !inside.length && (
+          <SelectedNodeIO
+            t={t}
+            locale={locale}
+            node={selected}
+            ports={selectedPorts}
+            probes={selectedProbes}
+            errors={errors}
+          />
+        )}
         {selected && canEdit && (
           <Properties
             key={selected.id}
@@ -1646,6 +1877,7 @@ function Editor({
             connectedInputs={state.graph.edges
               .filter((edge) => edge.to.node === selected.id)
               .map((edge) => edge.to.port)}
+            definition={registry.get(selected.component)}
             t={t}
             onChange={(attrs) =>
               command({ type: 'setAttrs', id: selected.id, attrs, replace: true })
@@ -1666,7 +1898,7 @@ function Editor({
                       aria-pressed={i === shapeGroup}
                       disabled={running || busy || !!verify}
                       title={Object.entries(g.inputs)
-                        .map(([name, shape]) => `${name} [${shape.join('×')}]`)
+                        .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
                         .join(', ')}
                       onClick={() =>
                         // The all-zero case says little about shapes; start on a lively one.
@@ -1682,7 +1914,7 @@ function Editor({
                       }
                     >
                       {Object.values(g.inputs)
-                        .map((shape) => shape.join('×') || '·')
+                        .map((shape) => (shape.length ? shape.join('×') : t('ui.scalar')))
                         .join(' · ')}
                     </button>
                   ))}
@@ -1774,60 +2006,66 @@ function Editor({
                 )}
               </div>
             ))}
-            <div className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}>
-              <span className="probe-name">{level.interface.output} =</span>
-              {outputValue?.shape?.length ? (
-                <TensorGrid
-                  label={level.interface.output}
-                  shape={outputValue.shape}
-                  values={outputActual!.values}
-                  rows={outputAxes?.rows}
-                  cols={outputAxes?.cols}
-                  off={
-                    expected && outputActual ? offIndices(level, outputActual, expected) : undefined
-                  }
-                  format={(n) => formatValue(locale, n)}
-                />
-              ) : (
-                <span className="mono">
-                  {outputValue?.title.replace(/^\[[^\]]*\]\s*/, '') ?? '—'}
-                </span>
-              )}
-            </div>
-            {expected && (
-              <div
-                className={`probe-out probe-expected${expected.shape.length ? ' is-tensor' : ''}`}
-              >
-                <span className="probe-name">
-                  {t('ui.expected')} {level.interface.output} =
-                </span>
-                {expected.shape.length ? (
-                  <TensorGrid
-                    label={t('ui.expected')}
-                    shape={expected.shape}
-                    values={expected.values}
-                    rows={outputAxes?.rows}
-                    cols={outputAxes?.cols}
-                    format={(n) => formatValue(locale, n)}
-                  />
-                ) : (
-                  <span className="mono" title={fullValues(expected.values)}>
-                    {formatValue(locale, expected.values[0])}
-                  </span>
-                )}
-                {outputActual && (
-                  <span
-                    className={`probe-verdict ${matchesExpected(level, outputActual, expected) ? 'ok' : 'off'}`}
-                  >
-                    {matchesExpected(level, outputActual, expected) ? '✓' : '≠'}
-                  </span>
-                )}
-                {level.outputNoteKey && (
-                  <p className="probe-note">
-                    <MathText text={t(level.outputNoteKey)} />
-                  </p>
-                )}
-              </div>
+            {Object.keys(levelOutputShapes(level)).map((name) => {
+              const outputValue = outputValues[name];
+              const actual = outputActuals[name];
+              const target = expected?.[name];
+              const displayName = translateValueName(t, name);
+              return (
+                <div className="probe-output-group" key={name}>
+                  <div className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}>
+                    <span className="probe-name">{displayName} =</span>
+                    {outputValue?.shape?.length ? (
+                      <TensorGrid
+                        label={displayName}
+                        shape={outputValue.shape}
+                        values={actual!.values}
+                        rows={name === level.interface.output ? outputAxes?.rows : undefined}
+                        cols={name === level.interface.output ? outputAxes?.cols : undefined}
+                        off={target && actual ? offIndices(level, actual, target) : undefined}
+                        format={(n) => formatValue(locale, n)}
+                      />
+                    ) : (
+                      <span className="mono">{outputValue?.text ?? '—'}</span>
+                    )}
+                  </div>
+                  {target && (
+                    <div
+                      className={`probe-out probe-expected${target.shape.length ? ' is-tensor' : ''}`}
+                    >
+                      <span className="probe-name">
+                        {t('ui.expected')} {displayName} =
+                      </span>
+                      {target.shape.length ? (
+                        <TensorGrid
+                          label={t('ui.expected')}
+                          shape={target.shape}
+                          values={target.values}
+                          rows={name === level.interface.output ? outputAxes?.rows : undefined}
+                          cols={name === level.interface.output ? outputAxes?.cols : undefined}
+                          format={(n) => formatValue(locale, n)}
+                        />
+                      ) : (
+                        <span className="mono" title={fullValues(target.values)}>
+                          {formatValue(locale, target.values[0])}
+                        </span>
+                      )}
+                      {actual && (
+                        <span
+                          className={`probe-verdict ${matchesExpected(level, actual, target) ? 'ok' : 'off'}`}
+                        >
+                          {matchesExpected(level, actual, target) ? '✓' : '≠'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {level.outputNoteKey && (
+              <p className="probe-note">
+                <MathText text={t(level.outputNoteKey)} />
+              </p>
             )}
             <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
           </section>
@@ -2073,13 +2311,17 @@ function Editor({
                           className={
                             verify && i === verify.index
                               ? 'is-current'
-                              : !verify && caseOfTest(r.id)
+                              : !verify && testCaseLocation(shown.tests, i, shapeGroups)
                                 ? 'is-pickable'
                                 : undefined
                           }
-                          title={!verify && caseOfTest(r.id) ? t('ui.showCase') : undefined}
+                          title={
+                            !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                              ? t('ui.showCase')
+                              : undefined
+                          }
                           onClick={() => {
-                            const at = !verify && caseOfTest(r.id);
+                            const at = !verify && testCaseLocation(shown.tests, i, shapeGroups);
                             if (at) selectCase(at.group, at.index);
                           }}
                         >
@@ -2124,6 +2366,7 @@ function Editor({
           code={entry.code}
           title={t(level.titleKey)}
           unlocked={level.unlockComponents ?? []}
+          introduced={newlyIntroducedComponents(gameLevels, level)}
           par={level.par}
           features={level.unlockFeatures ?? []}
           metrics={result.metrics}
@@ -2138,7 +2381,11 @@ function Editor({
             level.revealGraph
               ? () => {
                   setModal(false);
-                  openGradientView(level.revealGraph!, t('gradView.revealIntro'));
+                  openGradientView(
+                    level.revealGraph!.graph,
+                    t(level.revealGraph!.introKey ?? 'gradView.revealIntro'),
+                    level.revealGraph,
+                  );
                 }
               : undefined
           }
@@ -2151,7 +2398,10 @@ function Editor({
           backward={gradView.backward}
           trace={gradView.trace}
           wrt={gradView.wrt}
-          output={level.kind === 'train' ? 'loss' : level.interface.output}
+          output={gradView.output}
+          playerBackwardStart={gradView.playerBackwardStart}
+          playerBackwardLabelKey={gradView.playerBackwardLabelKey}
+          engineBackwardLabelKey={gradView.engineBackwardLabelKey}
           parameterState={gradView.parameterState}
           attachedLoss={gradView.attachedLoss}
           composite={(component) => !registry.get(component)?.primitive}
@@ -2170,6 +2420,7 @@ function WinModal({
   code,
   title,
   unlocked,
+  introduced,
   par,
   features,
   metrics,
@@ -2185,6 +2436,7 @@ function WinModal({
   code: string;
   title: string;
   unlocked: readonly string[];
+  introduced: readonly string[];
   par?: number;
   features: readonly string[];
   metrics: LevelResult['metrics'];
@@ -2219,19 +2471,29 @@ function WinModal({
             </div>
           </div>
         ))}
-        {unlocked.length ? (
-          unlocked.map((c) => (
-            <div className="unlock" data-category={categoryOf(c)} key={c}>
-              <span className={`unlock-sym ${(SYMBOLS[c] ?? '?').length > 3 ? 'is-long' : ''}`}>
-                {SYMBOLS[c] ?? '?'}
-              </span>
-              <div>
-                <b>{t('ui.addedToLibrary', { name: t(`components.${c}`) })}</b>
-                <p className="hint">{t('ui.addedHint')}</p>
-              </div>
+        {unlocked.map((c) => (
+          <div className="unlock" data-category={categoryOf(c)} key={c}>
+            <span className={`unlock-sym ${(SYMBOLS[c] ?? '?').length > 3 ? 'is-long' : ''}`}>
+              {SYMBOLS[c] ?? '?'}
+            </span>
+            <div>
+              <b>{t('ui.addedToLibrary', { name: t(`components.${c}`) })}</b>
+              <p className="hint">{t('ui.addedHint')}</p>
             </div>
-          ))
-        ) : features.length ? null : (
+          </div>
+        ))}
+        {introduced.map((c) => (
+          <div className="unlock" data-category={categoryOf(c)} key={c}>
+            <span className={`unlock-sym ${(SYMBOLS[c] ?? '?').length > 3 ? 'is-long' : ''}`}>
+              {SYMBOLS[c] ?? '?'}
+            </span>
+            <div>
+              <b>{t('ui.unlockedForLibrary', { name: t(`components.${c}`) })}</b>
+              <p className="hint">{t('ui.unlockedHint')}</p>
+            </div>
+          </div>
+        ))}
+        {!unlocked.length && !introduced.length && !features.length && (
           <p className="muted">{t('ui.noUnlock')}</p>
         )}
         {par !== undefined && (

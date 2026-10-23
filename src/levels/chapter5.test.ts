@@ -122,9 +122,14 @@ it('5-5 reference beats the threshold and no-attention embed_pos → linear cont
     });
     const batch = level.dataset(new Random(level.seed));
     const evaluation = level.evaluationDataset!(new Random(level.seed + 1));
-    const session = new TrainingSession(plan, batch, crossEntropy, level.optimizer, 'y', {
-      evaluationBatch: evaluation,
-    });
+    const session = new TrainingSession(
+      plan,
+      batch,
+      crossEntropy,
+      level.optimizer,
+      level.interface.output,
+      { evaluationBatch: evaluation },
+    );
     try {
       const initial = await session.evaluate();
       const final = await session.run(level.steps, { yieldEvery: 1000 });

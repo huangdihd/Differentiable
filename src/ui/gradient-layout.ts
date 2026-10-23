@@ -28,6 +28,77 @@ export interface GradientLayout {
   sums: Record<string, number>;
 }
 
+export interface BackwardTeachingSegments {
+  /** The supplied upstream-gradient card: the hand-built backward circuit starts here. */
+  start: string;
+  /** Cards and wires that reproduce the backward circuit the player just built. */
+  playerNodes: Set<string>;
+  playerEdges: Set<string>;
+  /** Cards and wires upstream of `start`, expanded by the engine from the outer forward graph. */
+  engineNodes: Set<string>;
+  engineEdges: Set<string>;
+}
+
+export const gradientEdgeKey = (from: string, to: string, port: string) =>
+  `${from}\u0000${to}\u0000${port}`;
+
+/** Use a multiplication node's actual operand names in a local-derivative label. */
+export function namedMultiplicationRule(
+  graph: GraphJSON,
+  edge: GradientEdge,
+  label: (node: string) => string,
+): { product: string; variable: string; other: string } | undefined {
+  if (edge.rule !== 'backward.rule.mul') return undefined;
+  const operands = Object.fromEntries(
+    graph.edges
+      .filter((candidate) => candidate.to.node === edge.to)
+      .map((candidate) => [candidate.to.port, label(candidate.from.node)]),
+  );
+  if (!operands.a || !operands.b || (edge.port !== 'a' && edge.port !== 'b')) return undefined;
+  return {
+    product: `${operands.a}·${operands.b}`,
+    variable: operands[edge.port],
+    other: edge.port === 'a' ? operands.b : operands.a,
+  };
+}
+
+/** Split a reveal's backward path at the gradient supplied to the hand-built local circuit. */
+export function backwardTeachingSegments(
+  layout: GradientLayout,
+  start: string,
+): BackwardTeachingSegments | undefined {
+  if (!layout.nodes.some((node) => node.id === start && node.carries)) return undefined;
+
+  // In the forward-edge set, descendants of start are the engine's outer step, while
+  // ancestors of start are the local backward circuit the player implemented.
+  const engineNodes = new Set([start]);
+  const playerNodes = new Set([start]);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const edge of layout.edges) {
+      if (!edge.backward) continue;
+      if (engineNodes.has(edge.from) && !engineNodes.has(edge.to)) {
+        engineNodes.add(edge.to);
+        changed = true;
+      }
+      if (playerNodes.has(edge.to) && !playerNodes.has(edge.from)) {
+        playerNodes.add(edge.from);
+        changed = true;
+      }
+    }
+  }
+
+  const playerEdges = new Set<string>();
+  const engineEdges = new Set<string>();
+  for (const edge of layout.edges) {
+    if (!edge.backward) continue;
+    const key = gradientEdgeKey(edge.from, edge.to, edge.port);
+    if (playerNodes.has(edge.from) && playerNodes.has(edge.to)) playerEdges.add(key);
+    if (engineNodes.has(edge.from) && engineNodes.has(edge.to)) engineEdges.add(key);
+  }
+  return { start, playerNodes, playerEdges, engineNodes, engineEdges };
+}
+
 /**
  * Forward reads left to right by depth; the gradient row mirrors it underneath, so the same
  * column holds a value and its gradient and backward arrows naturally point right to left.

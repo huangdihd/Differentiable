@@ -6,9 +6,14 @@ import {
   type ShapePorts,
 } from '../engine/graph';
 import { graphMetrics, type ForwardLevel, type Level } from '../engine/levels';
+import { configurableModule } from '../engine/parameterized-components';
 
 /** A small authoring helper, not a separate evaluator: answers are ordinary GraphJSON. */
-export function formulaGraph(formula: string, inputs: readonly string[] = ['x']): GraphJSON {
+export function formulaGraph(
+  formula: string,
+  inputs: readonly string[] = ['x'],
+  output = 'y',
+): GraphJSON {
   // `(-1)` would otherwise lower to mul(1, -1); bind each negative literal to one const node.
   const literals: { name: string; value: number }[] = [];
   formula = formula.replace(/\(-(\d+(?:\.\d+)?)\)/g, (_, digits: string) => {
@@ -68,7 +73,7 @@ export function formulaGraph(formula: string, inputs: readonly string[] = ['x'])
       ...inputs.map((name) => ({ id: name, component: 'input', attrs: { name } })),
       ...literals.map((l) => ({ id: l.name, component: 'const', attrs: { value: l.value } })),
       ...nodes,
-      { id: 'output', component: 'output', attrs: { name: 'y' } },
+      { id: 'output', component: 'output', attrs: { name: output } },
     ],
     edges: [
       ...parsed.edges
@@ -77,6 +82,40 @@ export function formulaGraph(formula: string, inputs: readonly string[] = ['x'])
       { from: remap(parsed.output), to: { node: 'output', port: 'x' } },
     ],
   };
+}
+
+/** Merge scalar formulas into one graph with a named output node for each formula. */
+export function formulaOutputsGraph(
+  formulas: Readonly<Record<string, string>>,
+  inputs: readonly string[],
+): GraphJSON {
+  const nodes: GraphJSON['nodes'] = inputs.map((name) => ({
+    id: name,
+    component: 'input',
+    attrs: { name },
+  }));
+  const edges: GraphJSON['edges'] = [];
+  for (const [index, [output, formula]] of Object.entries(formulas).entries()) {
+    const graph = formulaGraph(formula, inputs);
+    const prefix = `result_${index}`;
+    const id = (node: string) => (inputs.includes(node) ? node : `${prefix}/${node}`);
+    nodes.push(
+      ...graph.nodes
+        .filter((node) => node.component !== 'input')
+        .map((node) => ({
+          ...node,
+          id: id(node.id),
+          ...(node.component === 'output' ? { attrs: { ...node.attrs, name: output } } : {}),
+        })),
+    );
+    edges.push(
+      ...graph.edges.map((edge) => ({
+        from: { ...edge.from, node: id(edge.from.node) },
+        to: { ...edge.to, node: id(edge.to.node) },
+      })),
+    );
+  }
+  return { version: 1, nodes, edges };
 }
 
 export const scalarPrimitives = ['const', 'add', 'mul', 'exp', 'log', 'recip'] as const;
@@ -109,7 +148,7 @@ export function referenceRegistry(levels: readonly ForwardLevel[]) {
     }
   }
   const registry = new ComponentRegistry();
-  for (const definition of definitions.values()) registry.register(definition);
+  for (const definition of definitions.values()) registry.register(configurableModule(definition));
   return registry;
 }
 

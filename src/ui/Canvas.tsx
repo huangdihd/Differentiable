@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { translatePort } from '../i18n';
+import { translatePort, translateValueName } from '../i18n';
 import { parameterName } from './parameter-label';
 import {
   NODE_W,
@@ -17,7 +17,19 @@ import {
 } from './graph-geometry';
 
 const IO = ['input', 'output'];
-const BROADCASTING = new Set(['add', 'mul', 'max', 'ge']);
+const BROADCASTING = new Set(['add', 'sub', 'mul', 'div', 'max', 'ge']);
+
+/** Shapes shown when a binary element-wise component expands mismatched operands. */
+export function broadcastDisplayShapes(
+  component: string,
+  a?: readonly number[],
+  b?: readonly number[],
+  output?: readonly number[],
+): { a: readonly number[]; b: readonly number[]; output: readonly number[] } | undefined {
+  if (!BROADCASTING.has(component) || !a || !b || !output || a.join() === b.join())
+    return undefined;
+  return { a, b, output };
+}
 
 /** `[]` reads as "scalar"; anything else as `[4×2]`. */
 export function shapeText(shape: readonly number[], t: CanvasProps['t']): string {
@@ -45,8 +57,9 @@ export interface NodeValue {
   ok: boolean;
   /** Distinguishes positive overflow, negative overflow and indeterminate NaN values. */
   nonfinite?: NonfiniteKind;
-  /** Output shape; shown on the node once tensors are bigger than a scalar. */
+  /** Output shape and raw values; the side plots use them without parsing localized text. */
   shape?: readonly number[];
+  values?: readonly number[];
   /** What the outgoing wires show: the value's sign and size (see `signal`). */
   signal?: number;
 }
@@ -445,14 +458,16 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
           const sym =
             parameterName(n) ??
             (n.component === 'param' && Array.isArray(n.attrs?.shape)
-              ? `θ ${(n.attrs!.shape as number[]).join('×') || '·'}`
+              ? `θ ${(n.attrs!.shape as number[]).join('×') || p.t('ui.scalar')}`
               : n.component === 'const'
                 ? Array.isArray(n.attrs?.value)
                   ? `[${(n.attrs!.value as number[]).length}]`
                   : typeof n.attrs?.value === 'number'
                     ? String(Number(n.attrs.value.toPrecision(4)))
                     : String(n.attrs?.value ?? '')
-                : name);
+                : n.component === 'output'
+                  ? translateValueName(p.t, name)
+                  : name);
           const displayShape =
             value?.shape ??
             (parameterName(n) && Array.isArray(n.attrs?.shape)
@@ -562,18 +577,22 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               {(() => {
                 // Element-wise ops with mismatched operand shapes: say out loud that broadcasting
                 // stretched them, so [4×1]·[1×3] → [4×3] doesn't look like a matrix product.
-                if (!BROADCASTING.has(n.component) || !value?.shape) return null;
                 const operands = ['a', 'b'].map((port) => {
                   const edge = p.graph.edges.find((e) => e.to.node === n.id && e.to.port === port);
                   return edge && p.values?.[edge.from.node]?.shape;
                 });
-                if (operands.some((s) => !s) || operands[0]!.join() === operands[1]!.join())
-                  return null;
+                const broadcast = broadcastDisplayShapes(
+                  n.component,
+                  operands[0],
+                  operands[1],
+                  value?.shape,
+                );
+                if (!broadcast) return null;
                 const dims = (s: readonly number[]) => (s.length ? s.join('×') : p.t('ui.scalar'));
                 return (
                   <div className="node-broadcast" title={p.t('ui.broadcastHelp')}>
                     <span className="node-broadcast-tag">{p.t('ui.broadcast')}</span>
-                    {dims(operands[0]!)} · {dims(operands[1]!)} → {dims(value.shape)}
+                    {dims(broadcast.a)} · {dims(broadcast.b)} → {dims(broadcast.output)}
                   </div>
                 );
               })()}

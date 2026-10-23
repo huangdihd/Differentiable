@@ -38,6 +38,13 @@ const available = [
 const N = 512,
   D = 8,
   H = 24;
+const outputNames: Readonly<Record<number, string>> = {
+  1: 'oneHot',
+  2: 'embeddings',
+  3: 'probabilities',
+  4: 'sampledId',
+  5: 'probabilities',
+};
 function answer(index: number): GraphJSON {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
   const node = (
@@ -114,7 +121,7 @@ function answer(index: number): GraphJSON {
     }
     result = node('probability', 'softmax', { x: result });
   }
-  node('output', 'output', { x: result }, { name: 'y' });
+  node('output', 'output', { x: result }, { name: outputNames[index] });
   return graph;
 }
 const metadata = (index: number) => ({
@@ -199,7 +206,7 @@ for (const index of [1, 2, 4]) {
         }),
         interface: {
           inputs,
-          output: 'y',
+          output: outputNames[index],
           outputShape: index === 1 ? [4, 5] : index === 2 ? [4, 3] : [],
         },
         ...forwardCases(index, inputs),
@@ -230,7 +237,7 @@ export const chapter4TrainLevels: (TrainLevel & { generates: true })[] = [3, 5].
       available: [...available, 'arange', 'gather', 'param'],
       interface: {
         inputs: { x: index === 3 ? [corpusStats.bigrams] : [N, 2] },
-        output: 'y',
+        output: outputNames[index],
         outputShape: [index === 3 ? corpusStats.bigrams : N, vocabularySize],
       },
       seed: 4100 + index,
@@ -265,14 +272,14 @@ export const reshapeLevel = withPar<ForwardLevel>(
     hintsKeys: ['levels.reshape.hint1', 'levels.reshape.hint2'],
     available: chapter4TrainLevels[1].available,
     unlock: ['4-5'],
-    interface: { inputs: reshapeShapes[0], output: 'y', outputShape: [2, 6] },
+    interface: { inputs: reshapeShapes[0], output: 'flattened', outputShape: [2, 6] },
     referenceGraph: {
       version: 1,
       nodes: [
         { id: 'x', component: 'input', attrs: { name: 'x' } },
         { id: 'batch', component: 'size', attrs: { axis: 0 } },
         { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
-        { id: 'output', component: 'output', attrs: { name: 'y' } },
+        { id: 'output', component: 'output', attrs: { name: 'flattened' } },
       ],
       edges: [
         { from: { node: 'x', port: 'out' }, to: { node: 'batch', port: 'x' } },

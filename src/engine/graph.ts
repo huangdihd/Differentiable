@@ -26,6 +26,8 @@ export interface GraphJSON {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+/** Compiler-only provenance retained when a generated parameter replaces a component input. */
+export const COMPONENT_INPUT_ATTRIBUTE = '__component_input';
 /** Strip display-only parameter names when comparing computational identity/cache keys. */
 export function computationGraph(graph: GraphJSON): GraphJSON {
   return {
@@ -49,11 +51,27 @@ export interface ComponentImplementation {
   infer(inputs: ShapePorts, attrs: Attributes): ShapePorts;
   execute(inputs: TensorPorts, attrs: Attributes, context: ExecutionContext): TensorPorts;
 }
+export interface ComponentAttributeDefinition {
+  name: string;
+  kind: 'integer' | 'boolean';
+  default: number | boolean;
+  min?: number;
+  max?: number;
+  multipleOf?: number;
+  /** Compiler-only settings still receive defaults but stay out of the Properties panel. */
+  hidden?: boolean;
+}
 export interface ComponentDefinition {
   name: string;
   inputs: readonly string[];
   outputs: readonly string[];
   optionalInputs?: readonly string[];
+  /** Declarative structural settings shared by the editor and compiler. */
+  attributes?: readonly ComponentAttributeDefinition[];
+  /** Defaults used when a fresh node is placed; compiler defaults preserve legacy graphs. */
+  defaultAttributes?: Attributes;
+  /** Optional input ports backed by generated, instance-scoped parameters. */
+  generatedInputs?: readonly string[];
   primitive?: ComponentImplementation;
   native?: ComponentImplementation;
   subgraph?: GraphJSON | ((attrs: Attributes, inputs?: ShapePorts) => GraphJSON);
@@ -69,6 +87,58 @@ export class GraphError extends Error {
     super(`${key}${node ? ` at ${node}` : ''}${port ? `:${port}` : ''}`);
   }
 }
+/** Apply declared defaults and reject malformed imported component settings. */
+export function resolveComponentAttributes(
+  definitions: readonly ComponentAttributeDefinition[] = [],
+  attrs: Attributes = {},
+): Attributes {
+  const resolved = { ...attrs };
+  for (const definition of definitions) {
+    const value = Object.hasOwn(resolved, definition.name)
+      ? resolved[definition.name]
+      : definition.default;
+    const valid =
+      definition.kind === 'boolean'
+        ? typeof value === 'boolean'
+        : typeof value === 'number' &&
+          Number.isSafeInteger(value) &&
+          (definition.min === undefined || value >= definition.min) &&
+          (definition.max === undefined || value <= definition.max) &&
+          (definition.multipleOf === undefined || value % definition.multipleOf === 0);
+    if (!valid)
+      throw new GraphError('invalid_attribute', undefined, undefined, {
+        attribute: definition.name,
+        actual: value,
+      });
+    resolved[definition.name] = value;
+  }
+  return resolved;
+}
+
+/** Expand a component with the same validated settings in every engine subsystem. */
+export function validateGeneratedInputConnections(
+  definition: ComponentDefinition | undefined,
+  attrs: Attributes,
+  connectedInputs: Iterable<string>,
+): void {
+  if (attrs.automatic_parameters !== true) return;
+  const connected = new Set(connectedInputs);
+  for (const port of definition?.generatedInputs ?? [])
+    if (connected.has(port)) throw new GraphError('generated_input_connected', undefined, port);
+}
+
+export function expandComponentSubgraph(
+  definition: ComponentDefinition,
+  attrs: Attributes = {},
+  inputs?: ShapePorts,
+): GraphJSON | undefined {
+  if (!definition.subgraph) return undefined;
+  const resolved = resolveComponentAttributes(definition.attributes, attrs);
+  return typeof definition.subgraph === 'function'
+    ? definition.subgraph(resolved, inputs)
+    : definition.subgraph;
+}
+
 export class ComponentRegistry {
   private readonly components = new Map<string, ComponentDefinition>();
   register(component: ComponentDefinition): this {
@@ -302,8 +372,7 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
         if (seen.has(def.name)) throw new GraphError('recursive_component', id);
         const next = new Set(seen);
         next.add(def.name);
-        const nested =
-          typeof def.subgraph === 'function' ? def.subgraph(node.attrs ?? {}) : def.subgraph;
+        const nested = expandComponentSubgraph(def, node.attrs ?? {})!;
         if (inspect(nested, id, next)) parameters = true;
       }
     }
@@ -313,6 +382,7 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
     g: GraphJSON,
     prefix: string,
     bindings?: Record<string, string>,
+    bindingNames: Readonly<Record<string, readonly string[]>> = {},
   ): Record<string, string> {
     if (g.version !== 1)
       throw new GraphError('unsupported_version', prefix, undefined, { version: g.version });
@@ -321,6 +391,9 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
     const resolved = new Map<string, Record<string, string>>();
     const visiting = new Set<string>();
     const names = new Set<string>();
+    // In an expanded component, retain which outer instance inputs reach each node output.
+    // This is diagnostic provenance only; keeping it by endpoint also handles aliased inputs.
+    const resolvedInputNames = new Map<string, Record<string, readonly string[]>>();
     const result: Record<string, string> = Object.create(null);
     const path = (id: string) =>
       prefix ? `${prefix}/${encodeURIComponent(id)}` : encodeURIComponent(id);
@@ -359,21 +432,27 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
     function visit(node: GraphNode): Record<string, string> {
       if (resolved.has(node.id)) return resolved.get(node.id)!;
       const id = path(node.id),
-        attrs = { ...node.attrs };
+        definition = registry.get(node.component);
       if (visiting.has(node.id)) throw new GraphError('cycle', id);
       visiting.add(node.id);
       try {
+        const attrs = resolveComponentAttributes(definition?.attributes, node.attrs ?? {});
+        validateGeneratedInputConnections(definition, attrs, incoming.get(node.id)!.keys());
         const args: Record<string, string> = Object.create(null);
+        const argInputNames: Record<string, readonly string[]> = Object.create(null);
         for (const port of ports(node).inputs) {
           const link = incoming.get(node.id)!.get(port);
           if (!link) {
-            if (registry.get(node.component)?.optionalInputs?.includes(port)) continue;
+            if (definition?.optionalInputs?.includes(port)) continue;
             throw new GraphError('missing_port', id, port);
           }
           args[port] = visit(nodes.get(link.node)!)[link.port];
+          const sourceNames = resolvedInputNames.get(link.node)?.[link.port];
+          if (sourceNames?.length) argInputNames[port] = sourceNames;
         }
         resolveDimensions(node.component, attrs, args, scalars);
         let out: Record<string, string> = Object.create(null);
+        const outputInputNames: Record<string, readonly string[]> = Object.create(null);
         if (node.component === 'input') {
           const name = requiredName(attrs);
           if (names.has(name)) throw new GraphError('duplicate_input', id, name);
@@ -389,6 +468,7 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
                 actual: shapes.get(bindings[name]),
               });
             out.out = bindings[name];
+            outputInputNames.out = bindingNames[name] ?? [name];
           } else {
             const s = shape(options.inputShapes?.[name] ?? attrs.shape);
             if (attrs.shape !== undefined && !sameShape(s, shape(attrs.shape)))
@@ -453,6 +533,8 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
           out.out = id;
           shapes.set(id, s);
           storage.set(id, { shape: s, attrs, parameter: node.component === 'param' });
+          if (bindings && typeof attrs[COMPONENT_INPUT_ATTRIBUTE] === 'string')
+            outputInputNames.out = [attrs[COMPONENT_INPUT_ATTRIBUTE] as string];
           if (node.component === 'const' && s.length === 0)
             scalars.set(
               id,
@@ -461,12 +543,21 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               ),
             );
         } else {
-          const def = registry.get(node.component)!;
+          const def = definition!;
           const argumentShapes = Object.fromEntries(
             Object.entries(args).map(([port, value]) => [port, shapes.get(value)!]),
           );
-          const subgraph =
-            typeof def.subgraph === 'function' ? def.subgraph(attrs, argumentShapes) : def.subgraph;
+          let subgraph: GraphJSON | undefined;
+          try {
+            subgraph = expandComponentSubgraph(def, attrs, argumentShapes);
+          } catch (error) {
+            if (error instanceof GraphError && bindings && Object.keys(argInputNames).length)
+              throw new GraphError(error.key, error.node, error.port, {
+                ...error.params,
+                input_names: argInputNames,
+              });
+            throw error;
+          }
           const hasParameters = subgraph ? inspect(subgraph, id, new Set([def.name])) : false;
           const impl = hasParameters
             ? undefined
@@ -474,7 +565,20 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               ? def.native
               : def.primitive;
           if (impl) {
-            const inferred = impl.infer(argumentShapes, attrs);
+            let inferred: ShapePorts;
+            try {
+              inferred = impl.infer(argumentShapes, attrs);
+            } catch (error) {
+              if (error instanceof GraphError && bindings) {
+                const mapped = argInputNames;
+                if (Object.keys(mapped).length)
+                  throw new GraphError(error.key, error.node, error.port, {
+                    ...error.params,
+                    input_names: mapped,
+                  });
+              }
+              throw error;
+            }
             for (const port of def.outputs) {
               if (!inferred[port]) throw new GraphError('missing_output_shape', id, port);
               out[port] = `${id}:${port}`;
@@ -494,7 +598,13 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
             if (active.has(def.name)) throw new GraphError('recursive_component', id);
             active.add(def.name);
             try {
-              out = compile(subgraph!, id, args);
+              const nestedNames = Object.fromEntries(
+                Object.keys(args).map((port) => [
+                  port,
+                  bindings ? (argInputNames[port] ?? [port]) : [port],
+                ]),
+              );
+              out = compile(subgraph!, id, args, nestedNames);
             } finally {
               active.delete(def.name);
             }
@@ -508,12 +618,18 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
               component: def.name,
             });
         }
+        if (bindings && !['input', 'output', 'const', 'param'].includes(node.component)) {
+          const provenance = [...new Set(Object.values(argInputNames).flat())];
+          if (provenance.length)
+            for (const port of Object.keys(out)) outputInputNames[port] = provenance;
+        }
         if (!prefix) {
           const first = node.component === 'output' ? args.x : out[ports(node).outputs[0]];
           if (first !== undefined) probes.set(node.id, first);
         }
         visiting.delete(node.id);
         resolved.set(node.id, out);
+        resolvedInputNames.set(node.id, outputInputNames);
         return out;
       } catch (error) {
         throw contextual(error, id);

@@ -1,5 +1,5 @@
 import type { ForwardLevel } from '../engine/levels';
-import { expectedOutput } from './expected-output';
+import { expectedOutput, expectedOutputs } from './expected-output';
 
 export interface Asymptote {
   axis: 'x' | 'y';
@@ -58,10 +58,147 @@ export function functionAsymptotes(
   return ASYMPTOTES[level.id]?.[curve] ?? [];
 }
 
+/** Two scalar inputs whose two derivative outputs form a gradient vector on a surface. */
+export interface GradientSurfaceData {
+  axes: readonly [number[], number[]];
+  surface: number[];
+  target: readonly [number[], number[]];
+}
+
+export interface SurfaceView {
+  yaw: number;
+  pitch: number;
+}
+
+/** Project normalized input-plane coordinates and normalized height into the SVG view. */
+export function projectSurfacePoint(
+  x: number,
+  y: number,
+  height: number,
+  view: SurfaceView,
+  width = 260,
+  centerY = 103,
+  xyScale = 72,
+  zScale = 42,
+): readonly [number, number] {
+  const across = x * Math.cos(view.yaw) - y * Math.sin(view.yaw);
+  const depth = x * Math.sin(view.yaw) + y * Math.cos(view.yaw);
+  return [
+    width / 2 + across * xyScale,
+    centerY + depth * Math.sin(view.pitch) * zScale - height * Math.cos(view.pitch) * zScale,
+  ];
+}
+
+/** Invert the projected input plane so picking remains accurate after the view rotates. */
+export function unprojectSurfaceFloor(
+  screenX: number,
+  screenY: number,
+  floorHeight: number,
+  view: SurfaceView,
+  width = 260,
+  centerY = 103,
+  xyScale = 72,
+  zScale = 42,
+): readonly [number, number] {
+  const across = (screenX - width / 2) / xyScale;
+  const depth =
+    (screenY - centerY + floorHeight * Math.cos(view.pitch) * zScale) /
+    (Math.sin(view.pitch) * zScale);
+  return [
+    across * Math.cos(view.yaw) + depth * Math.sin(view.yaw),
+    -across * Math.sin(view.yaw) + depth * Math.cos(view.yaw),
+  ];
+}
+
+/** A bounded, deterministic grid for the two-input surface and its two partial derivatives. */
+export async function gradientSurfaceData(
+  level: ForwardLevel,
+  names: readonly [string, string],
+  n = 13,
+): Promise<GradientSurfaceData> {
+  const axis = (name: string) => {
+    const seen = level.fixed.map((test) => test.inputs[name]?.[0]).filter(Number.isFinite);
+    const lo = Math.max(-5, Math.min(-3, ...seen));
+    const hi = Math.min(5, Math.max(3, ...seen));
+    return Array.from({ length: n }, (_, i) => lo + ((hi - lo) * i) / (n - 1));
+  };
+  const axes = [axis(names[0]), axis(names[1])] as const;
+  const values = Object.fromEntries(
+    names.map((name, dimension) => [
+      name,
+      axes[1].flatMap((b) => axes[0].map((a) => (dimension === 0 ? a : b))),
+    ]),
+  );
+  const shapes = Object.fromEntries(names.map((name) => [name, [n * n]]));
+  const forward = { ...level, kind: 'forward' as const, derivativeInputs: undefined };
+  const [surface, gradients] = await Promise.all([
+    expectedOutput(
+      {
+        ...forward,
+        interface: {
+          inputs: level.interface.inputs,
+          output: level.interface.output,
+          outputShape: [n * n],
+        },
+      },
+      values,
+      shapes,
+    ),
+    expectedOutputs(level, values, shapes),
+  ]);
+  const outputs = Object.keys(level.interface.outputs ?? {});
+  return {
+    axes,
+    surface: surface.values,
+    target: [gradients[outputs[0]].values, gradients[outputs[1]].values],
+  };
+}
+
+/** Bilinear interpolation inside a sampled surface grid. */
+export function surfaceValue(
+  axes: readonly [readonly number[], readonly number[]],
+  values: readonly number[],
+  a: number,
+  b: number,
+): number | undefined {
+  const cell = (samples: readonly number[], value: number) => {
+    if (value < samples[0] || value > samples.at(-1)!) return undefined;
+    const right = samples.findIndex((sample) => sample >= value);
+    const left = Math.max(0, right - 1);
+    const hi = Math.min(samples.length - 1, Math.max(0, right));
+    const span = samples[hi] - samples[left];
+    return [left, hi, span ? (value - samples[left]) / span : 0] as const;
+  };
+  const x = cell(axes[0], a),
+    y = cell(axes[1], b);
+  if (!x || !y) return undefined;
+  const width = axes[0].length;
+  const at = (i: number, j: number) => values[j * width + i];
+  const top = at(x[0], y[0]) * (1 - x[2]) + at(x[1], y[0]) * x[2];
+  const bottom = at(x[0], y[1]) * (1 - x[2]) + at(x[1], y[1]) * x[2];
+  const value = top * (1 - y[2]) + bottom * y[2];
+  return Number.isFinite(value) ? value : undefined;
+}
+
+export function gradientSurfaceInputs(level: ForwardLevel): readonly [string, string] | undefined {
+  const inputs = Object.keys(level.interface.inputs);
+  const outputs = Object.keys(level.interface.outputs ?? {});
+  const derivatives = level.derivativeInputs ?? [];
+  return level.kind === 'derivative' &&
+    inputs.length === 2 &&
+    inputs.every((name) => level.interface.inputs[name].length === 0) &&
+    outputs.length === 2 &&
+    derivatives.length === 2 &&
+    derivatives.every((name) => inputs.includes(name))
+    ? [derivatives[0], derivatives[1]]
+    : undefined;
+}
+
 /** The scalar input shown on a function plot; partial derivatives use their differentiated input. */
 export function plottedInput(level: ForwardLevel): string | undefined {
   const names = Object.keys(level.interface.inputs);
   if (!names.length || names.some((name) => level.interface.inputs[name].length)) return undefined;
+  if (Object.keys(level.interface.outputs ?? {}).length > 1) return undefined;
   if (level.interface.outputShape?.length) return undefined;
   if (names.length === 1) return names[0];
   const derivative = level.derivativeInput ?? 'x';

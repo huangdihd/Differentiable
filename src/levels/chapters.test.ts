@@ -10,7 +10,7 @@ import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
 import { chapter5ForwardLevels } from './chapter5';
 import { chapter6ForwardLevels } from './chapter6';
-import { formulaGraph, referenceRegistry } from './level-helpers';
+import { formulaGraph, formulaOutputsGraph, referenceRegistry } from './level-helpers';
 import en from '../locales/en.json';
 import zh from '../locales/zh-CN.json';
 
@@ -24,6 +24,22 @@ const registry = referenceRegistry([
   ...chapter6ForwardLevels,
 ]);
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
+const chapter1LevelById = (id: string) => {
+  const level = chapter1Levels.find((candidate) => candidate.id === id);
+  if (!level) throw new Error(`missing level ${id}`);
+  return level;
+};
+const semanticOutputs: Readonly<Record<string, string>> = {
+  '1-1': 'f′',
+  '1-2': 'f′',
+  '1-3': 'f′',
+  '1-4': 'f′',
+  '1-5': 'σ′',
+  '1-6': 'tanh′',
+  '1-7': 'f′',
+  '1-8': '∂f/∂a',
+  '1-9': '∂f/∂b',
+};
 
 describe('formal chapter catalog', () => {
   it('contains the sequential lessons and the preserved XOR challenge', () => {
@@ -32,12 +48,13 @@ describe('formal chapter catalog', () => {
       '0-2',
       'square',
       ...Array.from({ length: 5 }, (_, i) => `0-${i + 4}`),
-      ...Array.from({ length: 10 }, (_, i) => `1-${i + 1}`),
+      ...Array.from({ length: 11 }, (_, i) => `1-${i + 1}`),
       'axes',
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
+      'loss-intro',
       '3-1',
-      '3-2',
       'neuron',
+      '3-2',
       'layer',
       ...Array.from({ length: 7 }, (_, i) => `3-${i + 3}`),
       'xor',
@@ -70,13 +87,23 @@ describe('formal chapter catalog', () => {
         level.descriptionKey,
         ...(level.hintsKeys ?? []),
         ...(level.unlockFeatures ?? []),
+        ...(level.revealGraph?.introKey ? [level.revealGraph.introKey] : []),
+        ...(level.revealGraph?.playerBackwardLabelKey
+          ? [level.revealGraph.playerBackwardLabelKey]
+          : []),
+        ...(level.revealGraph?.engineBackwardLabelKey
+          ? [level.revealGraph.engineBackwardLabelKey]
+          : []),
+        ...(level.revealGraph?.graph.nodes.flatMap((node) =>
+          typeof node.attrs?.labelKey === 'string' ? [node.attrs.labelKey] : [],
+        ) ?? []),
       ]) {
         expect(en).toHaveProperty(key);
         expect(zh).toHaveProperty(key);
       }
     }
     expect(gameLevels.find((level) => level.id === 'xor')?.presets).toEqual(['matmul', 'softmax']);
-    expect(chapter1Levels.at(-1)?.unlockFeatures).toContain('levels.features.autodiff');
+    expect(chapter1LevelById('1-11').unlockFeatures).toContain('levels.features.autodiff');
   });
 
   it('matches the required lesson order, interfaces and primitive progression', () => {
@@ -92,15 +119,27 @@ describe('formal chapter catalog', () => {
     ]);
     for (const level of formalLevels) {
       const names =
-        level.id === '1-10'
-          ? ['w', 'x', 'b']
-          : ['0-2', '0-4', '1-8', '1-9'].includes(level.id)
+        level.id === '1-11'
+          ? ['w', 'x', '∂f/∂z']
+          : ['0-2', '0-4', '1-8', '1-9', '1-10'].includes(level.id)
             ? ['a', 'b']
             : ['x'];
+      const gradientOutputs =
+        level.id === '1-10'
+          ? { '∂a': [], '∂b': [] }
+          : level.id === '1-11'
+            ? { '∂f/∂w': [], '∂f/∂x': [], '∂f/∂b': [] }
+            : undefined;
       expect(level.interface).toEqual({
         inputs: Object.fromEntries(names.map((name) => [name, []])),
-        output: 'y',
+        output:
+          level.id === '1-10'
+            ? '∂a'
+            : level.id === '1-11'
+              ? '∂f/∂w'
+              : (semanticOutputs[level.id] ?? 'y'),
         outputShape: [],
+        ...(gradientOutputs ? { outputs: gradientOutputs } : {}),
       });
       expect(level.available).toEqual([
         'const',
@@ -151,25 +190,24 @@ describe('formal chapter catalog', () => {
     '1-7': (x) => Math.log(1 + x * x),
     '1-8': (a, b) => a * b + Math.exp(a),
     '1-9': (a, b) => a * Math.exp(a * b),
-    '1-10': (w, x, b) => 1 / (1 + Math.exp(-(w * x + b))),
+    '1-10': (a, b) => a * b + Math.exp(a),
+    '1-11': (w, x) => w * x,
   };
-  const derivatives: Record<string, (x: number, b: number, bias: number) => number> = {
-    '1-1': (x) => 2 * x,
-    '1-2': (x) => Math.exp(x) * (1 + x),
-    '1-3': (x) => 3 * Math.exp(3 * x),
-    '1-4': (x) => 1 / x,
+  const derivatives: Record<string, (x: number, b: number, bias: number) => number[]> = {
+    '1-1': (x) => [2 * x],
+    '1-2': (x) => [Math.exp(x) * (1 + x)],
+    '1-3': (x) => [3 * Math.exp(3 * x)],
+    '1-4': (x) => [1 / x],
     '1-5': (x) => {
       const s = 1 / (1 + Math.exp(-x));
-      return s * (1 - s);
+      return [s * (1 - s)];
     },
-    '1-6': (x) => 1 - Math.tanh(x) ** 2,
-    '1-7': (x) => (2 * x) / (1 + x * x),
-    '1-8': (a, b) => b + Math.exp(a),
-    '1-9': (a, b) => a * a * Math.exp(a * b),
-    '1-10': (w, x, b) => {
-      const s = 1 / (1 + Math.exp(-(w * x + b)));
-      return s * (1 - s) * x;
-    },
+    '1-6': (x) => [1 - Math.tanh(x) ** 2],
+    '1-7': (x) => [(2 * x) / (1 + x * x)],
+    '1-8': (a, b) => [b + Math.exp(a)],
+    '1-9': (a, b) => [a * a * Math.exp(a * b)],
+    '1-10': (a, b) => [b + Math.exp(a), a],
+    '1-11': (w, x, g) => [g * x, g * w, g],
   };
   for (const level of formalLevels) {
     it(`${level.id}: reference is the specified f, with the specified derivative`, async () => {
@@ -179,23 +217,51 @@ describe('formal chapter catalog', () => {
           Object.entries(data).map(([name, values]) => [name, T.tensor(values, [])]),
         );
         const output = level.reference(inputs);
-        let gradient: T.Tensor | undefined;
+        let gradients: T.Tensor[] = [],
+          explicit: T.Tensor[] = [];
         try {
           expect(output.shape).toEqual([]);
           const x = (data.w ?? data.x ?? data.a)[0];
           const second = (data.w ? data.x : data.b)?.[0] ?? 0;
-          const bias = data.b?.[0] ?? 0;
+          const third = data['∂f/∂z']?.[0] ?? data.b?.[0] ?? 0;
           const [actual] = await output.read();
-          const expected = functions[level.id](x, second, bias);
+          const expected = functions[level.id](x, second, third);
           expect(Math.abs(actual - expected)).toBeLessThan(1e-5 * Math.max(1, Math.abs(expected)));
-          if (level.kind === 'derivative') {
-            [gradient] = await T.backward(output, [inputs[level.derivativeInput ?? 'x']]);
-            const [value] = await gradient.read();
-            const slope = derivatives[level.id](x, second, bias);
-            expect(Math.abs(value - slope)).toBeLessThan(1e-5 * Math.max(1, Math.abs(slope)));
+          if (level.referenceOutputs) {
+            const named = level.referenceOutputs(inputs);
+            explicit = Object.values(named);
+            const values = await Promise.all(
+              Object.keys(level.interface.outputs!).map(
+                async (name) => (await named[name].read())[0],
+              ),
+            );
+            const slopes = derivatives[level.id](x, second, third);
+            expect(values).toHaveLength(slopes.length);
+            values.forEach((value, index) =>
+              expect(Math.abs(value - slopes[index])).toBeLessThan(
+                1e-5 * Math.max(1, Math.abs(slopes[index])),
+              ),
+            );
+          } else if (level.kind === 'derivative') {
+            const derivativeInputs = level.derivativeInputs ?? [level.derivativeInput ?? 'x'];
+            gradients = await T.backward(
+              output,
+              derivativeInputs.map((name) => inputs[name]),
+            );
+            const values = await Promise.all(
+              gradients.map(async (gradient) => (await gradient.read())[0]),
+            );
+            const slopes = derivatives[level.id](x, second, third);
+            expect(values).toHaveLength(slopes.length);
+            values.forEach((value, index) =>
+              expect(Math.abs(value - slopes[index])).toBeLessThan(
+                1e-5 * Math.max(1, Math.abs(slopes[index])),
+              ),
+            );
           }
         } finally {
-          gradient?.dispose();
+          gradients.forEach((gradient) => gradient.dispose());
+          if (explicit.length) T.disposeGraph(explicit, Object.values(inputs));
           T.disposeGraph([output, ...Object.values(inputs)]);
         }
       }
@@ -211,16 +277,13 @@ describe('formal chapter catalog', () => {
           level.generated!.generate(randomB, i),
         );
       // Simulate the palette supplied by progression; available itself is primitives only.
-      const preceding =
-        level.kind === 'derivative'
-          ? [
-              ...chapter0Levels.slice(0, 8),
-              ...chapter1Levels.slice(0, chapter1Levels.indexOf(level)),
-            ]
-          : chapter0Levels.slice(0, chapter0Levels.indexOf(level));
+      const currentIndex = gameLevels.findIndex((candidate) => candidate.id === level.id);
+      expect(currentIndex).toBeGreaterThanOrEqual(0);
       const available = [
         ...level.available,
-        ...preceding.flatMap((item) => item.unlockComponents ?? []),
+        ...gameLevels
+          .filter((_, index) => index < currentIndex)
+          .flatMap((item) => item.unlockComponents ?? []),
       ];
       const result = await evaluateLevel({ ...level, available }, level.referenceGraph!, {
         registry,
@@ -228,25 +291,41 @@ describe('formal chapter catalog', () => {
       expect(result.errorKey).toBeUndefined();
       expect(result.passed).toBe(true);
       expect(result.tests).toHaveLength(level.fixed.length + level.generated!.count);
+      const outputCount = Object.keys(
+        level.interface.outputs ?? { [level.interface.output]: level.interface.outputShape },
+      ).length;
       expect(
         result.tests.every(
-          (test) => test.passed && test.actual.length === 1 && test.expected.length === 1,
+          (test) =>
+            test.passed &&
+            test.actual.length === outputCount &&
+            test.expected.length === outputCount,
         ),
       ).toBe(true);
     });
 
     it(`${level.id}: rejects a constant impostor`, async () => {
-      const wrong = formulaGraph(
-        `0 * ${Object.keys(level.interface.inputs)[0]}`,
-        Object.keys(level.interface.inputs),
-      );
+      const inputs = Object.keys(level.interface.inputs);
+      const formula = `0 * ${inputs[0]}`;
+      const wrong = level.interface.outputs
+        ? formulaOutputsGraph(
+            Object.fromEntries(Object.keys(level.interface.outputs).map((name) => [name, formula])),
+            inputs,
+          )
+        : formulaGraph(formula, inputs, level.interface.output);
       const result = await evaluateLevel(level, wrong, { registry });
       expect(result.errorKey).toBeUndefined();
       expect(result.passed).toBe(false);
       expect(result.tests).toHaveLength(level.fixed.length + level.generated!.count);
+      const outputCount = Object.keys(
+        level.interface.outputs ?? { [level.interface.output]: level.interface.outputShape },
+      ).length;
       expect(
         result.tests.every(
-          (test) => !test.errorKey && test.actual.length === 1 && test.expected.length === 1,
+          (test) =>
+            !test.errorKey &&
+            test.actual.length === outputCount &&
+            test.expected.length === outputCount,
         ),
       ).toBe(true);
       expect(

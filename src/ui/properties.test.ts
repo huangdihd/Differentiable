@@ -1,5 +1,38 @@
-import { describe, expect, it } from 'vitest';
-import { defaults, validateProperties } from './Properties';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import type { ComponentDefinition } from '../engine/graph';
+import { createTranslator } from '../i18n';
+import Properties, { defaults, validateProperties } from './Properties';
+
+const configurableLinear: ComponentDefinition = {
+  name: 'linear',
+  inputs: ['x', 'w', 'b'],
+  outputs: ['out'],
+  attributes: [
+    { name: 'automatic_parameters', kind: 'boolean', default: false, hidden: true },
+    { name: 'in_features', kind: 'integer', default: 2, min: 1 },
+    { name: 'out_features', kind: 'integer', default: 2, min: 1 },
+    { name: 'bias', kind: 'boolean', default: true },
+  ],
+  defaultAttributes: {
+    automatic_parameters: true,
+    in_features: 2,
+    out_features: 2,
+    bias: true,
+  },
+};
+const configurableTransformer: ComponentDefinition = {
+  name: 'transformer_block',
+  inputs: ['x', 'wq', 'wk', 'wv', 'wo', 'w1', 'b1', 'w2', 'b2'],
+  outputs: ['out'],
+  attributes: [
+    { name: 'automatic_parameters', kind: 'boolean', default: false, hidden: true },
+    { name: 'features', kind: 'integer', default: 8, min: 1, multipleOf: 2 },
+    { name: 'hidden_features', kind: 'integer', default: 16, min: 1 },
+  ],
+  defaultAttributes: { automatic_parameters: true, features: 8, hidden_features: 16 },
+};
 
 describe('property field validation', () => {
   it('preserves component defaults', () => {
@@ -9,6 +42,79 @@ describe('property field validation', () => {
     expect(defaults('size')).toEqual({ axis: -1 });
     expect(defaults('transpose')).toEqual({ axes: [-2, -1] });
     expect(defaults('param')).toEqual({ shape: [2, 2], init: 'normal', scale: 1 });
+    expect(defaults('linear', configurableLinear)).toEqual({
+      automatic_parameters: true,
+      in_features: 2,
+      out_features: 2,
+      bias: true,
+    });
+    expect(defaults('linear', configurableLinear, { in_features: 1, out_features: 1 })).toEqual({
+      automatic_parameters: true,
+      in_features: 1,
+      out_features: 1,
+      bias: true,
+    });
+  });
+  it('validates reusable component configuration fields', () => {
+    expect(
+      validateProperties(
+        'linear',
+        {
+          automatic_parameters: 'true',
+          in_features: '3',
+          out_features: '5',
+          bias: 'false',
+        },
+        defaults('linear', configurableLinear),
+        'scalar',
+        configurableLinear,
+      ),
+    ).toEqual({
+      attrs: { automatic_parameters: true, in_features: 3, out_features: 5, bias: false },
+      errors: {},
+    });
+    for (const value of ['0', '-1', '1.5', ''])
+      expect(
+        validateProperties(
+          'linear',
+          { in_features: value, out_features: '2', bias: 'true' },
+          {},
+          'scalar',
+          configurableLinear,
+        ).errors.in_features,
+      ).toBe('ui.invalidNumber');
+    const html = renderToStaticMarkup(
+      createElement(Properties, {
+        node: { id: 'linear', component: 'linear' },
+        definition: configurableLinear,
+        t: createTranslator('en'),
+        onChange: vi.fn(),
+      }),
+    );
+    expect(html).toContain('Input features');
+    expect(html).toContain('Output features');
+    expect(html).toContain('Use bias');
+    expect(html).not.toContain('automatic_parameters');
+  });
+  it('enforces reusable integer divisibility constraints', () => {
+    expect(
+      validateProperties(
+        'transformer_block',
+        { features: '8', hidden_features: '16' },
+        {},
+        'scalar',
+        configurableTransformer,
+      ).errors,
+    ).toEqual({});
+    expect(
+      validateProperties(
+        'transformer_block',
+        { features: '7', hidden_features: '16' },
+        {},
+        'scalar',
+        configurableTransformer,
+      ).errors.features,
+    ).toBe('ui.invalidNumber');
   });
   it('accepts negative integer unsqueeze axes but rejects incomplete or fractional axes', () => {
     for (const axis of ['-1', '-3', '0', '2']) {
@@ -36,6 +142,27 @@ describe('property field validation', () => {
     expect(validateProperties('const', { value: '[1,2]', shape: '3' }).errors.shape).toBe(
       'ui.invalidShape',
     );
+  });
+  it('maps localized scalar shape names to the rank-zero storage shape', () => {
+    expect(validateProperties('param', { shape: 'scalar' }).attrs.shape).toEqual([]);
+    expect(validateProperties('param', { shape: '标量' }, {}, '标量').attrs.shape).toEqual([]);
+    expect(validateProperties('sum', { axes: 'scalar', keepdims: 'false' }).errors.axes).toBe(
+      'ui.invalidShape',
+    );
+  });
+  it('renders rank-zero shapes as localized words instead of empty brackets', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const t = createTranslator(locale);
+      const html = renderToStaticMarkup(
+        createElement(Properties, {
+          node: { id: 'constant', component: 'const', attrs: { value: 1, shape: [] } },
+          t,
+          onChange: vi.fn(),
+        }),
+      );
+      expect(html).toContain(`value="${t('ui.scalar')}"`);
+      expect(html).not.toContain('value="[]"');
+    }
   });
   it('requires finite numbers and complete input', () => {
     for (const value of ['', '-', '1e', '1e999', 'null'])

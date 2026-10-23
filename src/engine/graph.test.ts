@@ -185,6 +185,62 @@ describe('graph compiler', () => {
     expect(compileGraph(g, { registry }).outputShapes.y).toEqual([2]);
     expect(compileGraph(g, { registry, preferNative: false }).outputShapes.y).toEqual([1]);
   });
+  it('maps deeply nested primitive operands back to outer component input names', () => {
+    const product: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'left', component: 'input', attrs: { name: 'left' } },
+        { id: 'right', component: 'input', attrs: { name: 'right' } },
+        { id: 'product', component: 'matmul' },
+        { id: 'output', component: 'output', attrs: { name: 'out' } },
+      ],
+      edges: [
+        edge('left', 'product', 'a'),
+        edge('right', 'product', 'b'),
+        edge('product', 'output'),
+      ],
+    };
+    const wrapper: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'w', component: 'input', attrs: { name: 'w' } },
+        { id: 'inner', component: 'inner_product' },
+        { id: 'output', component: 'output', attrs: { name: 'out' } },
+      ],
+      edges: [edge('x', 'inner', 'left'), edge('w', 'inner', 'right'), edge('inner', 'output')],
+    };
+    const registry = createDefaultRegistry()
+      .register({
+        name: 'inner_product',
+        inputs: ['left', 'right'],
+        outputs: ['out'],
+        subgraph: product,
+      })
+      .register({ name: 'wrapper', inputs: ['x', 'w'], outputs: ['out'], subgraph: wrapper });
+    const result = safeCompileGraph(
+      {
+        version: 1,
+        nodes: [
+          { id: 'x', component: 'input', attrs: { name: 'features' } },
+          { id: 'w', component: 'input', attrs: { name: 'weights' } },
+          { id: 'projection', component: 'wrapper' },
+        ],
+        edges: [edge('x', 'projection', 'x'), edge('w', 'projection', 'w')],
+      },
+      { registry, inputShapes: { features: [4, 3], weights: [2, 2] } },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      errors: [
+        {
+          key: 'matmul_shape',
+          node: 'projection/inner/product',
+          params: { a: [4, 3], b: [2, 2], input_names: { a: ['x'], b: ['w'] } },
+        },
+      ],
+    });
+  });
   it('rejects broadcast and reshape mismatches during compilation', () => {
     const g: GraphJSON = {
       version: 1,

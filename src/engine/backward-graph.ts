@@ -1,9 +1,12 @@
 import { size } from './backend';
 import {
   compileGraph,
+  expandComponentSubgraph,
+  resolveComponentAttributes,
   resolveDimensions,
   staticScalar,
   createDefaultRegistry,
+  validateGeneratedInputConnections,
   GraphError,
   type ComponentRegistry,
   type GraphJSON,
@@ -76,6 +79,7 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
   const roles: Record<string, BackwardRole> = {};
   const shapes: Record<string, number[]> = {};
+  const parameterPaths: Record<string, string> = {};
   const scalars = new Map<string, number>();
   const args: Record<string, Record<string, string>> = {};
   const used = new Set(source.nodes.map((n) => n.id));
@@ -142,7 +146,8 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
     function visit(n: GraphNode): Record<string, string> {
       const cached = resolved.get(n.id);
       if (cached) return cached;
-      const attrs = n.attrs ?? {};
+      const def = registry.get(n.component);
+      const attrs = resolveComponentAttributes(def?.attributes, n.attrs ?? {});
       const inputs = Object.fromEntries(
         g.edges
           .filter((e) => e.to.node === n.id)
@@ -156,15 +161,13 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
       } else {
         const id = origin.length ? unique(`${origin.join('/')}/${n.id}`) : n.id;
         const role: BackwardRole = { role: 'forward', origin: [...origin] };
-        const def = registry.get(n.component);
         if (def?.subgraph) {
-          const nested =
-            typeof def.subgraph === 'function'
-              ? def.subgraph(
-                  attrs,
-                  Object.fromEntries(Object.entries(inputs).map(([p, ref]) => [p, shapes[ref]])),
-                )
-              : def.subgraph;
+          validateGeneratedInputConnections(def, attrs, Object.keys(inputs));
+          const nested = expandComponentSubgraph(
+            def,
+            attrs,
+            Object.fromEntries(Object.entries(inputs).map(([p, ref]) => [p, shapes[ref]])),
+          )!;
           const expanded = expand(nested, [...origin, n.id], inputs);
           result = {};
           for (const [i, port] of def.outputs.entries()) {
@@ -189,6 +192,8 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
                 ? ((attrs.shape ?? []) as number[])
                 : undefined;
           append(id, n.component, inputs, attrs, role, shape);
+          if (n.component === 'param')
+            parameterPaths[id] = [...origin, n.id].map(encodeURIComponent).join('/');
           if (n.ui) graph.nodes.at(-1)!.ui = structuredClone(n.ui);
           result = n.component === 'output' ? {} : { out: id };
           if (n.component === 'output') outputs[String(attrs.name)] = inputs.x;
@@ -370,7 +375,7 @@ function build(source: GraphJSON, options: BackwardGraphOptions) {
     rule = 'input';
     emit('output', { x: gradients[targets[i]] }, { name: `grad_${name}` });
   });
-  return { graph, roles, gradients, forward, shapes };
+  return { graph, roles, gradients, forward, shapes, parameterPaths };
 }
 
 export function buildBackwardGraph(graph: GraphJSON, options: BackwardGraphOptions): BackwardGraph {
@@ -408,8 +413,11 @@ export async function traceBackward(
     probes.push({ id: n.id, forward: probe(n.id), gradient: probe(built.gradients[n.id]) });
   const backend = new CpuBackend();
   const parameters = new Map<string, Tensor>();
-  for (const [id, value] of options.parameters ?? [])
-    parameters.set(id, tensor(await value.read(), [...value.shape], backend));
+  for (const [id, path] of Object.entries(built.parameterPaths)) {
+    const value = options.parameters?.get(path);
+    if (value)
+      parameters.set(encodeURIComponent(id), tensor(await value.read(), [...value.shape], backend));
+  }
   const plan = compileGraph(built.graph, {
     registry: options.registry,
     inputShapes: options.inputShapes,

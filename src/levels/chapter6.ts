@@ -97,7 +97,12 @@ function answer(): GraphJSON {
   }
   const normalized = node('normalized', 'layernorm', { x });
   const logits = node('logits', 'matmul', { a: normalized, b: param('head', [D, vocabularySize]) });
-  node('output', 'output', { x: node('probability', 'softmax', { x: logits }) }, { name: 'y' });
+  node(
+    'output',
+    'output',
+    { x: node('probability', 'softmax', { x: logits }) },
+    { name: 'probabilities' },
+  );
   return graph;
 }
 export const chapter6TrainLevels: TrainLevel[] = [
@@ -116,7 +121,7 @@ export const chapter6TrainLevels: TrainLevel[] = [
       referenceGraph: answer(),
       interface: {
         inputs: { x: [batchSize, context] },
-        output: 'y',
+        output: 'probabilities',
         outputShape: [batchSize, context, vocabularySize],
       },
       seed: 6404,

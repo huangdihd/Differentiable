@@ -31,6 +31,12 @@ describe('player diagnostic context', () => {
           translateDiagnostic(locale, { key: 'invalid_shape', params: { shape } }),
         ).not.toContain('{shape}');
       }
+      const scalarMismatch = translateDiagnostic(locale, {
+        key: 'parameter_shape_mismatch',
+        params: { actual: [], expected: [2] },
+      });
+      expect(scalarMismatch).toContain(translate(locale, 'ui.scalar'));
+      expect(scalarMismatch).not.toContain('[]');
     }
   });
   const nonfinite = (node?: string) => ({
@@ -108,6 +114,35 @@ describe('player diagnostic context', () => {
     expect(graphDiagnostic('en', graph, nonfinite('outer%2Fname/inner'), registry)).toContain(
       translate('en', 'training.nonfinite.hint.default'),
     );
+  });
+  it('uses mapped outer component ports instead of leaking inner primitive parameter names', () => {
+    const local: GraphJSON = {
+      version: 1,
+      nodes: [{ id: 'projection', component: 'linear' }],
+      edges: [],
+    };
+    const error = {
+      key: 'matmul_shape',
+      node: 'projection/product',
+      params: {
+        a: [4, 3],
+        b: [2, 2],
+        input_names: { a: ['x'], b: ['w'] },
+      },
+    };
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const message = graphDiagnostic(locale, local, error);
+      expect(message).toContain(locale === 'en' ? 'x is [4×3]' : 'x 是 [4×3]');
+      expect(message).toContain(locale === 'en' ? 'w is [2×2]' : 'w 是 [2×2]');
+      expect(message).not.toContain(locale === 'en' ? 'a is' : 'a 是');
+      expect(message).not.toContain(locale === 'en' ? 'b is' : 'b 是');
+    }
+    const topLevel = translateDiagnostic('en', {
+      key: 'matmul_shape',
+      params: { a: [4, 3], b: [2, 2] },
+    });
+    expect(topLevel).toContain('a is [4×3]');
+    expect(topLevel).toContain('b is [2×2]');
   });
   it('maps expanded paths onto the existing highlighted canvas node', () => {
     const error = { key: 'dim_not_static', node: 'outer%2Fname/inner', port: 'n' };

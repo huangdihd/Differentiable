@@ -43,7 +43,7 @@ export const levelLearningResources: Readonly<Record<string, readonly LearningRe
       ),
     },
   ],
-  '1-10': [
+  '1-11': [
     {
       titleKey: 'learning.backprop.title',
       descriptionKey: 'learning.backprop.description',

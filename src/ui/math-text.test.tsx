@@ -63,4 +63,29 @@ describe('MathText', () => {
     const out = html('before\n$$a − b$$\nafter');
     expect(out).toMatch(/^before<span class="math-block" role="math">.*<\/span>after$/);
   });
+
+  it('renders braced superscripts and subscripts as scripts without showing braces', () => {
+    const out = html('$e^{100} + x_{row}$');
+    expect(out).toContain('<var>e</var><sup><span class="m-num">100</span></sup>');
+    expect(out).toContain('<var>x</var><sub><var>r</var><var>o</var><var>w</var></sub>');
+    expect(out).not.toContain('^{');
+    expect(out).not.toContain('_{');
+  });
+
+  it('renders an expanded two-feature neuron with numeric subscripts', () => {
+    const out = html('$$p=w_{1}x_{1}+w_{2}x_{2}+b$$');
+    expect(out.match(/<sub><span class="m-num">1<\/span><\/sub>/g)).toHaveLength(2);
+    expect(out.match(/<sub><span class="m-num">2<\/span><\/sub>/g)).toHaveLength(2);
+    expect(out).not.toContain('_');
+  });
+
+  it('renders chain-rule derivatives as stacked fractions', () => {
+    const out = html('$$\\frac{∂f}{∂w}=\\frac{∂f}{∂z}·\\frac{∂z}{∂w}$$');
+    expect(out).toContain('class="math-block has-frac"');
+    expect(out.match(/class="m-frac"/g)).toHaveLength(3);
+    expect(out.match(/class="m-op"/g)).toHaveLength(2);
+    expect(out).toContain('<span class="m-frac-num"><var>∂</var><var>f</var></span>');
+    expect(out).toContain('<span class="m-frac-den"><var>∂</var><var>w</var></span>');
+    expect(out).not.toContain('∂f/∂w');
+  });
 });

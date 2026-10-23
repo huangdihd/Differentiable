@@ -22,6 +22,13 @@ const preceding = [
 const available = [...chapter4TrainLevels[0].available, 'arange'];
 export const attentionConfig = { N: 128, T: 8, D: 12 };
 const { N, T: context, D } = attentionConfig;
+const outputNames = [
+  'attentionScores',
+  'maskedScores',
+  'context',
+  'embeddings',
+  'probabilities',
+] as const;
 /** Fixed seeded corpus windows: both optimization and grading use this empirical distribution. */
 export const attentionSequences = (() => {
   const random = new Random(5505);
@@ -128,7 +135,7 @@ function answer(index: number): GraphJSON {
       x: node('logits', 'matmul', { a: attended, b: param('head', [D, vocabularySize]) }),
     });
   }
-  node('output', 'output', { x: result }, { name: 'y' });
+  node('output', 'output', { x: result }, { name: outputNames[index - 1] });
   return graph;
 }
 const names = ['attn_scores', 'causal_mask', 'attention', 'embed_pos'];
@@ -223,7 +230,7 @@ for (let i = 0; i < 4; i++) {
         }),
         interface: {
           inputs,
-          output: 'y',
+          output: outputNames[i],
           outputShape: [
             [4, 4],
             [4, 4],
@@ -258,7 +265,7 @@ export const chapter5TrainLevels: TrainLevel[] = [
       generates: true,
       interface: {
         inputs: { x: [N, context] },
-        output: 'y',
+        output: outputNames[4],
         outputShape: [N, context, vocabularySize],
       },
       seed: 5505,

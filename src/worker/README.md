@@ -11,6 +11,11 @@ client.setRevision(2); // monotonically increasing; bump on graph or level edits
 const compiled = await client.compile(level.id, graph);
 const probe = await client.probe(level.id, graph, { node: 'neg', port: 'out' }, inputs);
 const { backward, trace } = await client.backward(level.id, graph, inputs);
+const reveal = await client.backward(level.id, forwardGraph, revealInputs, {
+  inputShapes: { w: [], x: [], b: [], '∂f/∂z': [] },
+  output: 'f',
+  wrt: ['w', 'x', 'b'],
+});
 const result = await client.evaluate(level.id, graph);
 const unsubscribe = client.subscribe((event) => {
   if (event.type === 'progress') console.log(event.report);
@@ -33,15 +38,27 @@ Level callbacks and the player component registry stay inside the worker. Forwar
 parameters. It adds a collision-free output to a copied graph and releases the
 execution, inputs, and plan after readback.
 
-`backward(levelId, graph, inputs?)` returns `{ backward, trace? }`. `backward`
-contains the generated primitive graph and node `roles`, all serializable.
-The differentiation targets are the derivative level's `derivativeInput` when
-declared, otherwise all level inputs. The selected output is
-`level.interface.output`. Supplying inputs requests a numeric trace; omitting them
-only builds the read-only graph. Registry/availability come from current progress;
-source graphs and player progress are not modified. Traces use CPU with fixed-seed
-parameter initialization for non-training levels. Errors and revision
-filtering follow the usual RPC rules.
+A level may declare multiple required outputs in `interface.outputs`. Their object
+insertion order is semantic: `derivativeInputs[i]` names the input whose derivative
+is expected at output `Object.keys(interface.outputs)[i]`. The arrays must have the
+same length, derivative input names must be unique level inputs, and
+`interface.output`/`outputShape` must match an entry in `interface.outputs`. Evaluation
+reads, shape-checks, and compares every named output in that order.
+
+`backward(levelId, graph, inputs?, options?)` returns `{ backward, trace? }`. `backward`
+contains the generated primitive graph and node `roles`, all serializable. By default, this
+single-output view differentiates the derivative level's `derivativeInput` when declared,
+otherwise all level inputs, and selects `level.interface.output`. An optional independent
+contract `{ inputShapes, output, wrt }` overrides only those differentiation coordinates;
+level component availability and the current player registry still apply. This lets 1-11's
+completion reveal send an independent `z=w·x+b`, `f=σ(z)` forward graph rather than
+differentiating the player's multi-output backward graph. The generated graph is therefore
+a first-order backward pass through Sigmoid and Linear.
+
+Supplying inputs requests a numeric trace; omitting them only builds the read-only graph.
+Source graphs and player progress are not modified. Traces use CPU with fixed-seed parameter
+initialization for non-training levels. Errors and revision filtering follow the usual RPC
+rules.
 
 Chapter-3 training requests ignore supplied inputs and always trace a seeded dataset.
 They additionally return `graph`, `parameterState: 'initial' | 'current'`, and

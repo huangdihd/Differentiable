@@ -57,9 +57,14 @@ for (const level of chapter4TrainLevels) {
     });
     const batch = level.dataset(new Random(level.seed));
     const evaluation = level.evaluationDataset!(new Random(level.seed + 1));
-    const session = new TrainingSession(plan, batch, crossEntropy, level.optimizer, 'y', {
-      evaluationBatch: evaluation,
-    });
+    const session = new TrainingSession(
+      plan,
+      batch,
+      crossEntropy,
+      level.optimizer,
+      level.interface.output,
+      { evaluationBatch: evaluation },
+    );
     try {
       const initial = await session.evaluate();
       const final = await session.run(level.steps, { yieldEvery: 1000 });
@@ -84,7 +89,10 @@ for (const level of chapter4TrainLevels) {
           );
           const output = plan.execute({ x });
           try {
-            const probabilities = (await output.y.read()).slice(0, vocabularySize);
+            const probabilities = (await output[level.interface.output].read()).slice(
+              0,
+              vocabularySize,
+            );
             expect([...probabilities].reduce((a, b) => a + b, 0)).toBeCloseTo(1, 4);
             tokens.push(sampleToken(probabilities, random));
           } finally {
@@ -186,8 +194,10 @@ it('reshape preserves sample rows and exposes its new display code without award
   const x = T.tensor(reshapeLevel.fixed![0].inputs.x, [2, 2, 3]);
   const output = plan.execute({ x });
   try {
-    expect(output.y.shape).toEqual([2, 6]);
-    expect([...(await output.y.read())]).toEqual([1, 2, 3, 4, 5, 6, 10, 20, 30, 40, 50, 60]);
+    expect(output.flattened.shape).toEqual([2, 6]);
+    expect([...(await output.flattened.read())]).toEqual([
+      1, 2, 3, 4, 5, 6, 10, 20, 30, 40, 50, 60,
+    ]);
   } finally {
     plan.releaseExecution(output);
     plan.dispose();

@@ -19,6 +19,7 @@ import {
   trainingBatchSource,
   trainingEvaluationModel,
   initialProgress,
+  levelOutputShapes,
   type Progress,
   graphMetrics,
   type Level,
@@ -510,15 +511,18 @@ export class WorkerRuntime {
           );
           return;
         }
-        const options = {
-          registry: this.registry,
-          availableComponents: level.available,
+        const contract = request.options ?? {
           inputShapes: level.interface.inputs,
           output: level.interface.output,
           wrt:
             level.kind === 'derivative' && level.derivativeInput
               ? [level.derivativeInput]
               : Object.keys(level.interface.inputs),
+        };
+        const options = {
+          registry: this.registry,
+          availableComponents: level.available,
+          ...contract,
         };
         const backward = buildBackwardGraph(request.graph, options);
         const trace = request.inputs
@@ -620,8 +624,11 @@ export class WorkerRuntime {
         });
         if (
           request.type !== 'probe' &&
-          JSON.stringify(plan.outputShapes[level.interface.output]) !==
-            JSON.stringify(level.interface.outputShape)
+          Object.entries(levelOutputShapes(level)).some(
+            ([name, shape]) =>
+              !plan.outputShapes[name] ||
+              JSON.stringify(plan.outputShapes[name]) !== JSON.stringify(shape),
+          )
         ) {
           plan.dispose();
           throw new Error('levels.output_shape');

@@ -2,6 +2,10 @@ import {
   GraphError,
   compileGraph,
   createDefaultRegistry,
+  expandComponentSubgraph,
+  resolveComponentAttributes,
+  validateGeneratedInputConnections,
+  type Attributes,
   type ComponentRegistry,
   type GraphJSON,
   type ShapePorts,
@@ -28,14 +32,35 @@ export interface LevelMetadata {
   available: readonly string[];
   forbidden?: readonly string[];
   presets?: readonly string[];
+  /** Per-lesson attributes for newly placed configurable components. */
+  componentDefaults?: Readonly<Record<string, Attributes>>;
   referenceGraph?: GraphJSON;
   /** Recheck persisted solutions against current cases when loading progress. */
   revalidateOnLoad?: boolean;
   par?: number;
   unlockFeatures?: readonly string[];
-  /** Shown on completion as a gradient graph: "here is what you just did by hand". */
-  revealGraph?: GraphJSON;
-  interface: { inputs: ShapePorts; output: string; outputShape: readonly number[] };
+  /** An independent forward graph shown on completion as the equivalent engine-built backward pass. */
+  revealGraph?: {
+    graph: GraphJSON;
+    inputShapes: ShapePorts;
+    output: string;
+    wrt: readonly string[];
+    inputs: Record<string, number[]>;
+    introKey?: string;
+    /** Forward-node ID whose gradient is the input/start of the backward circuit the player built. */
+    playerBackwardStart?: string;
+    /** Labels that relate the engine's two backward regions to the player's local circuit. */
+    playerBackwardLabelKey?: string;
+    engineBackwardLabelKey?: string;
+  };
+  interface: {
+    inputs: ShapePorts;
+    /** Primary output, retained for single-output lessons and training. */
+    output: string;
+    outputShape: readonly number[];
+    /** All required outputs. Omitted by the existing single-output lessons. */
+    outputs?: ShapePorts;
+  };
   unlock: readonly string[];
   unlockComponents?: readonly string[];
   /**
@@ -62,7 +87,11 @@ export interface ForwardLevel extends LevelMetadata, LevelCases {
   kind: 'forward' | 'derivative';
   shapeVariants?: readonly (LevelCases & { inputs: ShapePorts })[];
   reference: (inputs: Record<string, T.Tensor>) => T.Tensor;
+  /** Explicit named targets for a local backward step whose upstream gradient is an input. */
+  referenceOutputs?: (inputs: Record<string, T.Tensor>) => Record<string, T.Tensor>;
   derivativeInput?: string;
+  /** A multi-output derivative lesson maps these inputs to interface.outputs in order. */
+  derivativeInputs?: readonly string[];
   atol?: number;
   rtol?: number;
 }
@@ -89,6 +118,37 @@ export interface TrainLevel extends LevelMetadata {
   threshold: { loss: number; accuracy?: number };
 }
 export type Level = ForwardLevel | TrainLevel;
+
+/** Required output names and shapes, with the primary output as the legacy fallback. */
+export function levelOutputShapes(level: Level): ShapePorts {
+  if (
+    level.interface.outputs &&
+    (!Object.hasOwn(level.interface.outputs, level.interface.output) ||
+      JSON.stringify(level.interface.outputs[level.interface.output]) !==
+        JSON.stringify(level.interface.outputShape))
+  )
+    throw new Error('levels.output_shape');
+  return level.interface.outputs
+    ? Object.fromEntries(
+        Object.entries(level.interface.outputs).map(([name, shape]) => [name, [...shape]]),
+      )
+    : { [level.interface.output]: [...level.interface.outputShape] };
+}
+
+/** Derivative inputs map by position to the declared output names. */
+export function levelDerivativeInputs(level: ForwardLevel): readonly string[] {
+  if (level.kind !== 'derivative') return [];
+  const names = Object.keys(levelOutputShapes(level));
+  const inputs = level.derivativeInputs ?? [level.derivativeInput ?? 'x'];
+  if (
+    inputs.length !== names.length ||
+    new Set(inputs).size !== inputs.length ||
+    inputs.some((name) => !Object.hasOwn(level.interface.inputs, name))
+  )
+    throw new Error('levels.output_shape');
+  return inputs;
+}
+
 export interface GraphMetrics {
   topNodes: number;
   expandedPrimitives: number;
@@ -117,21 +177,29 @@ export function graphMetrics(
 ): GraphMetrics {
   let expandedPrimitives = 0,
     parameterCount = 0;
-  const visit = (g: GraphJSON, stack: string[]) => {
+  const visit = (g: GraphJSON, stack: string[], prefix = '') => {
     for (const node of g.nodes) {
-      if (node.component === 'param')
-        parameterCount += ((node.attrs?.shape ?? []) as number[]).reduce((a, b) => a * b, 1);
-      if (['input', 'output', 'param', 'const'].includes(node.component)) continue;
-      const definition = registry.get(node.component);
-      if (definition?.subgraph) {
-        if (stack.includes(node.component)) throw new Error('levels.recursive_component');
-        visit(
-          typeof definition.subgraph === 'function'
-            ? definition.subgraph(node.attrs ?? {})
-            : definition.subgraph,
-          [...stack, node.component],
-        );
-      } else expandedPrimitives++;
+      const id = prefix ? `${prefix}/${encodeURIComponent(node.id)}` : encodeURIComponent(node.id);
+      try {
+        if (node.component === 'param')
+          parameterCount += ((node.attrs?.shape ?? []) as number[]).reduce((a, b) => a * b, 1);
+        if (['input', 'output', 'param', 'const'].includes(node.component)) continue;
+        const definition = registry.get(node.component);
+        if (definition?.subgraph) {
+          if (stack.includes(node.component)) throw new Error('levels.recursive_component');
+          const attrs = resolveComponentAttributes(definition.attributes, node.attrs ?? {});
+          validateGeneratedInputConnections(
+            definition,
+            attrs,
+            g.edges.filter((edge) => edge.to.node === node.id).map((edge) => edge.to.port),
+          );
+          visit(expandComponentSubgraph(definition, attrs)!, [...stack, node.component], id);
+        } else expandedPrimitives++;
+      } catch (error) {
+        if (error instanceof GraphError)
+          throw new GraphError(error.key, error.node ?? id, error.port, error.params);
+        throw error;
+      }
     }
   };
   visit(graph, []);
@@ -217,14 +285,21 @@ export async function evaluateLevel(
   let plan: ReturnType<typeof compileGraph> | undefined;
   try {
     result.metrics = graphMetrics(graph, options.registry);
-    plan = compileGraph(graph, {
+    const mainPlan = compileGraph(graph, {
       registry: options.registry,
       availableComponents: level.available,
       inputShapes: level.interface.inputs,
       random: new Random(level.kind === 'train' ? level.seed : 1),
     });
-    const shape = plan.outputShapes[level.interface.output];
-    if (!shape || JSON.stringify(shape) !== JSON.stringify(level.interface.outputShape))
+    plan = mainPlan;
+    const requiredOutputs = levelOutputShapes(level);
+    if (
+      Object.entries(requiredOutputs).some(
+        ([name, shape]) =>
+          !mainPlan.outputShapes[name] ||
+          JSON.stringify(mainPlan.outputShapes[name]) !== JSON.stringify(shape),
+      )
+    )
       throw new Error('levels.output_shape');
     if (level.kind === 'train') {
       const batch = trainingBatchSource(level);
@@ -319,11 +394,7 @@ export async function evaluateLevel(
       for (const [groupIndex, group] of groups.entries()) {
         const variant = groupIndex > 0;
         const prefix = variant ? `shape-${groupIndex}/` : '';
-        const errorParams = {
-          shapes: Object.entries(group.inputs)
-            .map(([name, shape]) => `${name} [${shape.join('×')}]`)
-            .join(', '),
-        };
+        const errorParams = { shapes: group.inputs };
         let groupPlan = variant ? undefined : plan;
         try {
           if (!groupPlan)
@@ -342,23 +413,54 @@ export async function evaluateLevel(
           for (const test of cases) {
             const inputs: Record<string, T.Tensor> = {};
             let execution: Record<string, T.Tensor> | undefined;
-            let outputs: T.Tensor[] = [],
+            let executionValues: T.Tensor[] = [],
               reference: T.Tensor | undefined,
-              gradient: T.Tensor | undefined;
+              referenceOutputs: T.Tensor[] = [],
+              gradients: T.Tensor[] = [];
             try {
               for (const [name, data] of Object.entries(test.inputs))
                 inputs[name] = T.tensor(data, group.inputs[name]);
               execution = groupPlan.execute(inputs);
-              outputs = Object.values(execution);
-              const output = execution[level.interface.output];
-              const actual = Array.from(await output.read());
-              reference = level.reference(inputs);
-              if (level.kind === 'derivative')
-                [gradient] = await T.backward(reference, [inputs[level.derivativeInput ?? 'x']]);
-              const expectedTensor = gradient ?? reference;
-              const expected = Array.from(await expectedTensor.read());
+              executionValues = Object.values(execution);
+              const outputNames = Object.keys(requiredOutputs);
+              const playerOutputs = outputNames.map((name) => execution![name]);
+              const actual = (
+                await Promise.all(
+                  playerOutputs.map(async (output) => Array.from(await output.read())),
+                )
+              ).flat();
+              let expectedTensors: T.Tensor[];
+              if (level.referenceOutputs) {
+                const named = level.referenceOutputs(inputs);
+                if (
+                  Object.keys(named).length !== outputNames.length ||
+                  outputNames.some((name) => !Object.hasOwn(named, name))
+                )
+                  throw new Error('levels.output_shape');
+                referenceOutputs = outputNames.map((name) => named[name]);
+                expectedTensors = referenceOutputs;
+              } else {
+                reference = level.reference(inputs);
+                if (level.kind === 'derivative') {
+                  gradients = await T.backward(
+                    reference,
+                    levelDerivativeInputs(level).map((name) => inputs[name]),
+                  );
+                }
+                expectedTensors = level.kind === 'derivative' ? gradients : [reference];
+              }
+              if (expectedTensors.length !== outputNames.length)
+                throw new Error('levels.output_shape');
+              const expected = (
+                await Promise.all(
+                  expectedTensors.map(async (output) => Array.from(await output.read())),
+                )
+              ).flat();
               const passed =
-                JSON.stringify(output.shape) === JSON.stringify(expectedTensor.shape) &&
+                playerOutputs.every(
+                  (output, i) =>
+                    JSON.stringify(output.shape) === JSON.stringify(expectedTensors[i].shape),
+                ) &&
                 actual.length === expected.length &&
                 actual.every(
                   (x, i) =>
@@ -385,10 +487,11 @@ export async function evaluateLevel(
                 errorParams,
               });
             } finally {
-              disposeExecution(outputs, Object.values(inputs));
+              disposeExecution(executionValues, Object.values(inputs));
               if (execution) groupPlan.releaseExecution(execution, Object.values(inputs));
               if (reference) T.disposeGraph([reference], Object.values(inputs));
-              gradient?.dispose();
+              if (referenceOutputs.length) T.disposeGraph(referenceOutputs, Object.values(inputs));
+              gradients.forEach((gradient) => gradient.dispose());
               Object.values(inputs).forEach((x) => x.dispose());
             }
           }

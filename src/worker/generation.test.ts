@@ -211,7 +211,7 @@ it('snapshots exact post-step parameters, survive plan release, and invalidate o
       const x = T.tensor(tokens.slice(-1), [1]);
       const outputs = plan.execute({ x });
       try {
-        const probabilities = await outputs.y.read();
+        const probabilities = await outputs[level.interface.output].read();
         const total = probabilities.reduce((sum, p) => sum + p, 0);
         let draw = random.uniform() * total;
         let token = VOCAB.length - 1;

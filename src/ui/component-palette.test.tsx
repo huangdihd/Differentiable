@@ -49,7 +49,7 @@ describe('component palette', () => {
           { name: 'add' },
           { name: 'sub', locked: true },
           { name: 'const' },
-          { name: 'sigmoid', player: true },
+          { name: 'sigmoid', player: true, isNew: true },
         ]}
         t={t}
         disabled={false}
@@ -66,7 +66,8 @@ describe('component palette', () => {
     expect(html).toContain('data-pair-start="true"');
     expect(html).toContain('class="palette-item is-locked"');
     expect(html).toContain('components.sub · ui.producedHere');
-    expect(html).toContain('class="palette-item is-player"');
+    expect(html).toContain('class="palette-item is-player is-new"');
+    expect(html).toContain('<span class="new-badge palette-new">ui.new</span>');
     expect(html).toMatch(/data-component="const" data-category="op"/);
   });
 });

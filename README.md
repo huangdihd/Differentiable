@@ -21,20 +21,20 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, ten derivative lessons, nine tensor lessons and eleven learning lessons unlock sequentially, followed by the XOR challenge (3-12, stable ID `xor`) and six sequence lessons (4-1–4-6), then five attention lessons (5-1–5-5). Chapter 2 introduces shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, eleven derivative lessons, nine tensor lessons and twelve learning lessons unlock sequentially, followed by the XOR challenge (3-13, stable ID `xor`) and six sequence lessons (4-1–4-6), then five attention lessons (5-1–5-5). Derivative lesson 1-10 builds a gradient by wiring the named `∂a` and `∂b` outputs. Lesson 1-11 uses the forward context `z=w·x+b`, `f=σ(z)`: the player receives `w`, `x`, and the upstream gradient `∂f/∂z`, then backpropagates only through the multiply-and-add calculation `z=w·x+b` to output `∂f/∂w`, `∂f/∂x`, and `∂f/∂b`. The value of `b` is not needed because `∂z/∂b=1`. Passing reveals an engine-generated first-order backward graph for the independent full `z=w·x+b → f=σ(z)` calculation and unlocks the existing autodiff and expression tools; the player's backward circuit is never differentiated. Chapter 2 follows with shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-3 and rank-relative transpose at 2-7; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Lesson outputs with domain meaning use semantic interface names such as `probabilities`, `loss`, and `attentionScores`; player-facing labels are localized while graph keys remain stable identifiers. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](src/ui/README.md) and [Worker protocol](src/worker/README.md). Browser interaction and visual acceptance still require manual review.
 
 ## Engine boundaries
 
 - `src/engine/backend.ts`: opaque storage handles, shape utilities, ordered command submission, asynchronous readback, explicit release. Only f32 is supported, including integer-valued indices.
 - `cpu.ts`: reference kernels and VJPs. Custom kernels can register both forward and VJP handlers.
 - `tensor.ts`: backend-independent first-order reverse autodiff. `backward(y, inputs)` computes gradients of `sum(y)`; `ge` and gather indices have zero gradients. Tied `max` chooses its first operand; tied `reduce_max` chooses the first element in row-major reduction order.
-- `graph.ts`: versioned JSON graphs, named ports, recursive component expansion, concrete shape inference and reusable execution plans. Node `ui` data is opaque to the engine. Component and error identifiers are keys, not translated text. `size(x, axis=-1)` returns a scalar shape dimension without reading tensor storage. Scalar constants, `size`, and scalar primitive arithmetic (including expanded player components) are evaluated at compile time. Optional `reshape.d0`–`d3` and `arange.n` wires override their attributes; reshape rank still comes from the `shape` array. Wired dimensions must be static and within 1e-3 of an integer; reshape retains its existing `-1` inference rules. Dimension wires and `size` have no gradients. Plans are recompiled for each concrete input-shape variant.
+- `graph.ts`: versioned JSON graphs, named ports, recursive component expansion, concrete shape inference and reusable execution plans. Nested diagnostics carry operand provenance through component boundaries, so an internal shape error names the outer instance ports (for example `x`/`w`) rather than leaking primitive formal names (`a`/`b`). Node `ui` data is opaque to the engine. Component and error identifiers are keys, not translated text. `size(x, axis=-1)` returns a scalar shape dimension without reading tensor storage. Scalar constants, `size`, and scalar primitive arithmetic (including expanded player components) are evaluated at compile time. Optional `reshape.d0`–`d3` and `arange.n` wires override their attributes; reshape rank still comes from the `shape` array. Wired dimensions must be static and within 1e-3 of an integer; reshape retains its existing `-1` inference rules. Dimension wires and `size` have no gradients. Plans are recompiled for each concrete input-shape variant.
 - `backward-graph.ts`: symbolic reverse graphs made of ordinary primitives, with node roles and serializable per-node value/gradient traces for the gradient view. Composite answers are expanded before differentiation; no hidden VJP kernels are used in the generated graph.
 - `expression.ts`: configurable expression-to-graph lowering; no JavaScript evaluation.
 - `training.ts`, `levels.ts`: seeded evaluation, SGD/Adam, resumable training, structural scores and pure progress data. Training can use a named single-element graph loss and an independent seeded evaluation dataset. `level-suite.ts` combines forward, derivative and training checks into a mixed test list.
 - `src/levels/`: chapter 0/1/2/3/4/5/6 level data, seeded checks, reference circuits and par; the catalog includes the XOR training preview. `examples.ts` remains a test fixture, not the game catalog.
 - `src/levels/registry.ts`: shared pure `buildPlayerRegistry(levels, progress)` and `availableComponents(level, progress)` used by the editor and Worker. Native kernels remain native while component inspection shows the passed circuit.
-- Save format v3 remaps pre-v3 chapter-2 IDs once across all level-keyed progress fields, then unions unlocks from passed lessons. Component names are unchanged. It separates `passedSolutions` (latest passing circuit per level) from `savedGraphs` (unfinished edits). Legacy v1 saves are migrated asynchronously: validate saved circuits against the new interface and checks, otherwise use verified reference circuits. Legacy milestones credit prerequisites needed by the new linear route. Language v1 saves remain readable.
+- Save format v9 idempotently repairs generic single-output `y` names in both `savedGraphs` and `passedSolutions`, including saves written by early v8 builds. The migration preserves node IDs, wiring, attributes, parameters, and editor `ui` data; chapter 0's intentionally generic `y` is unchanged. Old momentum drafts gain the newly required, initially disconnected `updatedMomentum` output; old single-output completion is revalidated and revoked while the editable circuit is retained. Regression drafts using the old automatic Linear defaults directly between `x` and MSE are narrowly updated to `1→1`; submitted passing solutions and unrelated Linear nodes remain untouched. It also unlocks the inserted `loss-intro` lesson for players who had already reached later chapter-3 content, without granting completion or removing later access. The reset introduced in v7 replaces 1-11 circuits from v2–v6 envelopes with the local backward step for `z=w·x+b`: incompatible drafts, solutions, scores, and settings are removed and completion is revoked, while previous graduates retain access to `axes` and later lessons. The v5 `1-12`→`1-11` merge, chapter-1 reorder, and pre-v3 chapter-2 ID migrations also remain in sequence. Component names are unchanged. Legacy v1 saves are migrated asynchronously: compatible saved circuits are validated against current interfaces and checks; unchanged contracts may use verified reference fallbacks, while changed contracts never receive automatic completion. Language envelopes from v1–v9 remain readable.
 
 ### Signed arithmetic and save revalidation
 
@@ -43,7 +43,11 @@ retired; later chapter-0 IDs keep their numbers and saves drop the retired entry
 tests positive and negative nonzero inputs; sqrt retains its positive-only cases. Levels marked
 `revalidateOnLoad` recheck saved passing circuits with the current evaluator on async load.
 Failed circuits lose completion and scores, but retain unlocks and earned components; an existing
-draft is preserved, otherwise the revoked circuit becomes the draft. Earned components without
+draft is preserved, otherwise the revoked circuit becomes the draft. For the changed chapter-3 local-backprop
+contracts, obsolete protected `t` inputs are renamed to `∂L/∂p` in both drafts and submitted solutions before
+revalidation. Inputs removed from the new interface, such as the unused `w` in the vector-gradient lesson, are
+removed with their incident wires so revoked work remains editable without pretending the old circuit is current.
+Earned components without
 passing solutions use their chapter reference circuit, while unearned presets keep their
 self-contained built-ins. `loadProgressWithMigration(levels, source, onRevoked?)` optionally
 reports the revoked level IDs to its third-argument callback; the home screen lists them with
@@ -62,11 +66,25 @@ in gradient labels; unnamed parameters keep the existing defaults. Shapes remain
 Edits use the normal undo/redo history and are saved with the graph; old saves need no migration.
 Names do not change parameter IDs, computation, scores, or training-plan/snapshot cache keys.
 
+### Configurable learned modules
+
+Earned learned components (`Linear`, `Embedding`, `embed_pos`, `feed_forward`, and
+`transformer_block`) retain the player-built subgraphs that define their computation. Fresh
+instances default to an `nn.Module`-like declarative configuration whose dimensions and options
+automatically generate instance-scoped trainable parameters. Legacy graphs without automatic
+parameters retain their explicit parameter input wiring; automatic instances reject those wires to
+avoid hidden overrides. `Linear` with `bias=false` generates no trainable bias. A one-input-feature
+Linear also accepts rank-one `[N]` data as a batch of N scalar samples; one output feature is
+flattened back to `[N]`, while ordinary vector and matrix inputs retain standard matmul semantics.
+A `GraphPlan` uses its seeded `Random` to initialize generated parameters, and structural
+metrics include those parameters in the parameter count. Compiler-only provenance on generated
+parameters preserves each learned component's public formal input name for nested shape diagnostics.
+
 ### Training gradient view
 
 After autodiff is unlocked, chapter-3 training circuits can open the gradient view
-while idle. It differentiates `loss` with respect to parameter node IDs, not data
-inputs. `lossOutput` selects an existing circuit loss; otherwise the view appends
+while idle. It differentiates `loss` with respect to explicit parameter node IDs and generated
+module parameter paths, not data inputs. `lossOutput` selects an existing circuit loss; otherwise the view appends
 primitive `-sum(t * log(y + 1e-7)) / rows`, matching training cross entropy.
 These engine-added nodes are labeled separately and never saved into the player circuit.
 Traces use `dataset(new Random(level.seed))`, with seed-initialized parameters or
@@ -82,21 +100,38 @@ for resampled levels, but those larger levels are not exposed yet.
 
 ### Gradient-descent lessons and saves
 
-The route after 2-9 is 3-1 → 3-2 → 3-3 (`neuron`, one neuron) →
-3-4 (`layer`, a layer) → 3-5 (MSE, stable ID `3-3`) →
-3-6 (regression, stable ID `3-4`) → 3-7 (cross entropy, stable ID `3-5`) →
-3-8 (classification) →
-3-9 (momentum) → 3-10 (Adam) → 3-11 (hidden layer) → `xor` (displayed as 3-12).
-Display codes follow chapter order; stable IDs and saved circuits remain unchanged.
-The neuron circuit uses the player's dot + add for a point or batch (par 3).
-The layer uses the player's matmul + add (par 5), awarding `linear` with x/w/b ports.
-Loading a save that passed `3-2` unlocks `neuron`; an already unlocked or passed
-stable ID `3-3` unlocks both `neuron` and `layer`. Passing `neuron` unlocks `layer`.
-These migration rules grant unlocks only, never pass credit. Cross entropy is a player subgraph with `p`/`t` ports;
-it reduces classes, then averages rows, including at new batch/class sizes.
-MSE is the player's saved subgraph, not a native kernel. Lesson 3-6 (stable ID `3-4`) predicts
-`w*x+b` from zero-initialized scalar parameters and uses the graph's `loss` output
-(shape `[1]`); batches need no separate targets when `lossOutput` is set.
+The route after 2-9 starts with 3-1 (squared-loss bowl, stable ID `loss-intro`) →
+3-2 (one gradient-descent step, stable ID `3-1`) → 3-3 (`neuron`, one neuron) →
+3-4 (vector gradient, stable ID `3-2`) → 3-5 (`layer`, a layer) → 3-6 (MSE, stable ID `3-3`) →
+3-7 (regression, stable ID `3-4`) → 3-8 (cross entropy, stable ID `3-5`) →
+3-9 (classification) → 3-10 (momentum, outputting both updated weight and updated momentum) → 3-11 (Adam) → 3-12 (hidden layer) →
+`xor` (displayed as 3-13). In 3-1 the player drags prediction `p` and builds `p−t → square → loss`;
+in 3-2 the forward context is the simplest predictor `p=w·x`, while the playable circuit consumes
+the loss side's supplied `∂L/∂p`, carries it through the local multiply, and subtracts
+`0.1·(∂L/∂p)·x` from `w`. Dragging `w` keeps the same hidden target and updates the supplied
+upstream gradient, so prediction, loss, the optimum, uphill gradient, target descent step, and the
+circuit's updated position remain consistent. Display 3-3 expands one neuron as
+`p=w₁x₁+w₂x₂+b`, identifies the weighted sum with the dot product `w·x`, and connects it to
+batched `Xw+b` and multi-neuron `XW+b`. Display 3-4 then reuses that model with bias fixed at zero:
+it receives scalar `∂L/∂p` directly and broadcasts `(∂L/∂p)·x` to compute each weight's loss
+gradient, without rebuilding the squared loss from `t`. Because `∂p/∂w=x`, this local VJP needs the feature vector but not the current weight values, so its interface omits `w`. Display codes and stable IDs remain unchanged; old 3-2/3-4 circuits are revalidated against the new upstream-gradient contracts, with their protected `t` input renamed to `∂L/∂p` and the now-unused vector-gradient `w` input removed so revoked drafts remain editable. The neuron circuit uses the player's dot + add for a point or batch (par 3).
+Display 3-5 combines several neurons, names the resulting matrix multiply plus bias a Linear layer,
+and awards the player's matmul + add circuit as `linear` with x/w/b ports (par 5).
+Loading a save that had already unlocked stable ID `3-2` restores access to `neuron`; passing `3-2`
+or reaching stable ID `3-3` also restores `layer`. In the new route, passing `neuron` unlocks `3-2`,
+passing `3-2` unlocks `layer`, and passing `layer` unlocks `3-3`. These migration rules grant unlocks
+only, never pass credit. Cross entropy is a player subgraph with `p`/`t` ports;
+it reduces classes, then averages rows, including at new batch/class sizes. Its row-selectable
+stage trace shows `p`, `ln(p)`, one-hot `t`, `t·ln(p)`, the per-row negative sum, and the final
+batch mean.
+MSE is the player's saved subgraph, not a native kernel. Its row-selectable stage trace shows
+`p`, `t`, `p−t`, `(p−t)²`, and the last-axis Mean, explicitly joining display 3-1's squared loss to
+display 2-4's Mean for vector and `[2,4]` fixtures. Lesson 3-7 (stable ID `3-4`) predicts
+`w*x+b` and uses the graph's `loss` output (shape `[1]`); a freshly placed Linear defaults to
+one input and one output feature in this lesson, so `[16]` is treated as 16 scalar samples and can
+feed MSE directly. Old drafts whose automatic Linear directly connects `x` to MSE are migrated from
+the former one- or two-feature defaults to `1→1`. The equivalent two-scalar-Parameter circuit remains valid; batches need no
+separate targets when `lossOutput` is set.
 `TrainLevel.tunable.learningRate` declares min/max/default; evaluation and worker
 training clamp an explicit rate to that range and otherwise use the default.
 
@@ -253,6 +288,10 @@ Both models support the worker `generate` API documented in
 | 3-9   | 64 points, radii near 0.6 and 2 / 3109                      | 300   | loss < 0.15, accuracy ≥95% | 0.001–0.1 (0.05)     | Adam; SGD selectable |
 
 3-6: default loss 0.583232 / accuracy 100% fails; SGD 0.1 gives 0.021978 / 100%.
+Display 3-11 (stable ID `3-8`) keeps the Adam introduction at gameplay level:
+the player trains with SGD, resets to the seeded initial state, and compares Adam on
+the ×0.05 signal / ×20 nuisance data. Optimizer internals are intentionally left out
+because this level does not ask the player to build the update rule.
 3-8: SGD rates 0.001, 0.005, 0.01, 0.05, 0.1 give losses 0.692122,
 0.689022, 0.710369, 4.099624, 8.059049 (all 50%, all fail). Adam at the
 default rate gives 0.119819 / 100%, passing. These are sampled rates, not an
@@ -265,8 +304,9 @@ and reaches loss 0.003621 / 100%. New expanded pars (3-5…3-9): 12, 14, 4, 14, 
 ### Symbolic backward graphs
 
 `buildBackwardGraph(graph, { registry, availableComponents?, inputShapes, output, wrt })`
-returns `{ graph, roles }` without executing tensors. `output` names a forward output;
-`wrt` names inputs. The resulting ordinary GraphJSON keeps forward outputs and adds
+returns `{ graph, roles }` without executing tensors. `output` names one forward output;
+`wrt` names inputs. The existing backward view follows this single-output contract and is not
+shown on the multi-output gradient lesson. The resulting ordinary GraphJSON keeps forward outputs and adds
 `grad_<name>` outputs, seeded with ones for non-scalar outputs. Roles identify forward,
 backward, seed and explicit fan-out accumulation nodes; backward rule labels are i18n keys.
 Composite internals use readable `instance/internal` paths (numeric suffixes resolve ID
@@ -316,6 +356,6 @@ The dependency-free runner starts its own Vite server and installed headless Chr
 
 ## Current limits
 
-The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. Training levels include learning-rate controls, single-step forward/backward/update animation, loss and data plots, and player-facing dataset cards. Scalar function lessons plot their target and explicit asymptotes without bridging discontinuities; derivative lessons switch between the derivative curve and the original function with target/player tangents. Multivariable derivative lessons visualize a labeled one-dimensional slice along the differentiated input while holding the other inputs fixed. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling, reshape practice and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
+The functional editor, localization runtime, versioned local storage, chapters 0–6 are included. Chapter 3 teaches scalar updates, vector gradients, player-built MSE and cross entropy, regression, classification, momentum, Adam and hidden-layer networks. Training levels include learning-rate controls, single-step forward/backward/update animation, loss and data plots, and player-facing dataset cards. Scalar function lessons plot their target and explicit asymptotes without bridging discontinuities; derivative lessons switch between the derivative curve and the original function with target/player tangents. Single-output multivariable derivative lessons visualize a labeled one-dimensional slice along the differentiated input while holding the other inputs fixed. The gradient lesson uses a rotatable 3D function surface with target (yellow) and player (cyan) gradient arrows in the input plane; matching arrows turn green. It introduces the gradient vector and fastest-ascent geometry only; loss, negative gradients and gradient descent wait until chapter 3. Separate modes drag the input point or rotate the view. Chapter 4 adds one-hot encoding, embedding, bigram training, sampling, reshape practice and a two-character model. Chapter 5 adds scaled scores, causal masks, attention, positional embeddings and a single-head language model. Text generation is available through the worker API and the existing `generates`-gated panel. Chapter 6 adds multi-head attention, a feed-forward network, residual blocks and a two-block GPT training level. Its CPU calibration passes loss and continuation vocabulary coverage; this does not guarantee complete nursery-rhyme sentences. Primitive broadcast matmul materializes a large intermediate and is intended for correctness checks, not production GPT throughput. GPU normalization uses deterministic 64-lane workgroup reductions; sum/reduce_max use the same parallel path for reduction fibers of at least 256 elements (sum VJP is elementwise, reduce_max VJP selects the first tied index). Each reduction uses 256 bytes of shared scratch; reduce_max VJP additionally declares 256 bytes of integer winner scratch. No floating-point atomics are used. Oversized logical dispatch grids are remapped automatically to device-sized physical grids. Adam bias corrections remain input tensor data, not step-specialized shader code. Gather backward still scans indices per table element, a performance risk for large user-defined models.
 
 The engine supports first-order gradients only. No symbolic shapes or mixed precision. The given primitive set suffices for this GPT architecture.

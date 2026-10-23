@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createExampleRegistry, sigmoidLevel } from '../levels/examples';
+import { chapter1Levels } from '../levels/chapter1';
 import { parseExpression } from '../engine/expression';
 import {
   createEditorState,
@@ -35,6 +36,21 @@ describe('editor graph commands', () => {
     expect(loaded.graph).toEqual(s.graph);
     expect(loaded.graph).not.toBe(s.graph);
     expect(s.graph.nodes.every((n) => Number.isFinite(nodePosition(n).x))).toBe(true);
+  });
+  it('initializes every declared output with stable IDs, names, and positions', () => {
+    const outputs = (id: string) =>
+      createEditorState(chapter1Levels.find((level) => level.id === id)!)
+        .graph.nodes.filter((node) => node.component === 'output')
+        .map(({ id: nodeId, attrs, ui }) => ({ id: nodeId, name: attrs?.name, ui }));
+    expect(outputs('1-10')).toEqual([
+      { id: 'output', name: '∂a', ui: { x: 660, y: 120 } },
+      { id: 'output_1', name: '∂b', ui: { x: 660, y: 320 } },
+    ]);
+    expect(outputs('1-11')).toEqual([
+      { id: 'output', name: '∂f/∂w', ui: { x: 660, y: 120 } },
+      { id: 'output_1', name: '∂f/∂x', ui: { x: 660, y: 320 } },
+      { id: 'output_2', name: '∂f/∂b', ui: { x: 660, y: 520 } },
+    ]);
   });
   it('accepts player components passed in beyond the level primitives', () => {
     expect(sigmoidLevel.available).not.toContain('matmul');

@@ -1,5 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { GraphNode, Attributes } from '../engine/graph';
+import type {
+  GraphNode,
+  Attributes,
+  ComponentDefinition,
+  ComponentAttributeDefinition,
+} from '../engine/graph';
 import { translatePort } from '../i18n';
 import { shapeText } from './Canvas';
 import { parseRealNumber, parseRealValue } from './real-number';
@@ -7,30 +12,44 @@ import { parseRealNumber, parseRealValue } from './real-number';
 type Props = {
   node: GraphNode;
   connectedInputs?: readonly string[];
+  definition?: ComponentDefinition;
   t: (key: string) => string;
   onChange: (attrs: Attributes) => void;
 };
-export function defaults(component: string): Attributes {
+export function defaults(
+  component: string,
+  definition?: ComponentDefinition,
+  overrides: Attributes = {},
+): Attributes {
+  let attrs: Attributes;
   switch (component) {
     case 'const':
-      return { value: 1 };
+      attrs = { value: 1 };
+      break;
     case 'param':
-      return { shape: [2, 2], init: 'normal', scale: 1 };
+      attrs = { shape: [2, 2], init: 'normal', scale: 1 };
+      break;
     case 'sum':
     case 'reduce_max':
-      return { axes: [-1], keepdims: true };
+      attrs = { axes: [-1], keepdims: true };
+      break;
     case 'size':
     case 'unsqueeze':
-      return { axis: -1 };
+      attrs = { axis: -1 };
+      break;
     case 'reshape':
-      return { shape: [-1] };
+      attrs = { shape: [-1] };
+      break;
     case 'transpose':
-      return { axes: [-2, -1] };
+      attrs = { axes: [-2, -1] };
+      break;
     case 'arange':
-      return { n: 5 };
+      attrs = { n: 5 };
+      break;
     default:
-      return {};
+      attrs = {};
   }
+  return { ...attrs, ...definition?.defaultAttributes, ...overrides };
 }
 const fields: Record<string, string[]> = {
   const: ['value', 'shape'],
@@ -44,28 +63,57 @@ const fields: Record<string, string[]> = {
   arange: ['n'],
 };
 const initializers = ['zeros', 'ones', 'normal', 'uniform', 'constant'];
+const componentFields = (component: string, definition?: ComponentDefinition) => [
+  ...(fields[component] ?? []),
+  ...(definition?.attributes ?? [])
+    .filter((attribute) => !attribute.hidden && !(fields[component] ?? []).includes(attribute.name))
+    .map((attribute) => attribute.name),
+];
+const componentAttribute = (
+  definition: ComponentDefinition | undefined,
+  key: string,
+): ComponentAttributeDefinition | undefined =>
+  definition?.attributes?.find((attribute) => attribute.name === key);
 type Draft = Record<string, string>;
-function draftFrom(attrs: Attributes): Draft {
+const isScalarShape = (text: string, scalarLabel: string) =>
+  /^\[\s*\]$/.test(text) ||
+  text.toLocaleLowerCase() === 'scalar' ||
+  text === '标量' ||
+  text === scalarLabel;
+
+function draftFrom(attrs: Attributes, scalarLabel: string): Draft {
   return Object.fromEntries(
     Object.entries(attrs).map(([key, value]) => [
       key,
-      typeof value === 'string' ? value : (JSON.stringify(value) ?? ''),
+      key === 'shape' && Array.isArray(value) && value.length === 0
+        ? scalarLabel
+        : typeof value === 'string'
+          ? value
+          : (JSON.stringify(value) ?? ''),
     ]),
   );
 }
 
 /** Blank optional fields remove attributes; real values accept fractions, integer lists stay JSON. */
-export function validateProperties(component: string, draft: Draft, base: Attributes = {}) {
+export function validateProperties(
+  component: string,
+  draft: Draft,
+  base: Attributes = {},
+  scalarLabel = 'scalar',
+  definition?: ComponentDefinition,
+) {
   const attrs = { ...base };
   const errors: Record<string, string> = {};
-  for (const key of fields[component] ?? []) {
+  for (const key of componentFields(component, definition)) {
     const text = (draft[key] ?? (key === 'keepdims' ? 'false' : '')).trim();
+    const scalarShape = key === 'shape' && isScalarShape(text, scalarLabel);
     if (key === 'label') {
       const label = [...text].slice(0, 16).join('');
       if (label) attrs.label = label;
       else delete attrs.label;
       continue;
     }
+    const attribute = componentAttribute(definition, key);
     const optional =
       (component === 'const' && key === 'shape') ||
       (component === 'param' && ['init', 'scale', 'value'].includes(key)) ||
@@ -89,7 +137,7 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
           ? parseRealValue(text)
           : key === 'value' || key === 'scale'
             ? parseRealNumber(text)
-            : JSON.parse(list && !text.startsWith('[') ? `[${text}]` : text);
+            : JSON.parse(scalarShape ? '[]' : list && !text.startsWith('[') ? `[${text}]` : text);
       const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
       if (list) {
         if (!Array.isArray(value) || !value.every(Number.isSafeInteger)) throw Error();
@@ -114,8 +162,17 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
             numbers.some((n) => n < 0 || n >= numbers.length))
         )
           throw Error();
-      } else if (key === 'keepdims') {
+      } else if (key === 'keepdims' || attribute?.kind === 'boolean') {
         if (typeof value !== 'boolean') throw Error();
+      } else if (attribute?.kind === 'integer') {
+        if (
+          !finite(value) ||
+          !Number.isSafeInteger(value) ||
+          (attribute.min !== undefined && value < attribute.min) ||
+          (attribute.max !== undefined && value > attribute.max) ||
+          (attribute.multipleOf !== undefined && value % attribute.multipleOf !== 0)
+        )
+          throw Error();
       } else if (key === 'value' && component === 'const') {
         if (!finite(value) && !(Array.isArray(value) && value.every(finite))) throw Error();
       } else if (
@@ -143,28 +200,45 @@ export function validateProperties(component: string, draft: Draft, base: Attrib
   return { attrs, errors };
 }
 
-export default function Properties({ node, connectedInputs = [], t, onChange }: Props) {
-  const attrs = node.attrs ?? defaults(node.component);
+export default function Properties({ node, connectedInputs = [], definition, t, onChange }: Props) {
+  const declaredDefaults = Object.fromEntries(
+    (definition?.attributes ?? []).map((attribute) => [attribute.name, attribute.default]),
+  );
+  // Fresh nodes already persist defaultAttributes. A legacy node without attributes keeps the
+  // compiler's conservative defaults instead of silently replacing its explicit parameter ports.
+  const attrs = node.attrs
+    ? { ...declaredDefaults, ...node.attrs }
+    : definition?.attributes?.length
+      ? declaredDefaults
+      : defaults(node.component, definition);
   const source = JSON.stringify(attrs);
   const identity = `${node.id}:${node.component}`;
-  const [draft, setDraft] = useState(() => draftFrom(attrs));
+  const scalarLabel = t('ui.scalar');
+  const [draft, setDraft] = useState(() => draftFrom(attrs, scalarLabel));
   const published = useRef<string | null>(null);
   const previousIdentity = useRef(identity);
+  const previousScalarLabel = useRef(scalarLabel);
   const id = useId();
   useEffect(() => {
     // Acknowledging our own edit must not normalize text or discard an unfinished field.
-    if (previousIdentity.current !== identity || published.current !== source)
-      setDraft(draftFrom(JSON.parse(source) as Attributes));
+    if (
+      previousIdentity.current !== identity ||
+      previousScalarLabel.current !== scalarLabel ||
+      published.current !== source
+    )
+      setDraft(draftFrom(JSON.parse(source) as Attributes, scalarLabel));
     previousIdentity.current = identity;
+    previousScalarLabel.current = scalarLabel;
     published.current = null;
-  }, [source, identity]);
-  const keys = fields[node.component];
-  if (!keys) return null;
-  const { errors } = validateProperties(node.component, draft, attrs);
+  }, [source, identity, scalarLabel]);
+  const keys = componentFields(node.component, definition);
+  if (!keys.length) return null;
+  const { errors } = validateProperties(node.component, draft, attrs, scalarLabel, definition);
   const change = (key: string, value: string) => {
-    const next = { ...draft, [key]: value };
+    const shown = key === 'shape' && isScalarShape(value.trim(), scalarLabel) ? scalarLabel : value;
+    const next = { ...draft, [key]: shown };
     setDraft(next);
-    const result = validateProperties(node.component, next, attrs);
+    const result = validateProperties(node.component, next, attrs, scalarLabel, definition);
     if (!Object.keys(result.errors).length) {
       published.current = JSON.stringify(result.attrs);
       onChange(result.attrs);
@@ -179,6 +253,7 @@ export default function Properties({ node, connectedInputs = [], t, onChange }: 
             ? /^d[0-3]$/.test(port)
             : node.component === 'arange' && key === 'n' && port === 'n',
         );
+        const attribute = componentAttribute(definition, key);
         const error = errors[key];
         const inputId = `${id}-${key}`;
         const accessibility = {
@@ -193,7 +268,7 @@ export default function Properties({ node, connectedInputs = [], t, onChange }: 
               {t(key === 'label' ? 'ui.name' : `ui.${key}`)}
               {wired.map((port) => ` ← ${translatePort(t, node.component, port)}`).join(', ')}
             </label>
-            {key === 'keepdims' ? (
+            {key === 'keepdims' || attribute?.kind === 'boolean' ? (
               <input
                 {...accessibility}
                 type="checkbox"

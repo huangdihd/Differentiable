@@ -17,8 +17,8 @@ class Builder {
       this.graph.edges.push({ from: { node: from, port: 'out' }, to: { node: id, port } });
     return id;
   }
-  output(from: string) {
-    this.node('output', 'output', { name: 'y' }, { x: from });
+  output(from: string, name = 'y') {
+    this.node('output', 'output', { name }, { x: from });
     return this.graph;
   }
 }
@@ -117,7 +117,10 @@ const w2 = mlp.node('w2', 'param', { shape: [8, 2], init: 'normal', scale: 0.5 }
 const b2 = mlp.node('b2', 'param', { shape: [2] });
 const y0 = mlp.node('linear', 'matmul', {}, { a: h, b: w2 });
 const y1 = mlp.node('bias', 'add', {}, { a: y0, b: b2 });
-export const xorSolution = mlp.output(mlp.node('probabilities', 'softmax', {}, { x: y1 }));
+export const xorSolution = mlp.output(
+  mlp.node('probabilities', 'softmax', {}, { x: y1 }),
+  'probabilities',
+);
 export const xorLevel: TrainLevel = {
   id: 'xor',
   titleKey: 'levels.xor.title',
@@ -136,7 +139,7 @@ export const xorLevel: TrainLevel = {
     'matmul',
     'softmax',
   ],
-  interface: { inputs: { x: [4, 2] }, output: 'y', outputShape: [4, 2] },
+  interface: { inputs: { x: [4, 2] }, output: 'probabilities', outputShape: [4, 2] },
   unlock: ['4-1'],
   seed: 17,
   steps: 400,

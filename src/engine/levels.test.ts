@@ -72,7 +72,13 @@ describe('optimizers and resumable training', () => {
       return {
         plan,
         batch,
-        session: new TrainingSession(plan, batch, crossEntropy, xorLevel.optimizer),
+        session: new TrainingSession(
+          plan,
+          batch,
+          crossEntropy,
+          xorLevel.optimizer,
+          xorLevel.interface.output,
+        ),
       };
     };
     const a = make(),

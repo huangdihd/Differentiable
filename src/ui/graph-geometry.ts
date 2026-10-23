@@ -132,7 +132,12 @@ export function nodePorts(
 ): readonly string[] {
   if (node.component === 'input') return side === 'outputs' ? ['out'] : [];
   if (node.component === 'output') return side === 'inputs' ? ['x'] : [];
-  const ports = registry.get(node.component)?.[side] ?? [];
+  const definition = registry.get(node.component);
+  const ports = definition?.[side] ?? [];
+  if (side === 'inputs' && node.attrs?.automatic_parameters === true) {
+    const generated = new Set(definition?.generatedInputs ?? []);
+    return ports.filter((port) => !generated.has(port));
+  }
   if (node.component !== 'reshape' || side !== 'inputs') return ports;
   const shape = node.attrs?.shape ?? [-1];
   const rank = Array.isArray(shape) ? shape.length : 0;

@@ -1,7 +1,8 @@
 import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
-import type { GraphJSON } from '../engine/graph';
+import { createDefaultRegistry, type GraphJSON } from '../engine/graph';
+import * as T from '../engine/tensor';
 import { gameLevels } from '../levels/catalog';
-import { initialProgress } from '../engine/levels';
+import { initialProgress, type ForwardLevel } from '../engine/levels';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createExampleRegistry,
@@ -97,6 +98,62 @@ describe('worker runtime protocol', () => {
     }
     expect(sigmoidSolution).toEqual(before);
   });
+  it('probes exact ports of a multi-output component independently', async () => {
+    const registry = createDefaultRegistry().register({
+      name: 'multi_probe',
+      inputs: ['x'],
+      outputs: ['left', 'right'],
+      primitive: {
+        infer: ({ x }) => ({ left: x, right: [] }),
+        execute: ({ x }) => ({ left: x, right: T.sum(x, [0]) }),
+      },
+    });
+    const level: ForwardLevel = {
+      ...sigmoidLevel,
+      id: 'multi-probe',
+      available: ['multi_probe'],
+      interface: { inputs: { x: [2] }, output: 'y', outputShape: [2] },
+      fixed: [{ id: 'fixed', inputs: { x: [2, 3] } }],
+      generated: undefined,
+      reference: ({ x }) => x,
+    };
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'pair', component: 'multi_probe' },
+        { id: 'output', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'pair', port: 'x' } },
+        { from: { node: 'pair', port: 'left' }, to: { node: 'output', port: 'x' } },
+      ],
+    };
+    const messages: WorkerResponse[] = [];
+    const runtime = new WorkerRuntime(
+      (message) => messages.push(structuredClone(message)),
+      [level],
+      initialProgress([]),
+      registry,
+    );
+    runtimes.push(runtime);
+    await runtime.handle({ type: 'init', backend: 'cpu', requestId: 1, revision: 0 });
+    for (const [requestId, port, expected] of [
+      [2, 'left', { shape: [2], values: [2, 3] }],
+      [3, 'right', { shape: [], values: [5] }],
+    ] as const) {
+      await runtime.handle({
+        type: 'probe',
+        levelId: level.id,
+        graph,
+        endpoint: { node: 'pair', port },
+        inputs: { x: [2, 3] },
+        requestId,
+        revision: 0,
+      });
+      expect(messages.at(-1)).toMatchObject({ type: 'reply', data: expected });
+    }
+  });
   it('probes the wired part of a half-built graph', async () => {
     const h = harness();
     await h.send({ type: 'init', backend: 'cpu' });
@@ -141,6 +198,41 @@ describe('worker runtime protocol', () => {
       ).toMatchObject({ type: 'reply', data: { backward, trace } });
     expect(derivativeSolution).toEqual(before);
   });
+  it('accepts an independent forward contract for a completion reveal', async () => {
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'a', component: 'input', attrs: { name: 'a' } },
+        { id: 'b', component: 'input', attrs: { name: 'b' } },
+        { id: 'product', component: 'mul' },
+        { id: 'out', component: 'output', attrs: { name: 'f' } },
+      ],
+      edges: [
+        { from: { node: 'a', port: 'out' }, to: { node: 'product', port: 'a' } },
+        { from: { node: 'b', port: 'out' }, to: { node: 'product', port: 'b' } },
+        { from: { node: 'product', port: 'out' }, to: { node: 'out', port: 'x' } },
+      ],
+    };
+    const options = { inputShapes: { a: [], b: [] }, output: 'f', wrt: ['a', 'b'] };
+    const inputs = { a: [2], b: [3] };
+    const h = harness();
+    await h.send({ type: 'init', backend: 'cpu' });
+    const expectedOptions = {
+      registry: createExampleRegistry(),
+      availableComponents: derivativeLevel.available,
+      ...options,
+    };
+    expect(
+      await h.send({ type: 'backward', levelId: 'derivative', graph, inputs, options }),
+    ).toMatchObject({
+      type: 'reply',
+      data: {
+        backward: buildBackwardGraph(graph, expectedOptions),
+        trace: await traceBackward(graph, { ...expectedOptions, inputs }),
+      },
+    });
+  });
+
   it('selects derivativeInput only for derivative levels and all inputs otherwise', async () => {
     const graph: GraphJSON = {
       version: 1,

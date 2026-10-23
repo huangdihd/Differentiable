@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ForwardLevel } from '../engine/levels';
+import { translateValueName } from '../i18n';
 import { expectedOutput } from './expected-output';
 import {
   functionAsymptotes,
@@ -18,7 +19,7 @@ const W = 260,
   PAD = 14;
 
 /**
- * The lesson's target y = f(x) as a curve with the probe input and player's result. Derivative
+ * The lesson's target output as a curve with the probe input and player's result. Derivative
  * lessons separate f′ from f and its tangent so neither view is crowded. Clicking or dragging on
  * the plot moves the probe input.
  */
@@ -99,6 +100,7 @@ export default function FunctionPlot({
   }, [level, input, plotX, fixedKey]);
   if (!curve) return null;
 
+  const outputLabel = translateValueName(t, level.interface.output);
   const tangentView = Boolean(curve.original) && view === 'tangent';
   const shownCurve = tangentView ? curve.original! : curve.target;
   const asymptotes = functionAsymptotes(level, tangentView ? 'original' : 'target');
@@ -335,7 +337,9 @@ export default function FunctionPlot({
         ) : (
           <>
             <span className="plot-key is-target">
-              {t(level.kind === 'derivative' ? 'plot.derivative' : 'plot.target')}
+              {t(level.kind === 'derivative' ? 'plot.derivative' : 'plot.target', {
+                output: outputLabel,
+              })}
             </span>
             <span className={`plot-key is-actual${matches ? ' is-ok' : ''}`}>
               {t('plot.yours')}

@@ -1,34 +1,72 @@
 import { CpuBackend } from '../engine/cpu';
-import type { ForwardLevel } from '../engine/levels';
+import { levelDerivativeInputs, levelOutputShapes, type ForwardLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
 
 const backend = new CpuBackend();
 type Tolerance = { kind: string; atol?: number; rtol?: number };
 
-/** The answer for one probe case, computed exactly as the judge does (f, or f' by autodiff). */
-export async function expectedOutput(
+export interface ExpectedValue {
+  shape: number[];
+  values: number[];
+}
+
+/** All answers for one probe case, computed exactly as the judge does. */
+export async function expectedOutputs(
   level: ForwardLevel,
   inputs: Record<string, number[]>,
   shapes: Readonly<Record<string, readonly number[]>> = level.interface.inputs,
-): Promise<{ shape: number[]; values: number[] }> {
+): Promise<Record<string, ExpectedValue>> {
   const tensors = Object.fromEntries(
     Object.entries(shapes).map(([name, shape]) => [
       name,
       T.tensor(inputs[name] ?? [], shape, backend),
     ]),
   );
-  const reference = level.reference(tensors);
+  let reference: T.Tensor | undefined;
+  let results: T.Tensor[] = [];
   try {
-    const [result] =
-      level.kind === 'derivative'
-        ? await T.backward(reference, [tensors[level.derivativeInput ?? 'x']])
-        : [reference];
-    const values = Array.from(await result.read());
-    if (result !== reference) result.dispose();
-    return { shape: [...result.shape], values };
+    const names = Object.keys(levelOutputShapes(level));
+    if (level.referenceOutputs) {
+      const named = level.referenceOutputs(tensors);
+      if (
+        Object.keys(named).length !== names.length ||
+        names.some((name) => !Object.hasOwn(named, name))
+      )
+        throw new Error('levels.output_shape');
+      results = names.map((name) => named[name]);
+    } else {
+      reference = level.reference(tensors);
+      results =
+        level.kind === 'derivative'
+          ? await T.backward(
+              reference,
+              levelDerivativeInputs(level).map((name) => tensors[name]),
+            )
+          : [reference];
+    }
+    if (names.length !== results.length) throw new Error('levels.output_shape');
+    return Object.fromEntries(
+      await Promise.all(
+        names.map(async (name, index) => [
+          name,
+          { shape: [...results[index].shape], values: Array.from(await results[index].read()) },
+        ]),
+      ),
+    );
   } finally {
-    T.disposeGraph([reference]);
+    if (reference) T.disposeGraph([reference], Object.values(tensors));
+    if (results.length) T.disposeGraph(results, Object.values(tensors));
+    Object.values(tensors).forEach((tensor) => tensor.dispose());
   }
+}
+
+/** The primary answer retained for existing single-output plots and callers. */
+export async function expectedOutput(
+  level: ForwardLevel,
+  inputs: Record<string, number[]>,
+  shapes: Readonly<Record<string, readonly number[]>> = level.interface.inputs,
+): Promise<ExpectedValue> {
+  return (await expectedOutputs(level, inputs, shapes))[level.interface.output];
 }
 
 /** Element indices outside the judge tolerance (empty when shapes differ: nothing lines up). */

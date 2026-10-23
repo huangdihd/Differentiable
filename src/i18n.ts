@@ -82,8 +82,15 @@ export function createTranslator(locale: Locale) {
   return (key: string, params?: TranslationParams) => translate(locale, key, params);
 }
 
+/** Named graph values are identifiers internally but player-facing meanings when translated. */
+export function translateValueName(t: (key: string) => string, name: string): string {
+  const key = `values.${name}`;
+  return Object.hasOwn(en, key) ? t(key) : name;
+}
+
 /** Component-specific port meanings override shared labels; unknown user-defined ports keep their names. */
 export function translatePort(t: (key: string) => string, component: string, port: string): string {
+  if (component === 'output' && port !== 'out') return translateValueName(t, port);
   const specific = `ports.${component}.${port}`;
   if (Object.hasOwn(en, specific)) return t(specific);
   const shared = `ports.${port}`;
@@ -105,6 +112,17 @@ export function diagnosticKey(code: string): string {
       ? code
       : 'errors.unknown';
 }
+const diagnosticShapeParams: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'errors.broadcast_mismatch': ['a', 'b'],
+  'errors.dim_out_of_range': ['shape'],
+  'errors.input_shape_mismatch': ['actual', 'expected'],
+  'errors.invalid_constant': ['shape'],
+  'errors.invalid_shape': ['shape'],
+  'errors.matmul_shape': ['a', 'b'],
+  'errors.parameter_shape_mismatch': ['actual', 'expected'],
+  'errors.reshape_mismatch': ['actual', 'expected'],
+});
+
 /** Never renders unlocalized backend exception messages. */
 export function translateDiagnostic(
   locale: Locale,
@@ -118,6 +136,7 @@ export function translateDiagnostic(
 ): string {
   const rawKey = error.key ?? error.message ?? '';
   const key = diagnosticKey(rawKey);
+  const shapeParams = new Set(diagnosticShapeParams[key] ?? []);
   // Keep opaque internal failures inspectable without flooding repeated UI renders.
   const internal = (en as Dictionary)[key] === en['errors.unknown'];
   const logId = `diagnostic:${rawKey}`;
@@ -126,15 +145,42 @@ export function translateDiagnostic(
     console.error('[i18n] Diagnostic:', rawKey, error.params, error);
   }
   const params: Record<string, string | number> = {};
-  for (const [key, value] of Object.entries(error.params ?? {})) {
-    if (key === 'message') continue;
-    if (typeof value === 'string' || typeof value === 'number') params[key] = value;
+  for (const [name, value] of Object.entries(error.params ?? {})) {
+    if (name === 'message' || name === 'input_names') continue;
+    if (typeof value === 'string' || typeof value === 'number') params[name] = value;
     else if (Array.isArray(value) && value.every((d) => typeof d === 'number'))
-      params[key] = value.length ? `[${value.join(key === 'allowed' ? ', ' : '×')}]` : '[]';
+      params[name] = value.length
+        ? `[${value.join(name === 'allowed' ? ', ' : '×')}]`
+        : translate(locale, shapeParams.has(name) ? 'ui.scalar' : 'ui.none');
+    else if (
+      name === 'shapes' &&
+      value !== null &&
+      typeof value === 'object' &&
+      Object.entries(value).every(
+        ([, shape]) => Array.isArray(shape) && shape.every((d) => typeof d === 'number'),
+      )
+    )
+      params[name] = Object.entries(value)
+        .map(([input, shape]) => {
+          const dimensions = shape as number[];
+          return `${input} ${dimensions.length ? `[${dimensions.join('×')}]` : translate(locale, 'ui.scalar')}`;
+        })
+        .join(', ');
     else
-      params[key] =
+      params[name] =
         value == null ? translate(locale, 'errors.value_missing') : JSON.stringify(value);
   }
+  const inputNames = error.params?.input_names;
+  if (inputNames && typeof inputNames === 'object' && !Array.isArray(inputNames))
+    for (const [port, value] of Object.entries(inputNames)) {
+      const names = Array.isArray(value)
+        ? value.filter((name): name is string => typeof name === 'string')
+        : [];
+      if (names.length) params[`${port}_name`] = [...new Set(names)].join('/');
+    }
+  // Primitive diagnostics still use their own formal names at top level.
+  for (const port of ['a', 'b'])
+    if (!Object.hasOwn(params, `${port}_name`)) params[`${port}_name`] = port;
   if (error.node) params.node = error.node;
   if (error.port) params.port = error.port;
   for (const key of ['component', 'requiredComponent']) {

@@ -50,7 +50,7 @@ it('incorrect XOR constant classifier cannot pass', async () => {
         component: 'const',
         attrs: { shape: [4, 2], value: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] },
       },
-      { id: 'y', component: 'output', attrs: { name: 'y' } },
+      { id: 'y', component: 'output', attrs: { name: 'probabilities' } },
     ],
     edges: [{ from: { node: 'p', port: 'out' }, to: { node: 'y', port: 'x' } }],
   };

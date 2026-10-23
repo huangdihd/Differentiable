@@ -104,12 +104,15 @@ export function initialGraph(level: Level): GraphJSON {
         attrs: { name },
         ui: { x: 60, y: 80 + i * 140 },
       })),
-      {
-        id: 'output',
+      ...Object.keys(
+        level.interface.outputs ?? { [level.interface.output]: level.interface.outputShape },
+      ).map((name, i) => ({
+        id: i === 0 ? 'output' : `output_${i}`,
         component: 'output',
-        attrs: { name: level.interface.output },
-        ui: { x: 660, y: 160 },
-      },
+        attrs: { name },
+        // Output diagnostics can add several wrapped lines below a disconnected node.
+        ui: { x: 660, y: 120 + i * 200 },
+      })),
     ],
     edges: [],
   };

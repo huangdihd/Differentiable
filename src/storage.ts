@@ -3,7 +3,7 @@ import { evaluateLevel, initialProgress, type Level, type Progress } from './eng
 import { availableComponents, buildPlayerRegistry } from './levels/registry';
 import { browserLocale, isLocale, type Locale } from './i18n';
 
-export const STORAGE_VERSION = 3;
+export const STORAGE_VERSION = 9;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
 export interface StorageLike {
@@ -155,14 +155,7 @@ export function loadProgress(source: StorageSource = browserStorage): Progress {
   return createInitialProgress();
 }
 /** Remap level IDs only: graph component names and unlocked components are stable. */
-function migrateChapter2(progress: Progress): Progress {
-  const ids: Record<string, string> = {
-    '2-2': '2-3',
-    '2-3': '2-4',
-    '2-4': '2-5',
-    '2-5': '2-7',
-    '2-6': '2-8',
-  };
+function remapProgressIds(progress: Progress, ids: Readonly<Record<string, string>>): Progress {
   const mapId = (id: string) => (Object.hasOwn(ids, id) ? ids[id] : id);
   const mapKeys = <T>(values: Record<string, T>): Record<string, T> =>
     Object.fromEntries(Object.entries(values).map(([id, value]) => [mapId(id), value]));
@@ -177,10 +170,121 @@ function migrateChapter2(progress: Progress): Progress {
   };
 }
 
+function migrateChapter2(progress: Progress): Progress {
+  const ids: Record<string, string> = {
+    '2-2': '2-3',
+    '2-3': '2-4',
+    '2-4': '2-5',
+    '2-5': '2-7',
+    '2-6': '2-8',
+  };
+  return remapProgressIds(progress, ids);
+}
+
+/** v4 put two gradient lessons before the former 1-10 chapter finale. */
+function migrateChapter1GradientOrder(progress: Progress): Progress {
+  const oldUnlocked = new Set(progress.unlocked);
+  const oldPassed = new Set(progress.passed);
+  const migrated = remapProgressIds(progress, {
+    '1-10': '1-12',
+    '1-11': '1-10',
+    '1-12': '1-11',
+  });
+  const unlocked = migrated.unlocked.filter((id) => !['1-10', '1-11', '1-12'].includes(id));
+  const reachedOldFinale = ['1-10', '1-11', '1-12'].some((id) => oldUnlocked.has(id));
+  if (reachedOldFinale) unlocked.push('1-10');
+  if (oldPassed.has('1-11') || oldUnlocked.has('1-12')) unlocked.push('1-11');
+  if (oldPassed.has('1-10')) unlocked.push('1-12');
+  return { ...migrated, unlocked: [...new Set(unlocked)] };
+}
+
+/** v5 removes the redundant second gradient lesson and moves backpropagation to 1-11. */
+function migrateChapter1GradientMerge(progress: Progress): Progress {
+  const oldUnlocked = new Set(progress.unlocked);
+  const mapKeys = <T>(values: Record<string, T>): Record<string, T> => {
+    const migrated = Object.fromEntries(
+      Object.entries(values).filter(([id]) => id !== '1-11' && id !== '1-12'),
+    );
+    if (Object.hasOwn(values, '1-12')) migrated['1-11'] = values['1-12'];
+    return migrated;
+  };
+  const savedGraphs = mapKeys(progress.savedGraphs);
+  const passedSolutions = mapKeys(progress.passedSolutions);
+  // v4's default 140px output spacing overlapped wrapped missing-input diagnostics.
+  for (const graphs of [savedGraphs, passedSolutions]) {
+    const graph = graphs['1-10'];
+    const outputs = graph?.nodes.filter(
+      (node) => node.component === 'output' && ['∂a', '∂b'].includes(String(node.attrs?.name)),
+    );
+    if (
+      outputs?.length === 2 &&
+      outputs[0].ui?.x === 660 &&
+      outputs[0].ui?.y === 120 &&
+      outputs[1].ui?.x === 660 &&
+      outputs[1].ui?.y === 260
+    ) {
+      graphs['1-10'] = structuredClone(graph);
+      graphs['1-10'].nodes.find((node) => node.id === outputs[1].id)!.ui = { x: 660, y: 320 };
+    }
+  }
+  return {
+    ...progress,
+    unlocked: [
+      ...new Set([
+        ...progress.unlocked.filter((id) => id !== '1-11' && id !== '1-12'),
+        ...(['1-11', '1-12'].some((id) => oldUnlocked.has(id)) ? ['1-11'] : []),
+      ]),
+    ],
+    passed: progress.passed
+      .filter((id) => id !== '1-11' && id !== '1-12')
+      .concat(progress.passed.includes('1-12') ? ['1-11'] : []),
+    savedGraphs,
+    passedSolutions,
+    bestScores: mapKeys(progress.bestScores),
+    ...(progress.trainingSettings ? { trainingSettings: mapKeys(progress.trainingSettings) } : {}),
+  };
+}
+
+/** v7 replaces every earlier 1-11 circuit with the local backward step for z=w·x+b. */
+function migrateBackpropFullPass(progress: Progress, levels: readonly Level[]): Progress {
+  const changed = levels.some(
+    (level) => level.id === '1-11' && Object.hasOwn(level.interface.inputs, '∂f/∂z'),
+  );
+  if (!changed) return progress;
+  const graduated = progress.passed.includes('1-11');
+  const withoutBackprop = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).filter(([id]) => id !== '1-11'));
+  return {
+    ...progress,
+    unlocked: [
+      ...new Set([
+        ...progress.unlocked,
+        ...(graduated && levels.some((level) => level.id === 'axes') ? ['axes'] : []),
+      ]),
+    ],
+    passed: progress.passed.filter((id) => id !== '1-11'),
+    // The old graph recomputed one Sigmoid derivative and has a different fixed interface.
+    // A fresh editor graph is safer than leaving protected obsolete input/output nodes behind.
+    savedGraphs: withoutBackprop(progress.savedGraphs),
+    passedSolutions: withoutBackprop(progress.passedSolutions),
+    bestScores: withoutBackprop(progress.bestScores),
+    ...(progress.trainingSettings
+      ? { trainingSettings: withoutBackprop(progress.trainingSettings) }
+      : {}),
+  };
+}
+
+/** Old chapter graduates can study the inserted gradient lesson without losing later access. */
+function gradientLessonUnlocks(progress: Progress, levels: readonly Level[]): string[] {
+  return levels.some((level) => level.id === '1-10') && progress.passed.includes('1-11')
+    ? ['1-10']
+    : [];
+}
+
 /** The tensor chapter predates the axes lesson; restore access, never completion. */
 function axesUnlocks(progress: Progress, levels: readonly Level[]): string[] {
   return levels.some((level) => level.id === 'axes') &&
-    (progress.unlocked.includes('2-1') || progress.passed.includes('1-10'))
+    (progress.unlocked.includes('2-1') || progress.passed.includes('1-11'))
     ? ['axes']
     : [];
 }
@@ -193,13 +297,200 @@ function reshapeUnlocks(progress: Progress, levels: readonly Level[]): string[] 
     : [];
 }
 
-/** The internal 3-3 milestone predates construction lessons; restore access, never completion. */
+/** Loss now has a playable introduction; old players keep their route and can visit it. */
+function lossIntroUnlocks(progress: Progress, levels: readonly Level[]): string[] {
+  const intro = levels.findIndex((level) => level.id === 'loss-intro');
+  if (intro < 0) return [];
+  const reachedLaterLesson = levels
+    .slice(intro + 1)
+    .some((level) => progress.unlocked.includes(level.id) || progress.passed.includes(level.id));
+  return reachedLaterLesson ? ['loss-intro'] : [];
+}
+
+/** Construction lessons moved before the vector-gradient milestone; restore access, never completion. */
 function constructionUnlocks(progress: Progress, levels: readonly Level[]): string[] {
-  const reachedLayer = progress.unlocked.includes('3-3') || progress.passed.includes('3-3');
+  const reachedVectorGradient =
+    progress.unlocked.includes('3-2') || progress.passed.includes('3-2');
+  const reachedLaterLesson = progress.unlocked.includes('3-3') || progress.passed.includes('3-3');
   return [
-    ...(reachedLayer || progress.passed.includes('3-2') ? ['neuron'] : []),
-    ...(reachedLayer || progress.passed.includes('neuron') ? ['layer'] : []),
+    ...(reachedVectorGradient || reachedLaterLesson ? ['neuron'] : []),
+    ...(progress.passed.includes('3-2') || reachedLaterLesson ? ['layer'] : []),
   ].filter((id) => levels.some((level) => level.id === id));
+}
+
+/** Keep changed local-backprop drafts editable by repairing their protected interface inputs. */
+function migrateUpstreamGradientInputs(progress: Progress, levels: readonly Level[]): Progress {
+  const changed = new Map(
+    levels
+      .filter(
+        (level) =>
+          level.revalidateOnLoad &&
+          Object.hasOwn(level.interface.inputs, '∂L/∂p') &&
+          !Object.hasOwn(level.interface.inputs, 't'),
+      )
+      .map((level) => [level.id, level] as const),
+  );
+  const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> =>
+    Object.fromEntries(
+      Object.entries(graphs).map(([id, graph]) => {
+        const level = changed.get(id);
+        if (!level) return [id, graph];
+        let migrated = graph;
+        if (
+          !graph.nodes.some((node) => node.component === 'input' && node.attrs?.name === '∂L/∂p')
+        ) {
+          const target = graph.nodes.find(
+            (node) => node.component === 'input' && node.attrs?.name === 't',
+          );
+          if (target) {
+            migrated = structuredClone(graph);
+            const input = migrated.nodes.find((node) => node.id === target.id)!;
+            input.attrs = { ...input.attrs, name: '∂L/∂p' };
+          }
+        }
+        const expected = new Set(Object.keys(level.interface.inputs));
+        const obsolete = new Set(
+          migrated.nodes
+            .filter(
+              (node) =>
+                node.component === 'input' &&
+                typeof node.attrs?.name === 'string' &&
+                !expected.has(node.attrs.name),
+            )
+            .map((node) => node.id),
+        );
+        if (!obsolete.size) return [id, migrated];
+        if (migrated === graph) migrated = structuredClone(graph);
+        migrated.nodes = migrated.nodes.filter((node) => !obsolete.has(node.id));
+        migrated.edges = migrated.edges.filter(
+          (edge) => !obsolete.has(edge.from.node) && !obsolete.has(edge.to.node),
+        );
+        return [id, migrated];
+      }),
+    );
+  return {
+    ...progress,
+    savedGraphs: migrateGraphs(progress.savedGraphs),
+    passedSolutions: migrateGraphs(progress.passedSolutions),
+  };
+}
+
+/** Regression now places a scalar-batch Linear; repair drafts saved with its old 2-wide defaults. */
+function migrateRegressionLinearDefaults(progress: Progress, levels: readonly Level[]): Progress {
+  const defaults = levels.find((level) => level.id === '3-4')?.componentDefaults?.linear;
+  if (defaults?.in_features !== 1 || defaults.out_features !== 1) return progress;
+  const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> => {
+    const graph = graphs['3-4'];
+    if (!graph) return graphs;
+    const input = graph.nodes.find(
+      (node) => node.component === 'input' && node.attrs?.name === 'x',
+    );
+    const mse = new Set(
+      graph.nodes.filter((node) => node.component === 'mse').map((node) => node.id),
+    );
+    const obsolete = graph.nodes.filter(
+      (node) =>
+        node.component === 'linear' &&
+        node.attrs?.automatic_parameters === true &&
+        [1, 2].includes(node.attrs.in_features as number) &&
+        [1, 2].includes(node.attrs.out_features as number) &&
+        (node.attrs.in_features !== 1 || node.attrs.out_features !== 1) &&
+        graph.edges.some(
+          (edge) =>
+            edge.from.node === input?.id && edge.to.node === node.id && edge.to.port === 'x',
+        ) &&
+        graph.edges.some(
+          (edge) => edge.from.node === node.id && mse.has(edge.to.node) && edge.to.port === 'p',
+        ),
+    );
+    if (!obsolete.length) return graphs;
+    const migrated = structuredClone(graph);
+    const ids = new Set(obsolete.map((node) => node.id));
+    for (const node of migrated.nodes)
+      if (ids.has(node.id)) node.attrs = { ...node.attrs, in_features: 1, out_features: 1 };
+    return { ...graphs, '3-4': migrated };
+  };
+  return {
+    ...progress,
+    savedGraphs: migrateGraphs(progress.savedGraphs),
+  };
+}
+
+/** Momentum now exposes both recurrent state values; keep old drafts editable, then revalidate passes. */
+function migrateMomentumOutputs(progress: Progress, levels: readonly Level[]): Progress {
+  const outputs = levels.find((level) => level.id === '3-7')?.interface.outputs;
+  if (!outputs?.updatedWeight || !outputs.updatedMomentum) return progress;
+  const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> => {
+    const graph = graphs['3-7'];
+    if (!graph) return graphs;
+    const weightOutput = graph.nodes.find(
+      (node) =>
+        node.component === 'output' &&
+        ['y', 'updatedWeight'].includes(String(node.attrs?.name ?? 'y')),
+    );
+    const hasMomentum = graph.nodes.some(
+      (node) => node.component === 'output' && node.attrs?.name === 'updatedMomentum',
+    );
+    if (!weightOutput || hasMomentum) return graphs;
+    const migrated = structuredClone(graph);
+    const output = migrated.nodes.find((node) => node.id === weightOutput.id)!;
+    output.attrs = { ...output.attrs, name: 'updatedWeight' };
+    const ids = new Set(migrated.nodes.map((node) => node.id));
+    let id = 'output_momentum';
+    for (let suffix = 2; ids.has(id); suffix++) id = `output_momentum_${suffix}`;
+    migrated.nodes.push({
+      id,
+      component: 'output',
+      attrs: { name: 'updatedMomentum' },
+      ui: {
+        x: typeof output.ui?.x === 'number' ? output.ui.x : 660,
+        y: typeof output.ui?.y === 'number' ? output.ui.y + 200 : 320,
+      },
+    });
+    return { ...graphs, '3-7': migrated };
+  };
+  return {
+    ...progress,
+    savedGraphs: migrateGraphs(progress.savedGraphs),
+    passedSolutions: migrateGraphs(progress.passedSolutions),
+  };
+}
+
+/** v8 introduced semantic outputs; v9 also repairs v8 graphs that retained generic `y`. */
+function migrateSemanticOutputNames(
+  progress: Progress,
+  levels: readonly Level[],
+  mapLevelId: (id: string) => string = (id) => id,
+): Progress {
+  const outputByLevel = new Map(
+    levels
+      .filter((level) => !level.interface.outputs && level.interface.output !== 'y')
+      .map((level) => [level.id, level.interface.output]),
+  );
+  const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> =>
+    Object.fromEntries(
+      Object.entries(graphs).map(([id, graph]) => {
+        const output = outputByLevel.get(mapLevelId(id));
+        if (
+          !output ||
+          !graph.nodes.some(
+            (node) => node.component === 'output' && String(node.attrs?.name ?? 'y') === 'y',
+          )
+        )
+          return [id, graph];
+        const migrated = structuredClone(graph);
+        for (const node of migrated.nodes) {
+          if (node.component !== 'output' || String(node.attrs?.name ?? 'y') !== 'y') continue;
+          node.attrs = { ...node.attrs, name: output };
+        }
+        return [id, migrated];
+      }),
+    );
+  return {
+    ...progress,
+    savedGraphs: migrateGraphs(progress.savedGraphs),
+    passedSolutions: migrateGraphs(progress.passedSolutions),
+  };
 }
 
 /** Recheck changed contracts in catalog order so later lessons use repaired component fallbacks. */
@@ -210,14 +501,16 @@ async function revalidateSolutions(
   const revoked: string[] = [];
   for (const level of levels) {
     const solution = progress.passedSolutions[level.id];
-    if (!level.revalidateOnLoad || !progress.passed.includes(level.id) || !solution) continue;
-    const result = await evaluateLevel(
-      { ...level, available: availableComponents(level, progress) },
-      solution,
-      { registry: buildPlayerRegistry(levels, progress) },
-    );
-    if (result.passed) continue;
-    progress.savedGraphs[level.id] ??= structuredClone(solution);
+    if (!level.revalidateOnLoad || !progress.passed.includes(level.id)) continue;
+    const result = solution
+      ? await evaluateLevel(
+          { ...level, available: availableComponents(level, progress) },
+          solution,
+          { registry: buildPlayerRegistry(levels, progress) },
+        )
+      : undefined;
+    if (result?.passed) continue;
+    if (solution) progress.savedGraphs[level.id] ??= structuredClone(solution);
     progress.passed = progress.passed.filter((id) => id !== level.id);
     delete progress.passedSolutions[level.id];
     delete progress.bestScores[level.id];
@@ -244,10 +537,30 @@ export async function loadProgressWithMigration(
     if (!raw) return createInitialProgress();
     const envelope: unknown = JSON.parse(raw);
     if (!record(envelope)) return createInitialProgress();
-    if (envelope.version === STORAGE_VERSION || envelope.version === 2) {
+    if (
+      envelope.version === STORAGE_VERSION ||
+      envelope.version === 8 ||
+      envelope.version === 7 ||
+      envelope.version === 6 ||
+      envelope.version === 5 ||
+      envelope.version === 4 ||
+      envelope.version === 3 ||
+      envelope.version === 2
+    ) {
       if (!isProgress(envelope.progress)) return createInitialProgress();
-      const progress =
-        envelope.version === 2 ? migrateChapter2(envelope.progress) : envelope.progress;
+      let progress = envelope.progress;
+      if (envelope.version === 2) progress = migrateChapter2(progress);
+      if (envelope.version === 2 || envelope.version === 3)
+        progress = migrateChapter1GradientOrder(progress);
+      if ([2, 3, 4].includes(envelope.version as number))
+        progress = migrateChapter1GradientMerge(progress);
+      if ([2, 3, 4, 5, 6].includes(envelope.version as number))
+        progress = migrateBackpropFullPass(progress, levels);
+      // Idempotently repair saves written by early v8 builds as well as older envelopes.
+      progress = migrateSemanticOutputNames(progress, levels);
+      progress = migrateMomentumOutputs(progress, levels);
+      progress = migrateUpstreamGradientInputs(progress, levels);
+      progress = migrateRegressionLinearDefaults(progress, levels);
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
       const restored = {
@@ -256,6 +569,8 @@ export async function loadProgressWithMigration(
           ...new Set([
             ...progress.unlocked,
             ...passedLevels.flatMap((l) => l.unlock),
+            ...gradientLessonUnlocks(progress, levels),
+            ...lossIntroUnlocks(progress, levels),
             ...constructionUnlocks(progress, levels),
             ...axesUnlocks(progress, levels),
             ...reshapeUnlocks(progress, levels),
@@ -268,15 +583,20 @@ export async function loadProgressWithMigration(
           ]),
         ],
       };
+      const repaired = JSON.stringify(restored) !== JSON.stringify(envelope.progress);
       const revoked = await revalidateSolutions(restored, levels);
-      if (envelope.version === 2 || revoked.length) saveProgress(restored, source);
+      if (envelope.version !== STORAGE_VERSION || repaired || revoked.length)
+        saveProgress(restored, source);
       if (revoked.length) onRevoked?.(revoked);
       return restored;
     }
     if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
     const candidate = { ...envelope.progress, passedSolutions: {} };
     if (!isProgress(candidate)) return createInitialProgress();
-    legacy = migrateChapter2(candidate);
+    legacy = migrateBackpropFullPass(
+      migrateChapter1GradientMerge(migrateChapter1GradientOrder(migrateChapter2(candidate))),
+      levels,
+    );
   } catch {
     return createInitialProgress();
   }
@@ -289,12 +609,21 @@ export async function loadProgressWithMigration(
       );
     return id;
   };
+  legacy = migrateRegressionLinearDefaults(
+    migrateUpstreamGradientInputs(
+      migrateMomentumOutputs(migrateSemanticOutputNames(legacy, levels, mapId), levels),
+      levels,
+    ),
+    levels,
+  );
   const known = new Set(levels.map((level) => level.id));
   const progress = createInitialProgress();
   progress.unlocked = [
     ...new Set([
       ...progress.unlocked,
       ...legacy.unlocked.map(mapId).filter((id) => known.has(id)),
+      ...gradientLessonUnlocks(legacy, levels),
+      ...lossIntroUnlocks(legacy, levels),
       ...constructionUnlocks(legacy, levels),
       ...axesUnlocks(legacy, levels),
       ...reshapeUnlocks(legacy, levels),
@@ -317,7 +646,9 @@ export async function loadProgressWithMigration(
   for (const level of levels.slice(0, last + 1)) {
     // New lessons must not become completed merely because a legacy milestone follows them.
     if (
-      ['square', 'axes', 'reshape', 'neuron', 'layer'].includes(level.id) &&
+      ['square', '1-10', '1-11', 'axes', 'reshape', 'loss-intro', 'neuron', 'layer'].includes(
+        level.id,
+      ) &&
       !passed.has(level.id)
     )
       continue;
@@ -372,6 +703,12 @@ export function loadLanguage(
         record(envelope) &&
         (envelope.version === 1 ||
           envelope.version === 2 ||
+          envelope.version === 3 ||
+          envelope.version === 4 ||
+          envelope.version === 5 ||
+          envelope.version === 6 ||
+          envelope.version === 7 ||
+          envelope.version === 8 ||
           envelope.version === STORAGE_VERSION) &&
         isLocale(envelope.language)
       )

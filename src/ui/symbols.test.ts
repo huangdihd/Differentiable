@@ -22,6 +22,28 @@ it('reshape dimension ports and node height follow the target rank', () => {
   expect(nodePorts({ id: 'r', component: 'reshape' }, registry, 'inputs')).toEqual(['x', 'd0']);
 });
 
+it('hides generated parameter ports only for fresh automatic module instances', () => {
+  const registry = new ComponentRegistry().register({
+    name: 'linear',
+    inputs: ['x', 'w', 'b'],
+    outputs: ['out'],
+    generatedInputs: ['w', 'b'],
+  });
+  expect(
+    nodePorts(
+      { id: 'fresh', component: 'linear', attrs: { automatic_parameters: true } },
+      registry,
+      'inputs',
+    ),
+  ).toEqual(['x']);
+  for (const attrs of [undefined, { automatic_parameters: false }])
+    expect(nodePorts({ id: 'legacy', component: 'linear', attrs }, registry, 'inputs')).toEqual([
+      'x',
+      'w',
+      'b',
+    ]);
+});
+
 it('uses consistent binary-expression symbols for four arithmetic operations', () => {
   expect({ add: SYMBOLS.add, sub: SYMBOLS.sub, mul: SYMBOLS.mul, div: SYMBOLS.div }).toEqual({
     add: 'a+b',

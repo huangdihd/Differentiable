@@ -29,6 +29,8 @@ function answer(name: string, attrs: Attributes, inputs?: ShapePorts): GraphJSON
   if (name === 'matmul') {
     const a = inputs?.a ?? [1, 1],
       b = inputs?.b ?? [1, 1];
+    if (a.length < 2 || b.length < 2 || a.at(-1) !== b.at(-2))
+      throw new GraphError('matmul_shape', undefined, undefined, { a, b });
     infer('matmul', [a, b]);
     node('a', 'input', {}, { name: 'a' });
     node('b', 'input', {}, { name: 'b' });

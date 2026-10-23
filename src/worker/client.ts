@@ -1,6 +1,6 @@
 import type { OptimizerOptions } from '../engine/training';
 import type { Progress } from '../engine/levels';
-import type { GraphEndpoint, GraphJSON } from '../engine/graph';
+import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type {
   BackendPreference,
   Command,
@@ -147,8 +147,13 @@ export class WorkerClient {
     });
   }
   /** Read-only backward graph; supplying inputs also requests a numeric trace. */
-  backward(levelId: string, graph: GraphJSON, inputs?: Record<string, number[]>) {
-    return this.send<'backward'>({ type: 'backward', levelId, graph, inputs });
+  backward(
+    levelId: string,
+    graph: GraphJSON,
+    inputs?: Record<string, number[]>,
+    options?: { inputShapes: ShapePorts; output: string; wrt: string[] },
+  ) {
+    return this.send<'backward'>({ type: 'backward', levelId, graph, inputs, options });
   }
   evaluate(
     levelId: string,

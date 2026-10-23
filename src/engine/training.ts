@@ -375,18 +375,34 @@ export class TrainingSession {
         trace.forward[id] = await snapshot(tensor);
         if (ancestors.has(tensor)) trace.gradient[id] = await snapshot(byTensor.get(tensor)!);
       }
-      const parameterProbes = [...this.model.parameters].flatMap(([key, tensor]) => {
-        const id = decodeURIComponent(key);
-        return probes.get(id) === tensor ? [{ key, id, tensor }] : [];
-      });
-      for (const { id, tensor } of parameterProbes)
-        trace.parameters[id] = { before: Array.from(await tensor.read()), after: [] };
+      const parameterGroups = new Map<string, { keys: string[]; tensors: Tensor[] }>();
+      for (const [key, tensor] of this.model.parameters) {
+        const id = decodeURIComponent(key.split('/')[0]);
+        if (!probes.has(id)) continue;
+        const group = parameterGroups.get(id) ?? { keys: [], tensors: [] };
+        group.keys.push(key);
+        group.tensors.push(tensor);
+        parameterGroups.set(id, group);
+      }
+      for (const [id, group] of parameterGroups)
+        trace.parameters[id] = {
+          before: (
+            await Promise.all(group.tensors.map(async (tensor) => Array.from(await tensor.read())))
+          ).flat(),
+          after: [],
+        };
+      const parameterProbes = [...parameterGroups].flatMap(([id, group]) =>
+        group.keys.map((key) => ({ id, key })),
+      );
+      const after = new Map<string, number[]>();
+      for (const id of parameterGroups.keys()) after.set(id, []);
       await this.optimizer.update(
         this.model.parameters,
         parameters.map((p) => byTensor.get(p)!),
       );
       for (const { key, id } of parameterProbes)
-        trace.parameters[id].after = Array.from(await this.model.parameters.get(key)!.read());
+        after.get(id)!.push(...(await this.model.parameters.get(key)!.read()));
+      for (const [id, values] of after) trace.parameters[id].after = values;
       for (const parameter of Object.values(trace.parameters))
         if (!parameter.after.every(Number.isFinite)) throw new Error('training.nonfinite');
       return trace;

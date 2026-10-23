@@ -87,11 +87,14 @@ export async function trainingBackward(
       graph.edges.push({ from: loss, to: { node: output.id, port: 'x' } });
     }
     output.attrs = { ...output.attrs, name: 'loss' };
+    const wrt = [...plan.parameters.keys()].map((path) =>
+      path.split('/').map(decodeURIComponent).join('/'),
+    );
     const options = {
       registry,
       inputShapes,
       output: 'loss',
-      wrt: source.nodes.filter((n) => n.component === 'param').map((n) => n.id),
+      wrt,
     };
     const backward = buildBackwardGraph(graph, options);
     const data: Record<string, number[]> = {};
@@ -107,6 +110,7 @@ export async function trainingBackward(
       backward,
       trace,
       attachedLoss,
+      wrt,
       parameterState: saved ? ('current' as const) : ('initial' as const),
     };
   } finally {

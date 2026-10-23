@@ -1,7 +1,13 @@
 import type { BackwardGraph, BackwardTrace } from '../engine/backward-graph';
 import type { GraphJSON } from '../engine/graph';
+import { translateValueName } from '../i18n';
 import { SYMBOLS } from './graph-geometry';
-import { gradientLayout } from './gradient-layout';
+import {
+  backwardTeachingSegments,
+  gradientEdgeKey,
+  gradientLayout,
+  namedMultiplicationRule,
+} from './gradient-layout';
 import { gradientParameterLabel } from './parameter-label';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
@@ -25,6 +31,9 @@ export default function GradientView({
   trace,
   wrt,
   output,
+  playerBackwardStart,
+  playerBackwardLabelKey,
+  engineBackwardLabelKey,
   composite,
   format,
   intro,
@@ -38,6 +47,9 @@ export default function GradientView({
   trace?: BackwardTrace;
   wrt: readonly string[];
   output: string;
+  playerBackwardStart?: string;
+  playerBackwardLabelKey?: string;
+  engineBackwardLabelKey?: string;
   composite: (component: string) => boolean;
   format: (n: number) => string;
   intro?: string;
@@ -46,13 +58,19 @@ export default function GradientView({
   onClose: () => void;
 }) {
   const layout = gradientLayout(graph, backward, wrt);
+  const outputLabel = translateValueName(t, output);
+  const teaching = playerBackwardStart
+    ? backwardTeachingSegments(layout, playerBackwardStart)
+    : undefined;
   const node = new Map(graph.nodes.map((n) => [n.id, n]));
   const label = (id: string) => {
     const n = node.get(id)!;
     if (n.attrs?.engineLoss === true)
       return t(n.component === 'const' ? 'gradView.targets' : 'components.cross_entropy');
+    if (typeof n.attrs?.labelKey === 'string') return t(n.attrs.labelKey);
     if (n.component === 'param') return gradientParameterLabel(n, graph);
-    if (n.component === 'input' || n.component === 'output') return String(n.attrs?.name ?? id);
+    if (n.component === 'output') return translateValueName(t, String(n.attrs?.name ?? id));
+    if (n.component === 'input') return String(n.attrs?.name ?? id);
     if (n.component === 'const') {
       // A constant can be a whole tensor (e.g. 4-2's class ids); label it by length, as the canvas does.
       const v = n.attrs?.value;
@@ -79,6 +97,12 @@ export default function GradientView({
   const at = new Map(layout.nodes.map((n) => [n.id, n]));
   const width = PAD * 2 + (layout.columns - 1) * PITCH_X + W;
   const height = bottom + layout.rows * PITCH_Y + PAD;
+  const backwardSegment = (from: string, to: string, port: string) => {
+    const key = gradientEdgeKey(from, to, port);
+    if (teaching?.playerEdges.has(key)) return ' is-player-step';
+    if (teaching?.engineEdges.has(key)) return ' is-engine-step';
+    return '';
+  };
 
   const ruleText = (edge: (typeof layout.edges)[number]) => {
     const consumer = node.get(edge.to)!;
@@ -87,7 +111,14 @@ export default function GradientView({
       return t('gradView.expanded', {
         name: SYMBOLS[consumer.component] ?? t(`components.${consumer.component}`),
       });
-    // Rules are written for the first operand; the second one of a product sees the other side.
+    if (
+      edge.rule === 'backward.rule.mul' &&
+      teaching?.playerEdges.has(gradientEdgeKey(edge.from, edge.to, edge.port))
+    ) {
+      const named = namedMultiplicationRule(graph, edge, label);
+      if (named) return t('gradView.ruleMulNamed', named);
+    }
+    // Generic rules are written for the first operand; the second one sees the other side.
     if (edge.rule === 'backward.rule.mul' && edge.port === 'b') return t('gradView.ruleMulB');
     return edge.rule ? t(edge.rule) : '';
   };
@@ -119,7 +150,10 @@ export default function GradientView({
         </header>
         <div className="gv-legend">
           <span className="gv-key is-forward">{t('gradView.forward')}</span>
-          <span className="gv-key is-backward">{t('gradView.backward', { y: output })}</span>
+          <span className="gv-key is-backward">{t('gradView.backward', { y: outputLabel })}</span>
+          {teaching && (
+            <span className="gv-key is-player-step">{t('gradView.playerBackwardLegend')}</span>
+          )}
           <span className="gv-key is-sum">{t('gradView.sum')}</span>
         </div>
         <div className="gv-scroll">
@@ -127,12 +161,22 @@ export default function GradientView({
             <span className="gv-band" style={{ top: PAD - 4 }}>
               {t('gradView.forwardBand')}
             </span>
-            <span className="gv-band is-backward" style={{ top: bottom - 26 }}>
-              {t('gradView.backwardBand', { y: output })}
+            <span className="gv-band is-backward" style={{ top: bottom - (teaching ? 54 : 26) }}>
+              {t('gradView.backwardBand', { y: outputLabel })}
             </span>
+            {teaching && playerBackwardLabelKey && (
+              <span className="gv-region is-player" style={{ left: PAD, top: bottom - 29 }}>
+                {t(playerBackwardLabelKey)}
+              </span>
+            )}
+            {teaching && engineBackwardLabelKey && (
+              <span className="gv-region is-engine" style={{ right: PAD, top: bottom - 29 }}>
+                {t(engineBackwardLabelKey)}
+              </span>
+            )}
             <svg width={width} height={height} className="gv-wires">
               <defs>
-                {(['forward', 'backward'] as const).map((k) => (
+                {(['forward', 'backward', 'player'] as const).map((k) => (
                   <marker
                     key={k}
                     id={`gv-arrow-${k}`}
@@ -190,13 +234,19 @@ export default function GradientView({
                   return (
                     <g key={`b${i}`}>
                       <path
-                        className="gv-wire is-backward"
-                        markerEnd={sum ? undefined : 'url(#gv-arrow-backward)'}
+                        className={`gv-wire is-backward${backwardSegment(e.from, e.to, e.port)}`}
+                        markerEnd={
+                          sum
+                            ? undefined
+                            : teaching?.playerEdges.has(gradientEdgeKey(e.from, e.to, e.port))
+                              ? 'url(#gv-arrow-player)'
+                              : 'url(#gv-arrow-backward)'
+                        }
                         d={curve(startX, startY, endX, endY)}
                       />
                       {text && (
                         <text
-                          className="gv-rule"
+                          className={`gv-rule${backwardSegment(e.from, e.to, e.port)}`}
                           x={(startX + endX) / 2}
                           y={(startY + endY) / 2 - 7}
                           textAnchor="middle"
@@ -243,16 +293,31 @@ export default function GradientView({
                   key={`bc-${n.id}`}
                   className={`gv-card is-backward${
                     ['input', 'param'].includes(node.get(n.id)!.component) ? ' is-target' : ''
+                  }${teaching?.start === n.id ? ' is-handoff' : ''}${
+                    teaching?.playerNodes.has(n.id) ? ' is-player-step' : ''
+                  }${
+                    teaching?.engineNodes.has(n.id) && teaching.start !== n.id
+                      ? ' is-engine-step'
+                      : ''
                   }`}
                   style={{ left: x(n.column), top: yB(n.row), width: W, height: H }}
                 >
                   <span className="gv-card-label">
-                    ∂{output}/∂
-                    {['input', 'param'].includes(node.get(n.id)!.component)
-                      ? label(n.id)
-                      : `(${label(n.id)})`}
+                    {teaching?.start === n.id ? (
+                      t('gradView.playerBackwardInput', { y: outputLabel, x: n.id })
+                    ) : (
+                      <>
+                        ∂{outputLabel}/∂
+                        {['input', 'param'].includes(node.get(n.id)!.component)
+                          ? label(n.id)
+                          : `(${label(n.id)})`}
+                      </>
+                    )}
                   </span>
                   <span className="gv-card-value">{value('gradient', n.id)}</span>
+                  {teaching?.start === n.id && (
+                    <span className="gv-card-note">{t('gradView.playerBackwardStart')}</span>
+                  )}
                 </div>
               ))}
           </div>

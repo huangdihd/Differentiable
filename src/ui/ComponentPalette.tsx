@@ -8,6 +8,7 @@ export interface PaletteEntry {
   name: string;
   player?: boolean;
   locked?: boolean;
+  isNew?: boolean;
 }
 
 const CATEGORY_ORDER: readonly PaletteCategory[] = [
@@ -197,6 +198,7 @@ function PaletteItem({
       <span className="name">
         {t(`components.${entry.name}`)}
         {entry.locked ? ` · ${t('ui.producedHere')}` : ''}
+        {entry.isNew && <span className="new-badge palette-new">{t('ui.new')}</span>}
       </span>
     </>
   );
@@ -215,7 +217,9 @@ function PaletteItem({
   return (
     <button
       type="button"
-      className={`palette-item ${entry.player ? 'is-player' : ''}`}
+      className={['palette-item', entry.player && 'is-player', entry.isNew && 'is-new']
+        .filter(Boolean)
+        .join(' ')}
       data-component={entry.name}
       data-category={categoryOf(entry.name)}
       data-pair-start={pairStart || undefined}

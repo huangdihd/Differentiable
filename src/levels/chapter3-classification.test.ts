@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import type { GraphJSON } from '../engine/graph';
 import { applyResult, initialProgress, evaluateLevel } from '../engine/levels';
 import { gameLevels } from './catalog';
 import { chapter3ClassificationLevels, chapter3ForwardLevels } from './chapter3';
@@ -73,6 +74,79 @@ const playable = (level: (typeof gameLevels)[number]) => ({
   ...level,
   available: [...level.available, ...forwards.flatMap((l) => l.unlockComponents ?? [])],
 });
+it.each([
+  {
+    id: '3-6',
+    hidden: 0,
+    learningRate: 0.1,
+    parameterCount: 6,
+  },
+  {
+    id: '3-9',
+    hidden: 16,
+    learningRate: 0.05,
+    parameterCount: 82,
+  },
+])(
+  '$id trains with configured Linear nodes that own their parameters',
+  async ({ id, hidden, learningRate, parameterCount }) => {
+    const level = chapter3ClassificationLevels.find((candidate) => candidate.id === id)!;
+    const nodes: GraphJSON['nodes'] = [{ id: 'x', component: 'input', attrs: { name: 'x' } }];
+    const edges: GraphJSON['edges'] = [];
+    let source = 'x';
+    if (hidden) {
+      nodes.push(
+        {
+          id: 'hidden',
+          component: 'linear',
+          attrs: {
+            automatic_parameters: true,
+            in_features: 2,
+            out_features: hidden,
+            bias: true,
+          },
+        },
+        { id: 'activation', component: 'sigmoid' },
+      );
+      edges.push(
+        { from: { node: source, port: 'out' }, to: { node: 'hidden', port: 'x' } },
+        { from: { node: 'hidden', port: 'out' }, to: { node: 'activation', port: 'x' } },
+      );
+      source = 'activation';
+    }
+    nodes.push(
+      {
+        id: 'classifier',
+        component: 'linear',
+        attrs: {
+          automatic_parameters: true,
+          in_features: hidden || 2,
+          out_features: 2,
+          bias: true,
+        },
+      },
+      { id: 'probability', component: 'softmax' },
+      { id: 'output', component: 'output', attrs: { name: 'probabilities' } },
+    );
+    edges.push(
+      { from: { node: source, port: 'out' }, to: { node: 'classifier', port: 'x' } },
+      { from: { node: 'classifier', port: 'out' }, to: { node: 'probability', port: 'x' } },
+      { from: { node: 'probability', port: 'out' }, to: { node: 'output', port: 'x' } },
+    );
+    const result = await evaluateLevel(
+      playable(level),
+      { version: 1, nodes, edges },
+      {
+        registry,
+        learningRate,
+      },
+    );
+    expect(result.passed).toBe(true);
+    expect(result.metrics.parameterCount).toBe(parameterCount);
+  },
+  60000,
+);
+
 for (const level of chapter3ClassificationLevels) {
   it(`${level.id} measured training settings`, async () => {
     const settings =

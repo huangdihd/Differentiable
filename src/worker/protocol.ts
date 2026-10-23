@@ -29,6 +29,8 @@ export type Command =
       levelId: string;
       graph: GraphJSON;
       inputs?: Record<string, number[]>;
+      /** Optional independent forward contract for a completion reveal. */
+      options?: { inputShapes: ShapePorts; output: string; wrt: string[] };
     }
   | {
       type: 'evaluate';
@@ -75,6 +77,7 @@ export interface ReplyData {
     graph?: GraphJSON;
     parameterState?: 'initial' | 'current';
     attachedLoss?: boolean;
+    wrt?: string[];
     backward: ReturnType<typeof buildBackwardGraph>;
     trace?: Awaited<ReturnType<typeof traceBackward>>;
   };

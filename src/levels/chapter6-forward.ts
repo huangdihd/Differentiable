@@ -21,6 +21,7 @@ export const chapter6Preceding = [
 const available = chapter5TrainLevels[0].available;
 const heads = 2;
 const names = ['multi_head', 'feed_forward', 'transformer_block'];
+const outputNames = ['context', 'processedFeatures', 'hiddenStates'];
 
 function answer(index: number): GraphJSON {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
@@ -122,7 +123,7 @@ function answer(index: number): GraphJSON {
     });
     result = node('result', 'add', { a: residual, b: feedforward });
   }
-  node('output', 'output', { x: result }, { name: 'y' });
+  node('output', 'output', { x: result }, { name: outputNames[index - 1] });
   return graph;
 }
 
@@ -213,7 +214,7 @@ for (let index = 1; index <= 3; index++) {
         unlockComponents: [names[index - 1]],
         forbidden: [names[index - 1]],
         referenceGraph: answer(index),
-        interface: { inputs, output: 'y', outputShape: inputs.x ?? inputs.q },
+        interface: { inputs, output: outputNames[index - 1], outputShape: inputs.x ?? inputs.q },
         ...fixtures(index, inputs),
         shapeVariants: shapes.slice(1).map((inputs) => ({ inputs, ...fixtures(index, inputs) })),
         reference: (args) => {

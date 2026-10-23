@@ -109,7 +109,7 @@ const P = {
 
 export const levelPapers: Readonly<Record<string, readonly Paper[]>> = {
   '0-7': [P.glorot],
-  '1-10': [P.linnainmaa, P.rumelhart],
+  '1-11': [P.linnainmaa, P.rumelhart],
   neuron: [P.mcculloch],
   '2-8': [P.layernorm],
   '3-5': [P.shannon48],

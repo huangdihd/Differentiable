@@ -6,6 +6,18 @@ import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { scalarPrimitives, tensorCases, withPar } from './level-helpers';
 
+const outputNames: Readonly<Record<string, string>> = {
+  axes: 'rowSums',
+  dot: 'dotProduct',
+  broadcast: 'scaledAndShifted',
+  mean: 'rowMeans',
+  outer: 'outerProduct',
+  matmul: 'matrixProduct',
+  matmul_transposed: 'pairwiseDots',
+  softmax: 'probabilities',
+  layernorm: 'normalizedFeatures',
+};
+
 /** Answers use rank-relative axes, so saved components remain reusable at new widths. */
 function answer(kind: string): GraphJSON {
   const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
@@ -61,13 +73,9 @@ function answer(kind: string): GraphJSON {
       node('b', 'input', {}, { name: 'b' });
       result = binary('result', 'add', binary('scaled', 'mul', 'x', 's'), 'b');
     } else if (kind === 'mean') {
-      const ones = binary(
-        'ones',
-        'add',
-        binary('zeros', 'mul', 'x', constant('zero', 0)),
-        constant('one', 1),
-      );
-      result = binary('result', 'div', reduce('total', 'sum', 'x'), reduce('count', 'sum', ones));
+      const total = reduce('total', 'sum', 'x');
+      const count = unary('count', 'size', 'x', { axis: -1 });
+      result = binary('result', 'div', total, count);
     } else if (kind === 'softmax') {
       const shifted = binary('shifted', 'sub', 'x', reduce('maximum', 'reduce_max', 'x'));
       const weights = unary('weights', 'exp', shifted);
@@ -79,7 +87,7 @@ function answer(kind: string): GraphJSON {
       result = binary('result', 'div', centered, unary('std', 'sqrt', stabilized));
     }
   }
-  node('output', 'output', { x: result }, { name: 'y' });
+  node('output', 'output', { x: result }, { name: outputNames[kind] });
   return graph;
 }
 
@@ -207,7 +215,7 @@ export const chapter2Levels: ForwardLevel[] = [
       descriptionKey: 'levels.axes.description',
       hintsKeys: ['levels.axes.hint1', 'levels.axes.hint2'],
       available: [...scalarPrimitives, 'max', 'sum', 'unsqueeze', 'reduce_max'],
-      interface: { inputs: axesShapes[0], output: 'y', outputShape: [2] },
+      interface: { inputs: axesShapes[0], output: outputNames.axes, outputShape: [2] },
       unlock: ['2-1'],
       referenceGraph: answer('axes'),
       ...axesCases,
@@ -241,12 +249,16 @@ for (const [index, definition] of definitions.entries()) {
           'unsqueeze',
           'reduce_max',
           ...(index >= 5 ? ['transpose'] : []),
-          // After counting a row by hand in 2-4 (mean), the player gets `size` for free.
-          ...(index >= 3 ? ['size'] : []),
+          // Mean and later lessons can read a shape dimension instead of hard-coding its length.
+          ...(index >= 2 ? ['size'] : []),
         ],
         forbidden: definition.producesComponent === false ? [] : [definition.name],
-        interface: { inputs: definition.shapes[0], output: 'y', outputShape: definition.output },
-        unlock: [index === definitions.length - 1 ? '3-1' : `2-${index + 2}`],
+        interface: {
+          inputs: definition.shapes[0],
+          output: outputNames[definition.name],
+          outputShape: definition.output,
+        },
+        unlock: [index === definitions.length - 1 ? 'loss-intro' : `2-${index + 2}`],
         ...(definition.producesComponent === false ? {} : { unlockComponents: [definition.name] }),
         ...(['outer', 'matmul', 'matmul_transposed'].includes(definition.name) && {
           outputNoteKey: `levels.${id}.expectedNote`,

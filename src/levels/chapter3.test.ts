@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GraphJSON } from '../engine/graph';
 import { applyResult, evaluateLevel, graphMetrics, initialProgress } from '../engine/levels';
 import * as T from '../engine/tensor';
 import { gameLevels, catalog } from './catalog';
@@ -22,10 +23,11 @@ const playable = (level: (typeof chapter3Levels)[number]) => ({
 
 describe('gradient descent curriculum', () => {
   it('has references, two hints, expanded par and the complete route', () => {
-    expect(chapter2Levels.at(-1)!.unlock).toEqual(['3-1']);
+    expect(chapter2Levels.at(-1)!.unlock).toEqual(['loss-intro']);
     expect(chapter3Levels.map((l) => l.unlock)).toEqual([
-      ['3-2'],
+      ['3-1'],
       ['neuron'],
+      ['3-2'],
       ['layer'],
       ['3-3'],
       ['3-4'],
@@ -39,38 +41,46 @@ describe('gradient descent curriculum', () => {
     expect(
       catalog.filter((entry) => entry.chapter === 3).map(({ level, code }) => [level.id, code]),
     ).toEqual([
-      ['3-1', '3-1'],
-      ['3-2', '3-2'],
+      ['loss-intro', '3-1'],
+      ['3-1', '3-2'],
       ['neuron', '3-3'],
-      ['layer', '3-4'],
-      ['3-3', '3-5'],
-      ['3-4', '3-6'],
-      ['3-5', '3-7'],
-      ['3-6', '3-8'],
-      ['3-7', '3-9'],
-      ['3-8', '3-10'],
-      ['3-9', '3-11'],
-      ['xor', '3-12'],
+      ['3-2', '3-4'],
+      ['layer', '3-5'],
+      ['3-3', '3-6'],
+      ['3-4', '3-7'],
+      ['3-5', '3-8'],
+      ['3-6', '3-9'],
+      ['3-7', '3-10'],
+      ['3-8', '3-11'],
+      ['3-9', '3-12'],
+      ['xor', '3-13'],
     ]);
     expect(
-      ['3-1', '3-2', '3-3', '3-4'].map((id) => chapter3Levels.find((l) => l.id === id)!.par),
-    ).toEqual([7, 6, 9, 11]);
+      ['loss-intro', '3-1', '3-2', '3-3', '3-4'].map(
+        (id) => chapter3Levels.find((l) => l.id === id)!.par,
+      ),
+    ).toEqual([3, 3, 1, 7, 9]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
     }
   });
 
-  for (const [i, level] of chapter3ForwardLevels.slice(0, 3).entries()) {
+  for (const level of chapter3ForwardLevels.filter((candidate) =>
+    ['loss-intro', '3-1', '3-2', '3-3'].includes(candidate.id),
+  )) {
     it(`${level.id}: reference passes all shapes and rejects the typical mistake`, async () => {
       const result = await evaluateLevel(playable(level), level.referenceGraph!, { registry });
       expect(result.errorKey).toBeUndefined();
       expect(result.passed).toBe(true);
       const wrong = structuredClone(level.referenceGraph!);
-      if (i === 0) wrong.nodes.find((n) => n.id === 'negativeRate')!.attrs = { value: 0.1 };
-      if (i === 1) wrong.nodes.find((n) => n.id === 'two')!.attrs = { value: 1 };
-      if (i === 2) {
-        const mean = wrong.nodes.find((n) => n.id === 'mean')!;
+      if (level.id === 'loss-intro')
+        wrong.edges.find((edge) => edge.to.node === 'output')!.from.node = 'error';
+      if (level.id === '3-1')
+        wrong.nodes.find((node) => node.id === 'negativeRate')!.attrs = { value: 0.1 };
+      if (level.id === '3-2') wrong.nodes.find((node) => node.id === 'gradient')!.component = 'add';
+      if (level.id === '3-3') {
+        const mean = wrong.nodes.find((node) => node.id === 'mean')!;
         mean.component = 'sum';
         mean.attrs = { axes: [-1], keepdims: true };
       }
@@ -81,7 +91,9 @@ describe('gradient descent curriculum', () => {
     });
   }
 
-  for (const level of chapter3ForwardLevels.slice(0, 2)) {
+  for (const level of chapter3ForwardLevels.filter((candidate) =>
+    ['3-1', '3-2'].includes(candidate.id),
+  )) {
     it(`${level.id}: explicit gradient agrees with independent backward`, async () => {
       const groups = [
         { inputs: level.interface.inputs, fixed: level.fixed },
@@ -95,11 +107,18 @@ describe('gradient descent curriculum', () => {
               T.tensor(values, group.inputs[name]),
             ]),
           );
-          const { w, x, t } = inputs;
+          const { x, '∂L/∂p': upstream } = inputs;
+          const w =
+            inputs.w ??
+            T.tensor(
+              new Float32Array(x.shape.reduce((size, dimension) => size * dimension, 1)).fill(1),
+              x.shape,
+              x.backend,
+            );
           const prediction = level.id === '3-1' ? T.mul(w, x) : T.sum(T.mul(w, x), [-1]);
-          const error = T.add(prediction, T.mul(t, T.tensor([-1], [])));
-          const loss = T.mul(error, error);
-          const [gradient] = await T.backward(loss, [w]);
+          // Seed the model-side VJP with the supplied loss-side derivative, exactly as 1-11 does.
+          const seeded = T.mul(prediction, upstream);
+          const [gradient] = await T.backward(seeded, [w]);
           const output = level.reference(inputs);
           try {
             const actual = await output.read(),
@@ -114,15 +133,63 @@ describe('gradient descent curriculum', () => {
             if (level.id === '3-1') expect(Math.abs(actual[0] - weights[0])).toBeGreaterThan(0.1);
           } finally {
             gradient.dispose();
-            T.disposeGraph([loss, output, ...Object.values(inputs)]);
+            T.disposeGraph([seeded, output, ...Object.values(inputs), w]);
           }
         }
     });
   }
 
+  it('takes the upstream loss gradient directly in both model-side backward lessons', () => {
+    const step = chapter3ForwardLevels.find((candidate) => candidate.id === '3-1')!;
+    const vector = chapter3ForwardLevels.find((candidate) => candidate.id === '3-2')!;
+    expect(Object.keys(step.interface.inputs)).toEqual(['w', 'x', '∂L/∂p']);
+    expect(Object.keys(vector.interface.inputs)).toEqual(['x', '∂L/∂p']);
+    for (const level of [step, vector]) {
+      expect(level.revalidateOnLoad).toBe(true);
+      expect(level.referenceGraph!.nodes.some((node) => node.attrs?.name === 't')).toBe(false);
+      expect(level.referenceGraph!.nodes.some((node) => node.attrs?.name === '∂L/∂p')).toBe(true);
+    }
+    expect(vector.referenceGraph!.nodes.some((node) => node.attrs?.name === 'w')).toBe(false);
+  });
+
+  it('computes the vector weight gradient from x and upstream without a weight input', async () => {
+    const level = chapter3ForwardLevels.find((candidate) => candidate.id === '3-2')!;
+    const x = T.tensor([1, -2, 3], [3]);
+    const upstream = T.tensor([0.5], []);
+    const output = level.reference({ x, '∂L/∂p': upstream });
+    try {
+      expect(Array.from(await output.read())).toEqual([0.5, -1, 1.5]);
+    } finally {
+      T.disposeGraph([output, x, upstream]);
+    }
+  });
+
+  it('requires momentum steps to output both the updated weight and recurrent momentum', async () => {
+    const level = chapter3ForwardLevels.find((candidate) => candidate.id === '3-7')!;
+    expect(level.interface.outputs).toEqual({ updatedWeight: [], updatedMomentum: [] });
+    expect(level.revalidateOnLoad).toBe(true);
+    const result = await evaluateLevel(playable(level), level.referenceGraph!, { registry });
+    expect(result.errorKey).toBeUndefined();
+    expect(result.passed).toBe(true);
+    expect(result.tests.every((test) => test.actual.length === 2)).toBe(true);
+
+    const inputs = {
+      w: T.tensor([2], []),
+      g: T.tensor([3], []),
+      m: T.tensor([-1], []),
+    };
+    const outputs = level.referenceOutputs!(inputs);
+    try {
+      expect(Array.from(await outputs.updatedMomentum.read())).toEqual([2.0999999046325684]);
+      expect(Array.from(await outputs.updatedWeight.read())).toEqual([1.7899999618530273]);
+    } finally {
+      T.disposeGraph([...Object.values(outputs), ...Object.values(inputs)]);
+    }
+  });
+
   it('earns mse as the player subgraph with p/t ports and no native kernel', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of [...preceding, ...chapter3Levels.slice(0, 5)]) {
+    for (const level of [...preceding, ...chapter3Levels.slice(0, 6)]) {
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         level.referenceGraph!,
@@ -228,6 +295,44 @@ describe('gradient descent curriculum', () => {
       }
     });
   }
+
+  it('lets the regression lesson reuse a one-feature automatic Linear on scalar batches', async () => {
+    expect(chapter3TrainLevel.componentDefaults?.linear).toEqual({
+      automatic_parameters: true,
+      in_features: 1,
+      out_features: 1,
+      bias: true,
+    });
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 't', component: 'input', attrs: { name: 't' } },
+        {
+          id: 'prediction',
+          component: 'linear',
+          attrs: chapter3TrainLevel.componentDefaults!.linear,
+        },
+        { id: 'error', component: 'mse' },
+        { id: 'output', component: 'output', attrs: { name: 'loss' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'prediction', port: 'x' } },
+        { from: { node: 'prediction', port: 'out' }, to: { node: 'error', port: 'p' } },
+        { from: { node: 't', port: 'out' }, to: { node: 'error', port: 't' } },
+        { from: { node: 'error', port: 'out' }, to: { node: 'output', port: 'x' } },
+      ],
+    };
+    const level = playable(chapter3TrainLevel);
+    const result = await evaluateLevel(
+      { ...level, available: [...level.available, 'linear'] },
+      graph,
+      { registry, learningRate: 0.3 },
+    );
+    expect(result.errorKey).toBeUndefined();
+    expect(result.training?.loss).toBeLessThan(0.05);
+    expect(result.passed).toBe(true);
+  });
 
   it('measures slow, convergent and divergent learning rates', async () => {
     const losses: Record<string, number | undefined> = {};

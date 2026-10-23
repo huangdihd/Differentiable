@@ -39,6 +39,71 @@ const graph: GraphJSON = {
   ],
   edges: [{ from: { node: 'x', port: 'out' }, to: { node: 'y', port: 'x' } }],
 };
+function genericOutputLevel(id: string, unlock: string[]): ForwardLevel {
+  const referenceGraph = structuredClone(chapter1Levels[0].referenceGraph!);
+  referenceGraph.nodes.find((node) => node.component === 'output')!.attrs = { name: 'y' };
+  return {
+    ...chapter1Levels[0],
+    id,
+    interface: { ...chapter1Levels[0].interface, output: 'y' },
+    unlock,
+    referenceGraph,
+  };
+}
+function staleLossGradientGraph(output: string, vector: boolean): GraphJSON {
+  const nodes: GraphJSON['nodes'] = [
+    { id: 'w', component: 'input', attrs: { name: 'w' } },
+    { id: 'x', component: 'input', attrs: { name: 'x' } },
+    { id: 't', component: 'input', attrs: { name: 't' } },
+    { id: 'weighted', component: 'mul' },
+    ...(vector ? [{ id: 'prediction', component: 'sum', attrs: { axes: [-1] } }] : []),
+    { id: 'negativeTarget', component: 'mul' },
+    { id: 'minus', component: 'const', attrs: { value: -1 } },
+    { id: 'residual', component: 'add' },
+    { id: 'twiceResidual', component: 'mul' },
+    { id: 'two', component: 'const', attrs: { value: 2 } },
+    { id: 'gradient', component: 'mul' },
+    ...(!vector
+      ? [
+          { id: 'step', component: 'mul' },
+          { id: 'negativeRate', component: 'const', attrs: { value: -0.1 } },
+          { id: 'updated', component: 'add' },
+        ]
+      : []),
+    { id: 'output', component: 'output', attrs: { name: output } },
+  ];
+  const edge = (from: string, to: string, port = 'a') => ({
+    from: { node: from, port: 'out' },
+    to: { node: to, port },
+  });
+  const prediction = vector ? 'prediction' : 'weighted';
+  return {
+    version: 1,
+    nodes,
+    edges: [
+      edge('w', 'weighted'),
+      edge('x', 'weighted', 'b'),
+      ...(vector ? [edge('weighted', 'prediction', 'x')] : []),
+      edge('t', 'negativeTarget'),
+      edge('minus', 'negativeTarget', 'b'),
+      edge(prediction, 'residual'),
+      edge('negativeTarget', 'residual', 'b'),
+      edge('residual', 'twiceResidual'),
+      edge('two', 'twiceResidual', 'b'),
+      edge('twiceResidual', 'gradient'),
+      edge('x', 'gradient', 'b'),
+      ...(!vector
+        ? [
+            edge('gradient', 'step'),
+            edge('negativeRate', 'step', 'b'),
+            edge('w', 'updated'),
+            edge('step', 'updated', 'b'),
+          ]
+        : []),
+      edge(vector ? 'gradient' : 'updated', 'output', 'x'),
+    ],
+  };
+}
 afterEach(() => vi.useRealTimers());
 describe('storage', () => {
   it('validates and roundtrips optional per-level training settings', () => {
@@ -69,22 +134,27 @@ describe('storage', () => {
     };
     expect(saveProgress(progress, source)).toBe(true);
     const restored = await loadProgressWithMigration(gameLevels, source);
-    expect(restored.unlocked).toContain('3-1');
+    expect(restored.unlocked).toContain('loss-intro');
+    expect(restored.unlocked).not.toContain('3-1');
     expect(restored.unlocked).toContain('xor');
   });
   it('unlocks chapter four for saved XOR graduates without changing their graphs', async () => {
     const { gameLevels } = await import('./levels/catalog');
     const { source } = memory();
+    const solution = structuredClone(graph);
+    solution.nodes.find((node) => node.component === 'output')!.attrs = {
+      name: 'probabilities',
+    };
     const progress = {
       ...createInitialProgress(),
       unlocked: ['xor'],
       passed: ['xor'],
-      passedSolutions: { xor: graph },
-      savedGraphs: { xor: graph },
+      passedSolutions: { xor: solution },
+      savedGraphs: { xor: solution },
     };
     expect(saveProgress(progress, source)).toBe(true);
     const restored = await loadProgressWithMigration(gameLevels, source);
-    expect(restored.unlocked).toEqual(['xor', '4-1']);
+    expect(restored.unlocked).toEqual(['xor', '4-1', 'loss-intro']);
     expect(restored.passedSolutions).toEqual(progress.passedSolutions);
     expect(restored.savedGraphs).toEqual(progress.savedGraphs);
     expect(saveProgress(restored, source)).toBe(true);
@@ -93,16 +163,20 @@ describe('storage', () => {
   it('unlocks chapter six for saved chapter-five graduates without changing their graphs', async () => {
     const { gameLevels } = await import('./levels/catalog');
     const { source } = memory();
+    const solution = structuredClone(graph);
+    solution.nodes.find((node) => node.component === 'output')!.attrs = {
+      name: 'probabilities',
+    };
     const progress = {
       ...createInitialProgress(),
       unlocked: ['5-5'],
       passed: ['5-5'],
-      passedSolutions: { '5-5': graph },
-      savedGraphs: { '5-5': graph },
+      passedSolutions: { '5-5': solution },
+      savedGraphs: { '5-5': solution },
     };
     expect(saveProgress(progress, source)).toBe(true);
     const restored = await loadProgressWithMigration(gameLevels, source);
-    expect(restored.unlocked).toEqual(['5-5', '6-1']);
+    expect(restored.unlocked).toEqual(['5-5', '6-1', 'loss-intro']);
     expect(restored.passed).toEqual(progress.passed);
     expect(restored.passedSolutions).toEqual(progress.passedSolutions);
     expect(restored.savedGraphs).toEqual(progress.savedGraphs);
@@ -111,17 +185,17 @@ describe('storage', () => {
     expect(saveProgress(createInitialProgress(), source)).toBe(true);
     expect((await loadProgressWithMigration(gameLevels, source)).unlocked).not.toContain('6-1');
   });
-  it.each([2, STORAGE_VERSION])(
+  it.each([STORAGE_VERSION])(
     'restores axes access without changing other data in version %s saves',
     async (version) => {
       const levels = [
-        { ...chapter1Levels[0], id: '1-10', unlock: ['axes'] },
-        { ...chapter1Levels[0], id: 'axes', unlock: ['2-1'] },
-        { ...chapter1Levels[0], id: '2-1', unlock: [] },
+        genericOutputLevel('1-11', ['axes']),
+        genericOutputLevel('axes', ['2-1']),
+        genericOutputLevel('2-1', []),
       ];
       for (const [id, passed, expected] of [
-        ['1-10', false, ['1-10']],
-        ['1-10', true, ['1-10', 'axes']],
+        ['1-11', false, ['1-11']],
+        ['1-11', true, ['1-11', 'axes']],
         ['2-1', false, ['2-1', 'axes']],
         ['2-1', true, ['2-1', 'axes']],
       ] as const) {
@@ -152,7 +226,7 @@ describe('storage', () => {
     const reference = structuredClone(graph);
     reference.nodes[1].attrs = { name: 'y' };
     const lesson: ForwardLevel = {
-      id: '1-10',
+      id: '1-11',
       titleKey: 'test.title',
       descriptionKey: 'test.description',
       kind: 'forward',
@@ -185,11 +259,14 @@ describe('storage', () => {
       data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress: legacy }));
       const restored = await loadProgressWithMigration(levels, source);
       expect(restored.unlocked.includes('axes')).toBe(id === '2-1' || passed);
-      expect(restored.passed).toEqual(passed ? (id === '2-1' ? ['1-10', '2-1'] : [id]) : []);
+      expect(restored.passed).toEqual(passed ? [id === '1-10' ? '1-11' : id] : []);
       expect(restored.passedSolutions.axes).toBeUndefined();
       expect(restored.bestScores.axes).toBeUndefined();
-      expect(restored.savedGraphs).toEqual(legacy.savedGraphs);
-      expect(restored.trainingSettings).toEqual(legacy.trainingSettings);
+      const migratedId = id === '1-10' ? '1-11' : id;
+      expect(restored.savedGraphs).toEqual({ [migratedId]: reference, axes: graph });
+      expect(restored.trainingSettings).toEqual({
+        [migratedId]: { learningRate: 0.01 },
+      });
       expect(loadProgress(source)).toEqual(restored);
       expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
     }
@@ -201,9 +278,9 @@ describe('storage', () => {
     'restores reshape access without changing other data in version %s saves',
     async (version) => {
       const levels = [
-        { ...chapter1Levels[0], id: '4-4', unlock: ['reshape'] },
-        { ...chapter1Levels[0], id: 'reshape', unlock: ['4-5'] },
-        { ...chapter1Levels[0], id: '4-5', unlock: [] },
+        genericOutputLevel('4-4', ['reshape']),
+        genericOutputLevel('reshape', ['4-5']),
+        genericOutputLevel('4-5', []),
       ];
       for (const [id, passed, expected] of [
         ['4-4', false, ['4-4']],
@@ -287,25 +364,25 @@ describe('storage', () => {
     'restores neuron/layer unlocks without crediting new lessons in version %s saves',
     async (version) => {
       const levels = [
-        { ...chapter1Levels[0], id: '3-2', unlock: ['neuron'] },
-        { ...chapter1Levels[0], id: 'neuron', unlock: ['layer'] },
-        { ...chapter1Levels[0], id: 'layer', unlock: ['3-3'] },
-        { ...chapter1Levels[0], id: '3-3', unlock: ['3-4'] },
-        { ...chapter1Levels[0], id: '3-4', unlock: ['3-5'] },
-        { ...chapter1Levels[0], id: '3-5', unlock: ['3-6'] },
+        genericOutputLevel('neuron', ['3-2']),
+        genericOutputLevel('3-2', ['layer']),
+        genericOutputLevel('layer', ['3-3']),
+        genericOutputLevel('3-3', ['3-4']),
+        genericOutputLevel('3-4', ['3-5']),
+        genericOutputLevel('3-5', ['3-6']),
       ];
       for (const [unlocked, passed, additions] of [
-        [['3-2'], [], []],
-        [['3-2'], ['3-2'], ['neuron']],
+        [['3-2'], [], ['neuron']],
+        [['3-2'], ['3-2'], ['layer', 'neuron']],
         [['3-3'], [], ['neuron', 'layer']],
         [['3-3'], ['3-3'], ['3-4', 'neuron', 'layer']],
         [
           ['3-2', '3-3', '3-4', '3-5'],
           ['3-2', '3-3', '3-4', '3-5'],
-          ['neuron', '3-6', 'layer'],
+          ['layer', '3-6', 'neuron'],
         ],
-        [['neuron'], ['neuron'], ['layer']],
-        [['neuron', 'layer', '3-3'], ['neuron', 'layer'], []],
+        [['neuron'], ['neuron'], ['3-2']],
+        [['neuron', 'layer', '3-3'], ['neuron', 'layer'], ['3-2']],
       ]) {
         const { data, source } = memory();
         const progress = {
@@ -341,14 +418,14 @@ describe('storage', () => {
       kind: 'forward',
       available: [],
       interface: { inputs: { x: [2] }, output: 'y', outputShape: [2] },
-      unlock: ['neuron'],
+      unlock: ['layer'],
       fixed: [{ id: 'case', inputs: { x: [1, 2] } }],
       reference: (inputs) => inputs.x,
       referenceGraph: reference,
     };
     const levels = [
+      { ...lesson, id: 'neuron', unlock: ['3-2'] },
       lesson,
-      { ...lesson, id: 'neuron', unlock: ['layer'] },
       { ...lesson, id: 'layer', unlock: ['3-3'] },
       { ...lesson, id: '3-3', unlock: [] },
     ];
@@ -387,16 +464,203 @@ describe('storage', () => {
     expect(
       isExpressionUnlocked({ ...fresh, passed: ['1-7'], unlocked: ['1-7', '1-8'] }, chapter1Levels),
     ).toBe(false);
-    expect(isExpressionUnlocked({ ...fresh, passed: ['1-10'] }, chapter1Levels)).toBe(true);
+    expect(isExpressionUnlocked({ ...fresh, passed: ['1-11'] }, chapter1Levels)).toBe(true);
     expect(
       isExpressionUnlocked({ ...fresh, passed: ['1-7'], unlocked: ['2-1'] }, chapter1Levels),
     ).toBe(true);
     expect(
       isExpressionUnlocked({ ...fresh, passed: ['custom'] }, [
-        { ...chapter1Levels[0], id: 'custom', unlockFeatures: ['levels.features.expression'] },
+        {
+          ...genericOutputLevel('custom', []),
+          unlockFeatures: ['levels.features.expression'],
+        },
       ]),
     ).toBe(true);
   });
+  it('drops an unfinished v3 backprop draft that cannot satisfy the v7 contract', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const score = { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-10'],
+      savedGraphs: { '1-10': graph },
+      bestScores: { '1-10': score },
+      trainingSettings: { '1-10': { learningRate: 0.01 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 3, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toContain('1-10');
+    expect(restored.unlocked).not.toContain('1-11');
+    expect(restored.unlocked).not.toContain('1-12');
+    expect(restored.passed).toEqual([]);
+    expect(restored.savedGraphs).toEqual({});
+    expect(restored.bestScores).toEqual({});
+    expect(restored.trainingSettings).toEqual({});
+    const persisted = data.get(STORAGE_KEY)!;
+    expect(JSON.parse(persisted)).toEqual({ version: STORAGE_VERSION, progress: restored });
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+
+  it('revokes a passed v3 backprop under v7 while retaining gradient, axes, and chapter 2 access', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const score = { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-10', 'axes', '2-1'],
+      passed: ['1-10'],
+      savedGraphs: { '1-10': graph },
+      passedSolutions: { '1-10': graph },
+      bestScores: { '1-10': score },
+      trainingSettings: { '1-10': { learningRate: 0.01 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 3, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toEqual(expect.arrayContaining(['1-10', '1-11', 'axes', '2-1']));
+    expect(restored.unlocked).not.toContain('1-12');
+    expect(restored.passed).toEqual([]);
+    expect(restored.savedGraphs).toEqual({});
+    expect(restored.passedSolutions).toEqual({});
+    expect(restored.bestScores).toEqual({});
+    expect(restored.trainingSettings).toEqual({});
+    const persisted = data.get(STORAGE_KEY)!;
+    expect(JSON.parse(persisted)).toEqual({ version: STORAGE_VERSION, progress: restored });
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+
+  it('drops a v5 1-11 solution under the new v7 interface but preserves axes access', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const score = { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-11'],
+      passed: ['1-11'],
+      savedGraphs: { '1-11': graph },
+      passedSolutions: { '1-11': graph },
+      bestScores: { '1-11': score },
+      trainingSettings: { '1-11': { learningRate: 0.1 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 5, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toEqual(expect.arrayContaining(['1-11', 'axes']));
+    expect(restored.passed).not.toContain('1-11');
+    expect(restored.savedGraphs['1-11']).toBeUndefined();
+    expect(restored.passedSolutions['1-11']).toBeUndefined();
+    expect(restored.bestScores['1-11']).toBeUndefined();
+    expect(restored.trainingSettings?.['1-11']).toBeUndefined();
+    expect(JSON.parse(data.get(STORAGE_KEY)!)).toEqual({
+      version: STORAGE_VERSION,
+      progress: restored,
+    });
+  });
+
+  it('drops a v6 1-11 draft whose obsolete protected b input cannot be removed in the editor', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const stale = structuredClone(graph);
+    stale.nodes.unshift(
+      { id: 'w', component: 'input', attrs: { name: 'w' } },
+      { id: 'b', component: 'input', attrs: { name: 'b' } },
+    );
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-11'],
+      savedGraphs: { '1-11': stale },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 6, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toContain('1-11');
+    expect(restored.savedGraphs['1-11']).toBeUndefined();
+    expect(JSON.parse(data.get(STORAGE_KEY)!)).toEqual({
+      version: STORAGE_VERSION,
+      progress: restored,
+    });
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+  });
+
+  it('drops v4 redundant 1-11 completion data instead of applying it to final backprop', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const score = { topNodes: 1, expandedPrimitives: 1, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-11'],
+      passed: ['1-11'],
+      savedGraphs: { '1-11': graph },
+      passedSolutions: { '1-11': graph },
+      bestScores: { '1-11': score },
+      trainingSettings: { '1-11': { learningRate: 0.1 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 4, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toContain('1-11');
+    expect(restored.passed).not.toContain('1-11');
+    expect(restored.savedGraphs['1-11']).toBeUndefined();
+    expect(restored.passedSolutions['1-11']).toBeUndefined();
+    expect(restored.bestScores['1-11']).toBeUndefined();
+    expect(restored.trainingSettings?.['1-11']).toBeUndefined();
+    expect(Object.keys(restored.savedGraphs)).not.toContain('1-12');
+    expect(JSON.parse(data.get(STORAGE_KEY)!)).toEqual({
+      version: STORAGE_VERSION,
+      progress: restored,
+    });
+  });
+
+  it('discards both v4 backprop contracts under v7 while preserving later access', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const obsolete = structuredClone(graph);
+    obsolete.nodes[0].id = 'obsolete';
+    obsolete.edges[0].from.node = 'obsolete';
+    const backprop = structuredClone(graph);
+    backprop.nodes[0].id = 'backprop';
+    backprop.edges[0].from.node = 'backprop';
+    const obsoleteScore = { topNodes: 1, expandedPrimitives: 1, parameterCount: 0 };
+    const backpropScore = { topNodes: 2, expandedPrimitives: 2, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['1-11', '1-12'],
+      passed: ['1-11', '1-12'],
+      savedGraphs: { '1-11': obsolete, '1-12': backprop },
+      passedSolutions: { '1-11': obsolete, '1-12': backprop },
+      bestScores: { '1-11': obsoleteScore, '1-12': backpropScore },
+      trainingSettings: {
+        '1-11': { learningRate: 0.1 },
+        '1-12': { learningRate: 0.2, optimizer: 'adam' as const },
+      },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 4, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toContain('1-11');
+    expect(restored.unlocked).not.toContain('1-12');
+    expect(restored.unlocked).toContain('axes');
+    expect(restored.passed).toEqual([]);
+    expect(restored.savedGraphs).toEqual({});
+    expect(restored.passedSolutions).toEqual({});
+    expect(restored.bestScores).toEqual({});
+    expect(restored.trainingSettings).toEqual({});
+    const persisted = data.get(STORAGE_KEY)!;
+    expect(JSON.parse(persisted)).toEqual({ version: STORAGE_VERSION, progress: restored });
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+
   it('roundtrips versioned progress with a fresh chapter-zero initial state', () => {
     const { source } = memory();
     const progress = loadProgress(source);
@@ -410,12 +674,14 @@ describe('storage', () => {
   it('refreshes catalog unlocks in current saves without changing passed circuits or edits', async () => {
     const { source } = memory();
     const lesson = chapter1Levels.find((level) => level.id === '1-7')!;
+    const semanticGraph = structuredClone(graph);
+    semanticGraph.nodes.find((node) => node.component === 'output')!.attrs = { name: 'f′' };
     const progress = {
       ...createInitialProgress(),
       unlocked: ['0-1', '1-7', '2-1', '2-2', 'xor'],
       passed: ['1-7'],
-      passedSolutions: { '1-7': graph },
-      savedGraphs: { '1-7': graph },
+      passedSolutions: { '1-7': semanticGraph },
+      savedGraphs: { '1-7': semanticGraph },
     };
     saveProgress(progress, source);
     const restored = await loadProgressWithMigration([lesson], source);
@@ -454,9 +720,7 @@ describe('storage', () => {
       bestScores: Object.fromEntries(oldIds.map((id, i) => [id, scores[i]])),
     };
     const lesson = {
-      ...chapter1Levels[0],
-      id: '2-3',
-      unlock: ['2-4', '2-6'],
+      ...genericOutputLevel('2-3', ['2-4', '2-6']),
       unlockComponents: ['tanh'],
     };
     data.set(STORAGE_KEY, JSON.stringify({ version: 2, progress }));
@@ -474,6 +738,252 @@ describe('storage', () => {
     expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(STORAGE_VERSION);
     expect(loadProgress(source)).toEqual(restored);
     expect(await loadProgressWithMigration([lesson], source)).toEqual(restored);
+  });
+  it.each([
+    ['3-1', 'updatedWeight', false],
+    ['3-2', 'gradient', true],
+  ] as const)(
+    'revokes a current-version %s solution with the obsolete target input and preserves its draft',
+    async (id, output, vector) => {
+      const { gameLevels } = await import('./levels/catalog');
+      const { source } = memory();
+      const solution = staleLossGradientGraph(output, vector);
+      const draft = structuredClone(solution);
+      draft.nodes.find((node) => node.id === 't')!.ui = { x: 41, y: 73 };
+      const next = gameLevels.find((level) => level.id === id)!.unlock[0];
+      const progress = {
+        ...createInitialProgress(),
+        unlocked: [id, next],
+        passed: [id],
+        savedGraphs: { [id]: draft },
+        passedSolutions: { [id]: solution },
+        bestScores: {
+          [id]: { topNodes: solution.nodes.length, expandedPrimitives: 7, parameterCount: 0 },
+        },
+      };
+      expect(saveProgress(progress, source)).toBe(true);
+      const onRevoked = vi.fn();
+
+      const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+      const editableDraft = structuredClone(draft);
+      editableDraft.nodes.find((node) => node.id === 't')!.attrs = { name: '∂L/∂p' };
+      if (id === '3-2') {
+        editableDraft.nodes = editableDraft.nodes.filter((node) => node.id !== 'w');
+        editableDraft.edges = editableDraft.edges.filter(
+          (edge) => edge.from.node !== 'w' && edge.to.node !== 'w',
+        );
+      }
+      expect(restored.unlocked).toEqual(expect.arrayContaining([id, next]));
+      expect(restored.passed).not.toContain(id);
+      expect(restored.savedGraphs[id]).toEqual(editableDraft);
+      expect(restored.passedSolutions).not.toHaveProperty(id);
+      expect(restored.bestScores).not.toHaveProperty(id);
+      expect(onRevoked).toHaveBeenCalledWith([id]);
+      expect(loadProgress(source)).toEqual(restored);
+    },
+  );
+  it('adds the required momentum output to old drafts and revokes the old single-output pass', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const oldMomentum: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'w', component: 'input', attrs: { name: 'w' } },
+        { id: 'g', component: 'input', attrs: { name: 'g' } },
+        { id: 'm', component: 'input', attrs: { name: 'm' } },
+        { id: 'decay', component: 'const', attrs: { value: 0.9 } },
+        { id: 'decayed', component: 'mul' },
+        { id: 'nextMomentum', component: 'add' },
+        { id: 'rate', component: 'const', attrs: { value: -0.1 } },
+        { id: 'step', component: 'mul' },
+        { id: 'nextWeight', component: 'add' },
+        {
+          id: 'output',
+          component: 'output',
+          attrs: { name: 'y', note: 'preserve' },
+          ui: { x: 700, y: 120 },
+        },
+      ],
+      edges: [
+        { from: { node: 'm', port: 'out' }, to: { node: 'decayed', port: 'a' } },
+        { from: { node: 'decay', port: 'out' }, to: { node: 'decayed', port: 'b' } },
+        { from: { node: 'decayed', port: 'out' }, to: { node: 'nextMomentum', port: 'a' } },
+        { from: { node: 'g', port: 'out' }, to: { node: 'nextMomentum', port: 'b' } },
+        { from: { node: 'nextMomentum', port: 'out' }, to: { node: 'step', port: 'a' } },
+        { from: { node: 'rate', port: 'out' }, to: { node: 'step', port: 'b' } },
+        { from: { node: 'w', port: 'out' }, to: { node: 'nextWeight', port: 'a' } },
+        { from: { node: 'step', port: 'out' }, to: { node: 'nextWeight', port: 'b' } },
+        { from: { node: 'nextWeight', port: 'out' }, to: { node: 'output', port: 'x' } },
+      ],
+    };
+    const score = { topNodes: 10, expandedPrimitives: 6, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['3-7', '3-8'],
+      passed: ['3-7'],
+      savedGraphs: { '3-7': oldMomentum },
+      passedSolutions: { '3-7': oldMomentum },
+      bestScores: { '3-7': score },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const onRevoked = vi.fn();
+
+    const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+    expect(restored.passed).not.toContain('3-7');
+    expect(restored.passedSolutions).not.toHaveProperty('3-7');
+    expect(restored.bestScores).not.toHaveProperty('3-7');
+    expect(restored.unlocked).toEqual(expect.arrayContaining(['3-7', '3-8']));
+    const draft = restored.savedGraphs['3-7'];
+    expect(draft.edges).toEqual(oldMomentum.edges);
+    expect(draft.nodes.find((node) => node.id === 'output')!.attrs).toEqual({
+      name: 'updatedWeight',
+      note: 'preserve',
+    });
+    expect(draft.nodes.find((node) => node.attrs?.name === 'updatedMomentum')).toEqual({
+      id: 'output_momentum',
+      component: 'output',
+      attrs: { name: 'updatedMomentum' },
+      ui: { x: 700, y: 320 },
+    });
+    expect(onRevoked).toHaveBeenCalledWith(['3-7']);
+    expect(loadProgress(source)).toEqual(restored);
+
+    const persisted = data.get(STORAGE_KEY);
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+  it('removes the obsolete vector-gradient weight input without revoking a compatible solution', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const level = gameLevels.find((candidate) => candidate.id === '3-2')!;
+    const solution = JSON.parse(JSON.stringify(level.referenceGraph!)) as GraphJSON;
+    solution.nodes.unshift({
+      id: 'legacy-w',
+      component: 'input',
+      attrs: { name: 'w' },
+      ui: { x: 41, y: 73 },
+    });
+    const score = { topNodes: solution.nodes.length, expandedPrimitives: 1, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['3-2', 'layer'],
+      passed: ['3-2'],
+      savedGraphs: { '3-2': solution },
+      passedSolutions: { '3-2': solution },
+      bestScores: { '3-2': score },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const onRevoked = vi.fn();
+
+    const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+    expect(restored.passed).toContain('3-2');
+    expect(restored.savedGraphs['3-2'].nodes.some((node) => node.id === 'legacy-w')).toBe(false);
+    expect(restored.passedSolutions['3-2'].nodes.some((node) => node.id === 'legacy-w')).toBe(
+      false,
+    );
+    expect(restored.bestScores['3-2']).toEqual(score);
+    expect(onRevoked).not.toHaveBeenCalled();
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+  });
+  it('repairs the old regression Linear defaults only in the matching saved draft', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const draft: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x', shape: [16] }, ui: { x: 20, y: 80 } },
+        { id: 't', component: 'input', attrs: { name: 't', shape: [16] }, ui: { x: 20, y: 260 } },
+        {
+          id: 'prediction',
+          component: 'linear',
+          attrs: {
+            automatic_parameters: true,
+            in_features: 1,
+            out_features: 2,
+            bias: false,
+            note: 'preserve',
+          },
+          ui: { x: 250, y: 80, collapsed: true },
+        },
+        {
+          id: 'unrelated',
+          component: 'linear',
+          attrs: { automatic_parameters: true, in_features: 2, out_features: 2, bias: true },
+          ui: { x: 250, y: 420 },
+        },
+        { id: 'mse', component: 'mse', ui: { x: 500, y: 170 } },
+        { id: 'loss', component: 'output', attrs: { name: 'loss' }, ui: { x: 740, y: 170 } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'prediction', port: 'x' } },
+        { from: { node: 'prediction', port: 'out' }, to: { node: 'mse', port: 'p' } },
+        { from: { node: 't', port: 'out' }, to: { node: 'mse', port: 't' } },
+        { from: { node: 'mse', port: 'out' }, to: { node: 'loss', port: 'x' } },
+        { from: { node: 'x', port: 'out' }, to: { node: 'unrelated', port: 'x' } },
+      ],
+    };
+    const submitted = structuredClone(draft);
+    const score = { topNodes: 6, expandedPrimitives: 12, parameterCount: 3 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['3-4', '3-5', 'loss-intro'],
+      unlockedComponents: ['linear', 'mse'],
+      passed: ['3-4'],
+      savedGraphs: { '3-4': draft },
+      passedSolutions: { '3-4': submitted },
+      bestScores: { '3-4': score },
+      trainingSettings: { '3-4': { learningRate: 0.3 } },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    const migrated = structuredClone(draft);
+    const prediction = migrated.nodes.find((node) => node.id === 'prediction')!;
+    prediction.attrs = { ...prediction.attrs, in_features: 1, out_features: 1 };
+    expect(restored).toEqual({
+      ...progress,
+      savedGraphs: { '3-4': migrated },
+    });
+    expect(
+      restored.savedGraphs['3-4'].nodes.find((node) => node.id === 'unrelated')!.attrs,
+    ).toEqual(draft.nodes.find((node) => node.id === 'unrelated')!.attrs);
+    expect(restored.passedSolutions['3-4']).toEqual(submitted);
+    expect(restored.bestScores['3-4']).toEqual(score);
+
+    const persisted = data.get(STORAGE_KEY);
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+  it('revokes changed-contract pass credit when a current save has no submitted solution', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const draft = staleLossGradientGraph('gradient', true);
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['3-2', 'layer'],
+      passed: ['3-2'],
+      savedGraphs: { '3-2': draft },
+      bestScores: {
+        '3-2': { topNodes: draft.nodes.length, expandedPrimitives: 7, parameterCount: 0 },
+      },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const onRevoked = vi.fn();
+
+    const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+    expect(restored.passed).not.toContain('3-2');
+    expect(restored.savedGraphs['3-2'].nodes.find((node) => node.id === 't')!.attrs).toEqual({
+      name: '∂L/∂p',
+    });
+    expect(restored.savedGraphs['3-2'].nodes.some((node) => node.id === 'w')).toBe(false);
+    expect(restored.savedGraphs['3-2'].edges.some((edge) => edge.from.node === 'w')).toBe(false);
+    expect(restored.bestScores).not.toHaveProperty('3-2');
+    expect(onRevoked).toHaveBeenCalledWith(['3-2']);
   });
   it('leaves current chapter-two numbering unchanged', async () => {
     const { source } = memory();
@@ -565,6 +1075,94 @@ describe('storage', () => {
       (await loadProgressWithMigration([{ ...level, referenceGraph: undefined }], source)).passed,
     ).toEqual([]);
   });
+  it('migrates v8 semantic output names without changing circuit structure or progress', async () => {
+    const { data, source } = memory();
+    const explicit = structuredClone(graph);
+    explicit.nodes[1] = {
+      ...explicit.nodes[1],
+      attrs: { name: 'y', note: 'keep' },
+      ui: { x: 320, y: 180 },
+    };
+    const implicit = structuredClone(graph);
+    const score = { topNodes: 3, expandedPrimitives: 2, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['0-1', '1-1'],
+      passed: ['0-1', '1-1'],
+      unlockedComponents: ['add'],
+      savedGraphs: { '0-1': graph, '1-1': explicit },
+      passedSolutions: { '0-1': graph, '1-1': implicit },
+      bestScores: { '1-1': score },
+      trainingSettings: { '1-1': { learningRate: 0.02 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 8, progress }));
+    const levels = [
+      { ...chapter0Levels[0], unlock: [], unlockComponents: [] },
+      { ...chapter1Levels[0], unlock: [], unlockComponents: [] },
+    ];
+
+    const restored = await loadProgressWithMigration(levels, source);
+    const migratedExplicit = structuredClone(explicit);
+    migratedExplicit.nodes[1].attrs = { name: 'f′', note: 'keep' };
+    const migratedImplicit = structuredClone(implicit);
+    migratedImplicit.nodes[1].attrs = { name: 'f′' };
+    expect(restored).toEqual({
+      ...progress,
+      savedGraphs: { '0-1': graph, '1-1': migratedExplicit },
+      passedSolutions: { '0-1': graph, '1-1': migratedImplicit },
+    });
+    expect(restored.savedGraphs['1-1'].nodes.map((node) => node.id)).toEqual(
+      explicit.nodes.map((node) => node.id),
+    );
+    expect(restored.savedGraphs['1-1'].edges).toEqual(explicit.edges);
+    expect(restored.savedGraphs['1-1'].nodes[1].ui).toEqual(explicit.nodes[1].ui);
+    expect(restored.savedGraphs['0-1']).toEqual(graph);
+    expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(STORAGE_VERSION);
+
+    const persisted = data.get(STORAGE_KEY);
+    expect(await loadProgressWithMigration(levels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
+  it('repairs a v8 descent output and unlocks the inserted loss game without granting completion', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { data, source } = memory();
+    const descent = structuredClone(
+      gameLevels.find((level) => level.id === '3-1')!.referenceGraph!,
+    );
+    const output = descent.nodes.find((node) => node.component === 'output')!;
+    output.attrs = { name: 'y', note: 'preserve' };
+    output.ui = { x: 730, y: 210 };
+    const solution = structuredClone(descent);
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['3-1', '3-2'],
+      passed: ['3-1'],
+      savedGraphs: { '3-1': descent },
+      passedSolutions: { '3-1': solution },
+      bestScores: { '3-1': { topNodes: 7, expandedPrimitives: 7, parameterCount: 0 } },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 8, progress }));
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+    expect(restored.unlocked).toEqual(['3-1', '3-2', 'neuron', 'loss-intro']);
+    expect(restored.passed).toEqual(['3-1']);
+    for (const migrated of [restored.savedGraphs['3-1'], restored.passedSolutions['3-1']]) {
+      expect(migrated.nodes.find((node) => node.component === 'output')!.attrs).toEqual({
+        name: 'updatedWeight',
+        note: 'preserve',
+      });
+      expect(migrated.nodes.find((node) => node.component === 'output')!.ui).toEqual(output.ui);
+      expect(migrated.nodes.map((node) => node.id)).toEqual(descent.nodes.map((node) => node.id));
+      expect(migrated.edges).toEqual(descent.edges);
+    }
+    expect(restored.passed).not.toContain('loss-intro');
+    expect(restored.passedSolutions).not.toHaveProperty('loss-intro');
+    expect(JSON.parse(data.get(STORAGE_KEY)!).version).toBe(STORAGE_VERSION);
+
+    const persisted = data.get(STORAGE_KEY);
+    expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+  });
   it('maps the old derivative to the matching product-rule lesson and restores prerequisites', async () => {
     const { data, source } = memory();
     data.set(
@@ -590,13 +1188,19 @@ describe('storage', () => {
         .filter((id) => id !== 'square'),
     );
     expect(progress.unlocked).toContain('square');
-    expect(progress.passedSolutions['1-2']).toEqual(derivativeSolution);
+    const migratedDerivative = structuredClone(derivativeSolution);
+    migratedDerivative.nodes.find((node) => node.component === 'output')!.attrs = { name: 'f′' };
+    expect(progress.savedGraphs['1-2']).toEqual(migratedDerivative);
+    expect(progress.passedSolutions['1-2']).toEqual(migratedDerivative);
+    expect(derivativeSolution.nodes.find((node) => node.component === 'output')?.attrs).toEqual({
+      name: 'y',
+    });
     expect(progress.unlocked).toContain('1-3');
     expect(progress.unlockedComponents).toContain('sigmoid');
   });
   it('keeps legacy language preferences during the version upgrade', () => {
     const { data, source } = memory();
-    for (const version of [1, 2]) {
+    for (const version of [1, 2, 7, 8]) {
       data.set(LANGUAGE_KEY, JSON.stringify({ version, language: 'en' }));
       expect(loadLanguage(source, 'zh-CN')).toBe('en');
     }
@@ -734,6 +1338,6 @@ it('the gradient view unlocks with the autodiff level, not with chapter 2', asyn
   const progress = createInitialProgress();
   progress.unlocked.push('2-1');
   expect(isAutodiffUnlocked(progress, gameLevels)).toBe(false);
-  progress.passed.push('1-10');
+  progress.passed.push('1-11');
   expect(isAutodiffUnlocked(progress, gameLevels)).toBe(true);
 });

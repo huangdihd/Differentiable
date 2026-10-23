@@ -1,5 +1,6 @@
 import { ComponentRegistry, createDefaultRegistry, type GraphJSON } from '../engine/graph';
 import type { Level, Progress } from '../engine/levels';
+import { configurableModule } from '../engine/parameterized-components';
 
 /** Palette and compiler policy: a level cannot use the component it is building. */
 export function availableComponents(level: Level, progress: Progress): string[] {
@@ -58,6 +59,6 @@ export function buildPlayerRegistry(
     }
   }
   const registry = new ComponentRegistry();
-  for (const definition of definitions.values()) registry.register(definition);
+  for (const definition of definitions.values()) registry.register(configurableModule(definition));
   return registry;
 }

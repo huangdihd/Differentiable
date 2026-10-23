@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildBackwardGraph } from '../engine/backward-graph';
+import { createTranslator } from '../i18n';
 import { formulaGraph } from '../levels/level-helpers';
-import { gradientLayout } from './gradient-layout';
+import {
+  backwardTeachingSegments,
+  gradientEdgeKey,
+  gradientLayout,
+  namedMultiplicationRule,
+} from './gradient-layout';
 
 const layoutOf = (formula: string, inputs: string[], wrt: string[]) => {
   const graph = formulaGraph(formula, inputs);
@@ -53,6 +59,35 @@ describe('gradient graph layout', () => {
     expect(gradientLayout(graph, backward, ['display-name']).nodes.some((n) => n.carries)).toBe(
       false,
     );
+  });
+  it('splits an engine reveal at the upstream gradient supplied to the player', () => {
+    const { graph, layout } = layoutOf('exp(w * x + b)', ['w', 'x', 'b'], ['w', 'x', 'b']);
+    const start = graph.nodes.find((node) => node.component === 'add')!.id;
+    const outer = graph.nodes.find((node) => node.component === 'exp')!.id;
+    const product = graph.nodes.find((node) => node.component === 'mul')!.id;
+    const output = graph.nodes.find((node) => node.component === 'output')!.id;
+    const segments = backwardTeachingSegments(layout, start)!;
+
+    expect([...segments.playerNodes].sort()).toEqual(['b', product, start, 'w', 'x'].sort());
+    expect([...segments.engineNodes].sort()).toEqual([start, outer, output].sort());
+    expect(segments.playerEdges).toContain(gradientEdgeKey(product, start, 'a'));
+    expect(segments.playerEdges).toContain(gradientEdgeKey('b', start, 'b'));
+    expect(segments.engineEdges).toContain(gradientEdgeKey(start, outer, 'x'));
+    expect(segments.playerEdges).not.toContain(gradientEdgeKey(start, outer, 'x'));
+    expect(backwardTeachingSegments(layout, 'missing')).toBeUndefined();
+  });
+  it('names the actual multiplication operands in the hand-built backward rules', () => {
+    const { graph, layout } = layoutOf('exp(w * x + b)', ['w', 'x', 'b'], ['w', 'x', 'b']);
+    const product = graph.nodes.find((node) => node.component === 'mul')!.id;
+    const edges = layout.edges.filter((edge) => edge.to === product);
+    const t = createTranslator('en');
+    const labels = edges.map((edge) => {
+      const rule = namedMultiplicationRule(graph, edge, (node) => node);
+      return rule ? t('gradView.ruleMulNamed', rule) : '';
+    });
+
+    expect(labels).toEqual(['∂(w·x)/∂w = x', '∂(w·x)/∂x = w']);
+    expect(labels.join(' ')).not.toMatch(/∂[ab]|= [ab]$/);
   });
   it('marks fan-out values whose gradients are summed', () => {
     const { layout } = layoutOf('x * x', ['x'], ['x']);

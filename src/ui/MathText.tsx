@@ -106,8 +106,8 @@ function scripts(text: string): ReactNode[] {
   return out;
 }
 
-/** Typesets one formula: italic variables, upright functions and numbers, spaced operators. */
-function Formula({ src, wrap }: { src: string; wrap: boolean }) {
+/** Typesets formula text without structured constructs such as stacked fractions. */
+function FormulaTokens({ src, wrap }: { src: string; wrap: boolean }) {
   const out: ReactNode[] = [];
   let i = 0;
   let space = false; // source whitespace between two terms, e.g. "log softmax"
@@ -170,6 +170,94 @@ function Formula({ src, wrap }: { src: string; wrap: boolean }) {
   return <>{out}</>;
 }
 
+type StructuredFormula =
+  | { kind: 'fraction'; numerator: string; denominator: string; end: number }
+  | { kind: 'script'; script: 'sup' | 'sub'; value: string; end: number };
+
+function braced(src: string, start: number): { value: string; end: number } | undefined {
+  if (src[start] !== '{') return undefined;
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}' && --depth === 0) return { value: src.slice(start + 1, i), end: i + 1 };
+  }
+  return undefined;
+}
+
+function structuredFormula(src: string, start: number): StructuredFormula | undefined {
+  if (src.startsWith('\\frac', start)) {
+    const numerator = braced(src, start + 5);
+    if (!numerator) return undefined;
+    const denominator = braced(src, numerator.end);
+    return (
+      denominator && {
+        kind: 'fraction',
+        numerator: numerator.value,
+        denominator: denominator.value,
+        end: denominator.end,
+      }
+    );
+  }
+  if ((src[start] === '^' || src[start] === '_') && src[start + 1] === '{') {
+    const value = braced(src, start + 1);
+    if (value)
+      return {
+        kind: 'script',
+        script: src[start] === '^' ? 'sup' : 'sub',
+        value: value.value,
+        end: value.end,
+      };
+  }
+  return undefined;
+}
+
+/** Typesets one formula, including stacked `\\frac{numerator}{denominator}` fractions. */
+function Formula({ src, wrap }: { src: string; wrap: boolean }) {
+  const out: ReactNode[] = [];
+  let cursor = 0,
+    search = 0,
+    key = 0;
+  while (search < src.length) {
+    const fractionStart = src.indexOf('\\frac', search);
+    const supStart = src.indexOf('^{', search);
+    const subStart = src.indexOf('_{', search);
+    const starts = [fractionStart, supStart, subStart].filter((start) => start >= 0);
+    if (!starts.length) break;
+    const start = Math.min(...starts);
+    const parsed = structuredFormula(src, start);
+    if (!parsed) {
+      search = start + 1;
+      continue;
+    }
+    if (start > cursor)
+      out.push(<FormulaTokens key={key++} src={src.slice(cursor, start)} wrap={wrap} />);
+    if (parsed.kind === 'fraction')
+      out.push(
+        <span className="m-frac" key={key++}>
+          <span className="m-frac-num">
+            <Formula src={parsed.numerator} wrap={false} />
+          </span>
+          <span className="m-frac-den">
+            <Formula src={parsed.denominator} wrap={false} />
+          </span>
+        </span>,
+      );
+    else {
+      const Script = parsed.script;
+      out.push(
+        <Script key={key++}>
+          <Formula src={parsed.value} wrap={false} />
+        </Script>,
+      );
+    }
+    cursor = parsed.end;
+    search = cursor;
+  }
+  if (cursor < src.length)
+    out.push(<FormulaTokens key={key++} src={src.slice(cursor)} wrap={wrap} />);
+  return <>{out}</>;
+}
+
 /**
  * Renders player-facing copy with formulas. `$…$` marks an inline formula; a line that is
  * exactly `$$…$$` becomes a displayed formula. Other newlines are kept as line breaks.
@@ -182,7 +270,11 @@ export function MathText({ text }: { text: string }) {
         const display = line.trim().match(/^\$\$(.+)\$\$$/);
         if (display)
           return (
-            <span key={n} className="math-block" role="math">
+            <span
+              key={n}
+              className={`math-block${display[1].includes('\\frac') ? ' has-frac' : ''}`}
+              role="math"
+            >
               <Formula src={display[1]} wrap={false} />
             </span>
           );

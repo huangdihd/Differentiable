@@ -2027,7 +2027,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "2-2",
-    "par": 6,
+    "par": 4,
     "seed": 2001,
   },
   {
@@ -3192,7 +3192,7 @@ exports[`preserves every original chapter 0/1/2 par and fixed/seeded case 1`] = 
       },
     ],
     "id": "2-6",
-    "par": 21,
+    "par": 17,
     "seed": 2005,
   },
 ]
