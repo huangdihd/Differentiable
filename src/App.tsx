@@ -88,6 +88,10 @@ import {
   saveSave,
   createThrottledSave,
 } from './storage';
+import {
+  dismissBackendFallbackDialog,
+  isBackendFallbackDialogDismissed,
+} from './backend-fallback-dialog';
 import './ui/theme.css';
 import { MusicToggle } from './ui/MusicToggle';
 import { SfxToggle } from './ui/SfxToggle';
@@ -125,6 +129,7 @@ export default function App() {
   const [backend, setBackend] = useState('pending');
   const [failure, setFailure] = useState<WorkerError>();
   const [fallback, setFallback] = useState(false);
+  const [fallbackDialog, setFallbackDialog] = useState(false);
   const [revoked, setRevoked] = useState<string[]>([]);
   const client = useRef<WorkerClient>(null);
   const revision = useRef(0);
@@ -143,7 +148,9 @@ export default function App() {
       .then((r) => {
         if (!active || !r) return;
         setBackend(r.backend);
-        setFallback(!!r.fallback);
+        const fellBack = !!r.fallback;
+        setFallback(fellBack);
+        if (fellBack && !isBackendFallbackDialogDismissed()) setFallbackDialog(true);
       })
       .catch((e) => setFailure(e.detail ?? { key: 'worker.transport_error', params: {} }));
     return () => {
@@ -229,6 +236,16 @@ export default function App() {
         <p className="status status-fail banner">
           {translateDiagnostic(save.settings.language, failure)}
         </p>
+      )}
+      {fallbackDialog && (
+        <BackendFallbackDialog
+          t={t}
+          onContinue={() => setFallbackDialog(false)}
+          onDontShowAgain={() => {
+            dismissBackendFallbackDialog();
+            setFallbackDialog(false);
+          }}
+        />
       )}
       {level ? (
         <Editor
@@ -2558,6 +2575,39 @@ function WinModal({
               {t('ui.nextLevel')} →
             </button>
           )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+
+function BackendFallbackDialog({
+  t,
+  onContinue,
+  onDontShowAgain,
+}: {
+  t: T;
+  onContinue: () => void;
+  onDontShowAgain: () => void;
+}) {
+  return (
+    <div className="modal-back" onClick={(e) => e.target === e.currentTarget && onContinue()}>
+      <section
+        className="modal backend-fallback-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('ui.backendFallbackDialog.title')}
+      >
+        <h2>{t('ui.backendFallbackDialog.title')}</h2>
+        <p>{t('ui.backendFallbackDialog.body')}</p>
+        <div className="btn-row modal-actions">
+          <button className="btn btn-primary" onClick={onContinue} autoFocus>
+            {t('ui.backendFallbackDialog.continue')}
+          </button>
+          <button className="btn" onClick={onDontShowAgain}>
+            {t('ui.backendFallbackDialog.dontShowAgain')}
+          </button>
         </div>
       </section>
     </div>

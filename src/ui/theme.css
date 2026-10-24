@@ -800,6 +800,16 @@ input[type='range'] {
   margin: 4px 0 6px;
   font-size: var(--fs-xl);
 }
+
+/* WebGPU→CPU fallback notice: same shell as the win modal, no unlock animation. */
+.backend-fallback-dialog h2 {
+  color: var(--accent);
+}
+.backend-fallback-dialog p {
+  margin: 8px 0 16px;
+  line-height: 1.55;
+  color: var(--text);
+}
 .tooltip {
   position: fixed;
   z-index: 60;
