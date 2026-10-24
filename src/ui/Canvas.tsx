@@ -91,6 +91,52 @@ function wireStyle(v: number | undefined): { className: string; style?: CSSPrope
     style: { strokeWidth: 1.6 + size * 3.4 },
   };
 }
+
+/**
+ * Textbook neural-net wire geometry.
+ *
+ * Prefer a pure straight segment (like a diagram in a textbook). Use a very light cubic arc
+ * only when a straight line would tangle badly:
+ *   - backward / leftward connections (wrap around neighbouring nodes), or
+ *   - forward connections whose |Δy| is steep vs the horizontal gap (steep diagonals that
+ *     knife through other nodes). Threshold: |Δy| > 0.85·Δx and |Δy| > 40.
+ * The arc keeps control points near the endpoints so it stays near-straight.
+ */
+export function wireNeedsArc(a: Point, b: Point): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return dx <= 0 || (Math.abs(dy) > dx * 0.85 && Math.abs(dy) > 40);
+}
+
+export function wirePath(a: Point, b: Point): string {
+  if (!wireNeedsArc(a, b)) return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  const dx = b.x - a.x;
+  // Light pull: ~20% of a forward gap, or a modest pad when wrapping backward.
+  const pull = dx > 0 ? Math.max(24, dx * 0.2) : Math.max(40, -dx * 0.45);
+  return `M ${a.x} ${a.y} C ${a.x + pull} ${a.y}, ${b.x - pull} ${b.y}, ${b.x} ${b.y}`;
+}
+
+/** Midpoint and tangent of a wire, where an overflowing value tears the line open. */
+export function wireRupture(a: Point, b: Point): Point & { angle: number } {
+  if (!wireNeedsArc(a, b)) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+    };
+  }
+  const dx = b.x - a.x;
+  const pull = dx > 0 ? Math.max(24, dx * 0.2) : Math.max(40, -dx * 0.45);
+  const c1 = { x: a.x + pull, y: a.y };
+  const c2 = { x: b.x - pull, y: b.y };
+  const x = (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8;
+  const y = (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8;
+  const tx = 0.75 * (c1.x - a.x + c2.x - c1.x + b.x - c2.x);
+  const ty = 0.75 * (c1.y - a.y + c2.y - c1.y + b.y - c2.y);
+  return { x, y, angle: (Math.atan2(ty, tx) * 180) / Math.PI };
+}
 export interface CanvasHandle {
   /** Converts browser client coordinates to graph coordinates, or null when outside the canvas. */
   toGraph(clientX: number, clientY: number): Point | null;
@@ -139,9 +185,48 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
   const [preview, setPreview] = useState<Record<string, Point>>({});
   const [wire, setWire] = useState<PendingWire>();
   const [box, setBox] = useState<{ x: number; y: number; w: number; h: number }>();
+  /** Ports that just connected: brief flash, then cleared. Key = `node:port:in|out`. */
+  const [flashPorts, setFlashPorts] = useState<ReadonlySet<string>>(() => new Set());
+  const flashTimers = useRef<Map<string, number>>(new Map());
   const space = useRef(false);
   const stopTracking = useRef<(() => void) | null>(null);
-  useEffect(() => () => stopTracking.current?.(), []);
+  useEffect(
+    () => () => {
+      stopTracking.current?.();
+      for (const id of flashTimers.current.values()) window.clearTimeout(id);
+      flashTimers.current.clear();
+    },
+    [],
+  );
+
+  const flashPort = (node: string, port: string, side: 'in' | 'out') => {
+    const key = `${node}:${port}:${side}`;
+    setFlashPorts((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    const prior = flashTimers.current.get(key);
+    if (prior !== undefined) window.clearTimeout(prior);
+    flashTimers.current.set(
+      key,
+      window.setTimeout(() => {
+        flashTimers.current.delete(key);
+        setFlashPorts((prev) => {
+          if (!prev.has(key)) return prev;
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }, 420),
+    );
+  };
+
+  const connect = (from: GraphEndpoint, to: GraphEndpoint, previous?: GraphEndpoint) => {
+    flashPort(from.node, from.port, 'out');
+    flashPort(to.node, to.port, 'in');
+    p.onConnect(from, to, previous);
+  };
 
   const layout = useMemo(() => layoutGraph(p.graph, registry), [p.graph, registry]);
   const pos = (n: GraphNode): Point => preview[n.id] ?? layout.get(n.id) ?? { x: 0, y: 0 };
@@ -193,29 +278,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
       y: a.y + portOffset(n, output ? 'outputs' : 'inputs', e.port),
     };
   };
-  const controls = (a: Point, b: Point): [Point, Point] => {
-    // Forward wires are nearly straight, like the lines of a textbook network diagram, and stay
-    // within the gap; backward wires still swing out far enough to wrap around.
-    const gap = b.x - a.x;
-    const dx = gap > 0 ? gap * 0.25 : Math.max(40, -gap * 0.5);
-    return [
-      { x: a.x + dx, y: a.y },
-      { x: b.x - dx, y: b.y },
-    ];
-  };
-  const path = (a: Point, b: Point) => {
-    const [c1, c2] = controls(a, b);
-    return `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`;
-  };
-  /** The curve's halfway point and tangent, where an overflowing wire tears open. */
-  const rupture = (a: Point, b: Point): Point & { angle: number } => {
-    const [c1, c2] = controls(a, b);
-    const x = (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8;
-    const y = (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8;
-    const dx = 0.75 * (c1.x - a.x + c2.x - c1.x + b.x - c2.x);
-    const dy = 0.75 * (c1.y - a.y + c2.y - c1.y + b.y - c2.y);
-    return { x, y, angle: (Math.atan2(dy, dx) * 180) / Math.PI };
-  };
+  const path = wirePath;
+  const rupture = wireRupture;
 
   function track(
     e: ReactPointerEvent,
@@ -283,11 +347,11 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
         const inside = target && root.current?.contains(target) ? target : undefined;
         // An exact drop on a port wins; otherwise the snapped port; otherwise a node body.
         if (inside?.dataset.input) {
-          p.onConnect(from, { node: inside.dataset.node!, port: inside.dataset.input }, previous);
+          connect(from, { node: inside.dataset.node!, port: inside.dataset.input }, previous);
           return;
         }
         if (current.snap) {
-          p.onConnect(from, current.snap, previous);
+          connect(from, current.snap, previous);
           return;
         }
         if (!inside || inside.dataset.output) return;
@@ -299,7 +363,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               (port) => !p.graph.edges.some((edge) => edge.to.node === id && edge.to.port === port),
             )
           : undefined;
-        if (port) p.onConnect(from, { node: id, port }, previous);
+        if (port) connect(from, { node: id, port }, previous);
       },
       () => setWire(undefined),
     );
@@ -426,6 +490,21 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   }`}
                   d={d}
                 />
+                {/* Faint dashed flow on top of the solid wire; step playback still uses the classes above. */}
+                {!nonfinite && live(edge.from.node) && (
+                  <path
+                    className={`wire-flow ${
+                      p.flow?.phase === 'forward'
+                        ? 'is-flow-forward'
+                        : p.flow?.phase === 'backward' &&
+                            p.flow.gradient[edge.from.node] &&
+                            p.flow.gradient[edge.to.node]
+                          ? 'is-flow-backward'
+                          : 'is-flow-ambient'
+                    }`}
+                    d={d}
+                  />
+                )}
                 {breakAt && (
                   <g
                     className={`wire-rupture is-overflow-${nonfinite}`}
@@ -628,6 +707,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                             wire?.snap?.node === n.id &&
                             wire.snap.port === port &&
                             'is-target',
+                          flashPorts.has(`${n.id}:${port}:${side === 'inputs' ? 'in' : 'out'}`) &&
+                            'is-flash',
                           errors.some((e) => e.port === port) && 'is-error',
                         ]
                           .filter(Boolean)

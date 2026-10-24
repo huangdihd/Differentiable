@@ -741,6 +741,27 @@ input[type='range'] {
 .port.is-target {
   transform: scale(1.5);
 }
+/* Brief flash when a wire snaps onto this port; class is removed after the animation. */
+.port.is-flash {
+  animation: port-connect-flash 0.42s ease-out;
+}
+@keyframes port-connect-flash {
+  0% {
+    transform: scale(1.65);
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .port.is-flash {
+    animation: none;
+  }
+}
 .port.is-error {
   border-color: var(--bad);
 }
@@ -1938,6 +1959,38 @@ input[type='range'] {
   color: var(--grad);
 }
 
+/* ---------- dashed flow on live wires (textbook) ---------- */
+/* Solid coloured wire underneath; this overlay is a visible dash that drifts along the path. */
+.wire-flow {
+  fill: none;
+  stroke: color-mix(in srgb, var(--wire) 78%, transparent);
+  stroke-width: 2.2;
+  stroke-dasharray: 8 6;
+  stroke-linecap: round;
+  pointer-events: none;
+  animation: wire-live-flow 1.2s linear infinite;
+}
+/* .is-flow-ambient (default): idle live wires, values drift producer → consumer. */
+.wire-flow.is-flow-forward {
+  stroke: color-mix(in srgb, var(--accent) 88%, transparent);
+  stroke-width: 2.6;
+  stroke-dasharray: 10 5;
+  animation-duration: 0.7s;
+}
+/* Gradients travel consumer → producer, opposite the value flow. */
+.wire-flow.is-flow-backward {
+  stroke: color-mix(in srgb, var(--grad) 88%, transparent);
+  stroke-width: 2.6;
+  stroke-dasharray: 10 5;
+  animation-duration: 0.7s;
+  animation-direction: reverse;
+}
+@keyframes wire-live-flow {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
 /* ---------- single-step training playback ---------- */
 .wire.is-flow-forward,
 .wire.is-flow-backward {
@@ -2026,7 +2079,8 @@ input[type='range'] {
 }
 @media (prefers-reduced-motion: reduce) {
   .wire.is-flow-forward,
-  .wire.is-flow-backward {
+  .wire.is-flow-backward,
+  .wire-flow {
     animation: none;
   }
 }
