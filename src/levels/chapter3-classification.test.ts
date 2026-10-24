@@ -147,6 +147,42 @@ it.each([
   60000,
 );
 
+/** Lookup table over the train batch; ignores x. Must fail hold-out. */
+function memorizerGraph(rows: number): GraphJSON {
+  return {
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x' } },
+      { id: 'logits', component: 'param', attrs: { shape: [rows, 2], init: 'zeros' } },
+      { id: 'probability', component: 'sigmoid' },
+      { id: 'output', component: 'output', attrs: { name: 'probabilities' } },
+    ],
+    edges: [
+      { from: { node: 'logits', port: 'out' }, to: { node: 'probability', port: 'x' } },
+      { from: { node: 'probability', port: 'out' }, to: { node: 'output', port: 'x' } },
+    ],
+  };
+}
+
+it.each(['3-6', '3-8', '3-9'] as const)(
+  '%s rejects param×N memorizer on held-out evaluation',
+  async (id) => {
+    const level = chapter3ClassificationLevels.find((candidate) => candidate.id === id)!;
+    expect(level.evaluationDataset).toBeTypeOf('function');
+    const rows = level.interface.outputShape[0]!;
+    const result = await evaluateLevel(playable(level), memorizerGraph(rows), {
+      registry,
+      learningRate: 0.1,
+      optimizer: 'adam',
+    });
+    expect(result.errorKey).not.toBe('levels.output_shape');
+    expect(result.passed).toBe(false);
+    // Train-set memorizer collapses on a fresh seed+1 batch.
+    expect(result.training?.accuracy ?? 0).toBeLessThan(level.threshold.accuracy!);
+  },
+  60000,
+);
+
 for (const level of chapter3ClassificationLevels) {
   it(`${level.id} measured training settings`, async () => {
     const settings =

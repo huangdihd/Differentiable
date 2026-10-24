@@ -483,6 +483,9 @@ chapter3ForwardLevels.push(crossEntropyLevel, ...affineLevels, momentumLevel);
 
 export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) => {
   const count = index === 9 ? 64 : 40;
+  // Same builder as train, different seed at evaluate (seed + 1) so param-table
+  // memorizers that ignore x fail hold-out — mirrors chapter 4+ evaluationDataset.
+  const points = index === 9 ? rings : index === 8 ? smallAndLarge : twoBlobs;
   return withPar<TrainLevel>(
     {
       ...metadata(index),
@@ -514,7 +517,8 @@ export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) 
             }),
       },
       threshold: { loss: 0.15, accuracy: index === 9 ? 0.95 : 1 },
-      ...trainOn(index === 9 ? rings : index === 8 ? smallAndLarge : twoBlobs),
+      ...trainOn(points),
+      evaluationDataset: points.build,
     },
     [...preceding, ...chapter3ForwardLevels],
   );

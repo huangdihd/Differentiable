@@ -33,17 +33,35 @@ export const noisyLine = {
   },
 } satisfies Dataset;
 
-/** Two-class points in the plane; label i % 2, one-hot targets [count, 2]. */
+/** Two-class points in the plane; balanced labels, shuffled so row index ≠ class. */
 function pointClasses(count: number, point: (random: Random, i: number, sign: number) => number[]) {
   return (random: Random): TrainingBatch => {
-    const x: number[] = [],
-      targets: number[] = [];
+    const rows: { x: number[]; target: number[] }[] = [];
     for (let i = 0; i < count; i++) {
       const label = i % 2;
-      x.push(...point(random, i, label ? 1 : -1));
-      targets.push(1 - label, label);
+      rows.push({
+        x: point(random, i, label ? 1 : -1),
+        target: [1 - label, label],
+      });
     }
-    return { inputs: { x: T.tensor(x, [count, 2]) }, targets: T.tensor(targets, [count, 2]) };
+    // Fisher–Yates with the dataset RNG so seed and seed+1 disagree on index→label
+    // (otherwise a param[N,C] memorizer that ignores x still hits hold-out accuracy).
+    for (let i = rows.length - 1; i > 0; i--) {
+      const j = Math.floor(random.uniform() * (i + 1));
+      [rows[i], rows[j]] = [rows[j], rows[i]];
+    }
+    return {
+      inputs: {
+        x: T.tensor(
+          rows.flatMap((row) => row.x),
+          [count, 2],
+        ),
+      },
+      targets: T.tensor(
+        rows.flatMap((row) => row.target),
+        [count, 2],
+      ),
+    };
   };
 }
 
