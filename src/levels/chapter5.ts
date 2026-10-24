@@ -1,4 +1,4 @@
-import { gardenRhyme } from '../datasets';
+import { gardenRhyme, shuffledOrder } from '../datasets';
 import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
@@ -37,16 +37,22 @@ export const attentionSequences = (() => {
     return corpusTokens.slice(start, start + context + 1);
   });
 })();
-export function attentionBatch() {
+/** With `order`, the same windows shuffled: grading uses them so a [N,T,V] Parameter table
+ * fitted to the training rows cannot pass without reading x.
+ */
+export function attentionBatch(order?: Random) {
+  const sequences = order
+    ? shuffledOrder(order, N).map((i) => attentionSequences[i])
+    : attentionSequences;
   const targets = new Float32Array(N * context * vocabularySize);
-  attentionSequences.forEach((sequence, row) => {
+  sequences.forEach((sequence, row) => {
     for (let i = 0; i < context; i++)
       targets[(row * context + i) * vocabularySize + sequence[i + 1]] = 1;
   });
   return {
     inputs: {
       x: T.tensor(
-        attentionSequences.flatMap((s) => s.slice(0, context)),
+        sequences.flatMap((s) => s.slice(0, context)),
         [N, context],
       ),
     },
@@ -273,9 +279,9 @@ export const chapter5TrainLevels: TrainLevel[] = [
       optimizer: { kind: 'adam', learningRate: 0.03 },
       tunable: { learningRate: { min: 0.001, max: 0.1, default: 0.03 }, optimizer: ['adam'] },
       threshold: { loss: 1.75 },
-      dataset: attentionBatch,
+      dataset: () => attentionBatch(),
       data: { dataset: gardenRhyme, context },
-      evaluationDataset: attentionBatch,
+      evaluationDataset: (random) => attentionBatch(random),
     },
     [...preceding, ...chapter5ForwardLevels],
   ),

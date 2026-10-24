@@ -23,14 +23,41 @@ export function trainOn(dataset: Dataset & Required<Pick<Dataset, 'build'>>) {
   return { dataset: dataset.build, data: { dataset } };
 }
 
+/** Seeded Fisher–Yates row order. Grading a fixed set in a different order than training
+ * stops batch-shaped Parameter tables from memorizing answers by row without reading x.
+ */
+export function shuffledOrder(random: Random, count: number): number[] {
+  const order = Array.from({ length: count }, (_, i) => i);
+  for (let i = count - 1; i > 0; i--) {
+    const j = Math.floor(random.uniform() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+/** `noise` draws the targets; `order`, when given, shuffles the same 16 (x, t) rows. */
+export function noisyLineBatch(noise: Random, order?: Random): TrainingBatch {
+  const x = Array.from({ length: 16 }, (_, i) => -2 + (4 * i) / 15);
+  const t = x.map((value) => 1.5 * value - 0.5 + (noise.uniform() - 0.5) * 0.1);
+  const rows = order ? shuffledOrder(order, 16) : x.map((_, i) => i);
+  return {
+    inputs: {
+      x: T.tensor(
+        rows.map((i) => x[i]),
+        [16],
+      ),
+      t: T.tensor(
+        rows.map((i) => t[i]),
+        [16],
+      ),
+    },
+  };
+}
+
 export const noisyLine = {
   id: 'noisy-line',
   modality: 'line',
-  build: (random: Random) => {
-    const x = Array.from({ length: 16 }, (_, i) => -2 + (4 * i) / 15);
-    const t = x.map((value) => 1.5 * value - 0.5 + (random.uniform() - 0.5) * 0.1);
-    return { inputs: { x: T.tensor(x, [16]), t: T.tensor(t, [16]) } };
-  },
+  build: (random: Random) => noisyLineBatch(random),
 } satisfies Dataset;
 
 /** Two-class points in the plane; balanced labels, shuffled so row index ≠ class. */

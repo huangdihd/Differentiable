@@ -248,9 +248,11 @@ export const chapter4TrainLevels: (TrainLevel & { generates: true })[] = [3, 5].
         optimizer: ['adam', 'sgd'] as const,
       },
       threshold: { loss: index === 3 ? bigramEntropy + 0.15 : contextBigramEntropy - 0.15 },
-      dataset: index === 3 ? corpusPairs : contextBatch,
+      // Train in canonical order; grade the same samples shuffled (seed + 1), so the
+      // calibrated entropy threshold holds but a batch-shaped Parameter table cannot pass.
+      dataset: () => (index === 3 ? corpusPairs() : contextBatch()),
       data: { dataset: gardenRhyme, context: index === 3 ? 1 : 2 },
-      evaluationDataset: index === 3 ? corpusPairs : contextBatch,
+      evaluationDataset: (random) => (index === 3 ? corpusPairs(random) : contextBatch(random)),
     },
     [...preceding, ...chapter4ForwardLevels.filter((level) => Number(level.id.slice(2)) < index)],
   ),

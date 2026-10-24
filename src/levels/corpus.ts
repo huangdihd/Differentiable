@@ -1,3 +1,4 @@
+import { shuffledOrder } from '../datasets';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
 
@@ -160,13 +161,24 @@ export const bigramEntropy = conditionalEntropy(
   corpusTokens.slice(1).map((next, i) => [corpusTokens[i], next]),
   1,
 );
-/** All corpus pairs, with no sampling error in the bigram calibration. */
-export function corpusPairs() {
+/** All corpus pairs, with no sampling error in the bigram calibration.
+ * With `order`, the same pairs come back shuffled: grading uses them so a [N×V] Parameter
+ * table fitted to training rows cannot pass without reading x.
+ */
+export function corpusPairs(order?: Random) {
   const count = corpusTokens.length - 1;
+  const rows = order ? shuffledOrder(order, count) : Array.from({ length: count }, (_, i) => i);
   const targets = new Float32Array(count * vocabularySize);
-  for (let i = 0; i < count; i++) targets[i * vocabularySize + corpusTokens[i + 1]] = 1;
+  rows.forEach((i, row) => {
+    targets[row * vocabularySize + corpusTokens[i + 1]] = 1;
+  });
   return {
-    inputs: { x: T.tensor(corpusTokens.slice(0, -1), [count]) },
+    inputs: {
+      x: T.tensor(
+        rows.map((i) => corpusTokens[i]),
+        [count],
+      ),
+    },
     targets: T.tensor(targets, [count, vocabularySize]),
   };
 }
@@ -180,18 +192,22 @@ export const contextSequences = (() => {
 })();
 export const contextBigramEntropy = conditionalEntropy(contextSequences, 1);
 export const contextEntropy = conditionalEntropy(contextSequences, 2);
-export function contextBatch() {
-  const targets = new Float32Array(contextSequences.length * vocabularySize);
-  contextSequences.forEach((sequence, i) => {
+/** With `order`, the same 512 samples shuffled (grading order; see corpusPairs). */
+export function contextBatch(order?: Random) {
+  const sequences = order
+    ? shuffledOrder(order, contextSequences.length).map((i) => contextSequences[i])
+    : contextSequences;
+  const targets = new Float32Array(sequences.length * vocabularySize);
+  sequences.forEach((sequence, i) => {
     targets[i * vocabularySize + sequence[2]] = 1;
   });
   return {
     inputs: {
       x: T.tensor(
-        contextSequences.flatMap((s) => s.slice(0, 2)),
-        [contextSequences.length, 2],
+        sequences.flatMap((s) => s.slice(0, 2)),
+        [sequences.length, 2],
       ),
     },
-    targets: T.tensor(targets, [contextSequences.length, vocabularySize]),
+    targets: T.tensor(targets, [sequences.length, vocabularySize]),
   };
 }

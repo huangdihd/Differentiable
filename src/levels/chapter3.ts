@@ -1,4 +1,5 @@
-import { noisyLine, rings, smallAndLarge, trainOn, twoBlobs } from '../datasets';
+import { noisyLine, noisyLineBatch, rings, smallAndLarge, trainOn, twoBlobs } from '../datasets';
+import { Random } from '../engine/random';
 import { axisLabels, matrixAxes } from './output-axes';
 import type { Attributes, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, TrainLevel } from '../engine/levels';
@@ -233,6 +234,8 @@ export const chapter3TrainLevel = withPar<TrainLevel>(
     lossOutput: 'loss',
     threshold: { loss: 0.05 },
     ...trainOn(noisyLine),
+    // Same 16 noisy points, shuffled for grading: a [16] Parameter fitted row by row fails.
+    evaluationDataset: (random) => noisyLineBatch(new Random(3104), random),
   },
   [...preceding, ...chapter3ForwardLevels],
 );
