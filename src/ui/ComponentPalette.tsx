@@ -164,7 +164,9 @@ function PaletteGroup({
             key={entry.name}
             entry={entry}
             pairStart={
-              PAIRS[entry.name] !== undefined && PAIRS[entry.name] === entries[index + 1]?.name
+              index % 2 === 0 &&
+              PAIRS[entry.name] !== undefined &&
+              PAIRS[entry.name] === entries[index + 1]?.name
             }
             t={t}
             disabled={disabled}

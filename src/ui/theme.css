@@ -443,7 +443,7 @@ input[type='range'] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s2);
 }
-/* Keep inverse/related operation pairs on one row even when an earlier item leaves an odd slot. */
+/* Keep inverse/related pairs on one row when the pair already starts in column 1 (even index). */
 .palette-item[data-pair-start] {
   grid-column: 1;
 }

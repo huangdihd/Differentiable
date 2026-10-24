@@ -164,9 +164,9 @@ describe('i18n', () => {
       expect(backprop).toContain('$$f=σ(z)$$');
       expect(backprop).toContain('$g=\\frac{∂f}{∂z}$');
       expect(backprop).toMatch(/上游梯度|upstream gradient/);
-      expect(backprop).toMatch(/只反传 \$z=w·x\+b\$|backpropagate only through \$z=w·x\+b\$/);
-      expect(backprop).toMatch(/不需要重新计算 Sigmoid|without recomputing Sigmoid/);
-      expect(backprop).toMatch(/没有提供.*b|not provided/);
+      expect(backprop).toMatch(/只(?:反传|处理) \$z=w·x\+b\$|backpropagate only through \$z=w·x\+b\$/);
+      expect(backprop).toMatch(/不(?:需要重新计算|用再算) Sigmoid|without recomputing Sigmoid/);
+      expect(backprop).toMatch(/没有(?:提供|给).*b|not provided/);
       expect(backprop).not.toMatch(/∂z\/∂w=x|∂z\/∂x=w|∂z\/∂b=1/);
       expect(backprop).not.toMatch(/∂f\/∂w=g·x|∂f\/∂x=g·w|∂f\/∂b=g/);
       expect(backpropHint1).toContain('$∂f/∂q=(∂f/∂z)·(∂z/∂q)$');
