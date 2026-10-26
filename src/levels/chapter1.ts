@@ -30,12 +30,12 @@ const definitions: {
   { formula: '3 * exp(3 * x)', reference: ({ x }) => T.exp(T.mul(c(x, 3), x)) },
   { formula: 'recip(x)', positiveInputs: ['x'], reference: ({ x }) => T.log(x) },
   {
-    formula: 'sigmoid(x) + neg(sigmoid(x) * sigmoid(x))',
+    formula: 'sub(sigmoid(x), sigmoid(x) * sigmoid(x))',
     component: 'dsigmoid',
     reference: ({ x }) => sigmoid(x),
   },
-  { formula: '1 + neg(tanh(x) * tanh(x))', component: 'dtanh', reference: ({ x }) => tanh(x) },
-  { formula: '2 * x * recip(1 + x * x)', reference: ({ x }) => T.log(T.add(c(x, 1), T.mul(x, x))) },
+  { formula: 'sub(1, tanh(x) * tanh(x))', component: 'dtanh', reference: ({ x }) => tanh(x) },
+  { formula: 'div(2 * x, 1 + x * x)', reference: ({ x }) => T.log(T.add(c(x, 1), T.mul(x, x))) },
   {
     formula: 'b + exp(a)',
     inputs: ['a', 'b'],

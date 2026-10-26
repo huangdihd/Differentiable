@@ -45,7 +45,18 @@ export function formulaGraph(
         'sqrt',
         'dsigmoid',
         'dtanh',
-      ].map((name) => [name, { component: name, inputs: ['x'] }]),
+      ]
+        .map((name): [string, { component: string; inputs: string[] }] => [
+          name,
+          { component: name, inputs: ['x'] },
+        ])
+        .concat(
+          // Player-built binary components: sub(a, b) = a − b, div(a, b) = a ÷ b.
+          ['sub', 'div'].map((name): [string, { component: string; inputs: string[] }] => [
+            name,
+            { component: name, inputs: ['a', 'b'] },
+          ]),
+        ),
     ),
   });
   // Share repeated subexpressions (sigmoid(x) used twice is one node), so par is what a player

@@ -82,6 +82,24 @@ const defaults: Record<BinaryOperator, Lowering> = {
   '/': { component: 'mul', inputs: { a: 0, b: { component: 'recip', inputs: { x: 1 } } } },
 };
 const defaultNeg: Lowering = { component: 'neg', inputs: { x: 0 } };
+
+/** Direct a - b / a / b lowerings onto the player's own sub/div components. */
+export const subtractComponent: Lowering = { component: 'sub', inputs: { a: 0, b: 1 } };
+export const divideComponent: Lowering = { component: 'div', inputs: { a: 0, b: 1 } };
+
+/**
+ * Operator overrides for the editor's expression box: once the player has built (and may use)
+ * sub/div, `a - b` and `a / b` insert that single component instead of add+neg / mul+recip.
+ */
+export function componentOperators(
+  available: Iterable<string>,
+): NonNullable<ExpressionOptions['operators']> {
+  const names = new Set(available);
+  return {
+    ...(names.has('sub') ? { '-': subtractComponent } : {}),
+    ...(names.has('div') ? { '/': divideComponent } : {}),
+  };
+}
 interface Token {
   text: string;
   position: number;
@@ -299,7 +317,8 @@ export function parseExpression(source: string, options: ExpressionOptions = {})
       const literal = graph.nodes.find((n) => n.id === left.node);
       if (
         operator === '/' &&
-        override === undefined &&
+        (override === undefined || override === divideComponent) &&
+        (!available || available.has('recip')) &&
         literal &&
         literal.component === (options.constant?.component ?? 'const') &&
         literal.attrs?.value === 1 &&

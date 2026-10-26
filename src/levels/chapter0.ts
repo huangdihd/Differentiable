@@ -46,7 +46,7 @@ const definitions: {
   { name: 'sigmoid', formula: 'recip(1 + exp(neg(x)))', reference: ({ x }) => sigmoid(x) },
   {
     name: 'tanh',
-    formula: '(exp(2 * x) + (-1)) * recip(exp(2 * x) + 1)',
+    formula: 'div(sub(exp(2 * x), 1), exp(2 * x) + 1)',
     reference: ({ x }) =>
       T.add(T.mul(constant(x, 2), sigmoid(T.mul(constant(x, 2), x))), constant(x, -1)),
   },

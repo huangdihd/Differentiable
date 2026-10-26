@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ExpressionError, parseExpression } from './expression';
+import { componentOperators, ExpressionError, parseExpression } from './expression';
 import type { ExpressionGraph, ExpressionOptions } from './expression';
 
 function error(source: string, options?: ExpressionOptions): ExpressionError {
@@ -25,6 +25,42 @@ describe('parseExpression', () => {
         (node) => node.component,
       ),
     ).toEqual(['const', 'recip', 'mul']);
+  });
+
+  it('uses the player-built sub/div components for a - b and a / b once available', () => {
+    const variables = { a: { node: 'a', port: 'out' }, b: { node: 'b', port: 'out' } };
+    const available = ['const', 'add', 'mul', 'recip', 'neg', 'sub', 'div'];
+    const options = {
+      variables,
+      availableComponents: available,
+      operators: componentOperators(available),
+    };
+    const sub = parseExpression('a - b', options);
+    expect(sub.nodes.map((node) => node.component)).toEqual(['sub']);
+    expect(input(sub, sub.output.node, 'a')).toEqual(variables.a);
+    expect(input(sub, sub.output.node, 'b')).toEqual(variables.b);
+    const div = parseExpression('a / b', options);
+    expect(div.nodes.map((node) => node.component)).toEqual(['div']);
+    expect(input(div, div.output.node, 'a')).toEqual(variables.a);
+    expect(input(div, div.output.node, 'b')).toEqual(variables.b);
+    // 1 / x stays a lone recip; unary minus stays neg.
+    expect(parseExpression('1 / b', options).nodes.map((node) => node.component)).toEqual([
+      'recip',
+    ]);
+    expect(parseExpression('-a - b', options).nodes.map((node) => node.component)).toEqual([
+      'neg',
+      'sub',
+    ]);
+    // Without sub/div (e.g. on the lesson that builds them) the old lowering remains.
+    const basic = ['const', 'add', 'mul', 'recip', 'neg'];
+    expect(
+      parseExpression('a - b', {
+        variables,
+        availableComponents: basic,
+        operators: componentOperators(basic),
+      }).nodes.map((node) => node.component),
+    ).toEqual(['neg', 'add']);
+    expect(componentOperators(basic)).toEqual({});
   });
 
   it('emits scalar constants with exponent and decimal syntax', () => {

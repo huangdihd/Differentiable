@@ -171,6 +171,7 @@ export interface LevelResult {
   errorKey?: string;
   error?: { key: string; node?: string; port?: string; params: Record<string, unknown> };
 }
+const ATOMIC_COMPONENTS = new Set(['sub', 'div']);
 export function graphMetrics(
   graph: GraphJSON,
   registry: ComponentRegistry = createDefaultRegistry(),
@@ -185,6 +186,12 @@ export function graphMetrics(
           parameterCount += ((node.attrs?.shape ?? []) as number[]).reduce((a, b) => a * b, 1);
         if (['input', 'output', 'param', 'const'].includes(node.component)) continue;
         const definition = registry.get(node.component);
+        // Subtraction and division are single arithmetic operations, like add/mul: once built,
+        // a sub/div node counts as one basic operation instead of its add+neg / mul+recip body.
+        if (definition?.subgraph && ATOMIC_COMPONENTS.has(node.component)) {
+          expandedPrimitives++;
+          continue;
+        }
         if (definition?.subgraph) {
           if (stack.includes(node.component)) throw new Error('levels.recursive_component');
           const attrs = resolveComponentAttributes(definition.attributes, node.attrs ?? {});

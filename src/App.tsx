@@ -12,7 +12,7 @@ import {
   type LevelResult,
   type Progress,
 } from './engine/levels';
-import { parseExpression } from './engine/expression';
+import { componentOperators, parseExpression } from './engine/expression';
 import { levelTracker } from './analytics';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
 import { CHAPTERS, catalog, entryFor, gameLevels } from './levels/catalog';
@@ -1433,6 +1433,8 @@ function Editor({
       const fragment = parseExpression(expression, {
         variables,
         functions,
+        // a - b / a / b become one sub / div node once the player has built them.
+        operators: componentOperators(available),
         availableComponents: available,
       });
       const y = Math.max(...state.graph.nodes.map((n) => position(n).y), 0) + 160;
@@ -2580,7 +2582,6 @@ function WinModal({
     </div>
   );
 }
-
 
 function BackendFallbackDialog({
   t,

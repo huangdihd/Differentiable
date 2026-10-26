@@ -59,7 +59,7 @@ describe('gradient descent curriculum', () => {
       ['loss-intro', '3-1', '3-2', '3-3', '3-4'].map(
         (id) => chapter3Levels.find((l) => l.id === id)!.par,
       ),
-    ).toEqual([3, 3, 1, 7, 9]);
+    ).toEqual([2, 3, 1, 6, 8]);
     for (const level of chapter3Levels) {
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);

@@ -186,9 +186,9 @@ describe('tensor curriculum', () => {
       chapter2LevelById('2-4').referenceGraph!.nodes.find((node) => node.id === 'right')!.attrs,
     ).toEqual({ axis: 0 });
     expect(preceding.map((level) => level.par)).toEqual([
-      1, 2, 1, 2, 4, 6, 1, 3, 1, 3, 3, 1, 7, 9, 5, 2, 4, 2, 2,
+      1, 2, 1, 2, 4, 5, 1, 3, 1, 3, 3, 1, 6, 7, 4, 2, 4, 2, 2,
     ]);
-    expect(chapter2Levels.map((level) => level.par)).toEqual([1, 2, 2, 4, 3, 4, 5, 7, 17]);
+    expect(chapter2Levels.map((level) => level.par)).toEqual([1, 2, 2, 3, 3, 4, 5, 5, 13]);
   });
 
   for (const [name, id, mistake] of [
