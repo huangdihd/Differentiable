@@ -1,4 +1,6 @@
 import { debugCheck, trainingDebugEnabled } from './training-debug';
+/** devDebug samples one optimizer step in this many (each check reads tensors back). */
+const DEBUG_EVERY = 10;
 import * as T from './tensor';
 import type { Tensor } from './tensor';
 import { GraphError } from './graph';
@@ -37,7 +39,7 @@ export interface OptimizerOptions {
   beta1?: number;
   beta2?: number;
   epsilon?: number;
-  /** Optional global gradient-norm clip, applied before the update (reads one scalar per step). */
+  /** Optional global gradient-norm clip, computed and applied on the parameter backend (no readback). */
   clipNorm?: number;
 }
 /** Serializable, bounded node snapshot; size records the full element count. */
@@ -85,6 +87,7 @@ function disposeLoss(loss: Tensor, outputs: Tensor[], keep: Tensor[]): void {
 export class Optimizer {
   step = 0;
   private moments = new Map<string, { m: Tensor; v: Tensor }>();
+  private releaseClip?: () => void;
   constructor(readonly options: OptimizerOptions) {
     if (!(options.learningRate > 0 && Number.isFinite(options.learningRate)))
       throw new TrainingError('training.learning_rate', undefined, {
@@ -120,31 +123,35 @@ export class Optimizer {
     }
     const clipped: Tensor[] = [];
     const { clipNorm } = this.options;
-    if (clipNorm !== undefined && clipNorm > 0) {
-      let total = 0;
-      for (const g of gradients) {
-        const sq = T.sum(
-          T.mul(g, g),
-          g.shape.map((_, i) => i),
-        );
-        const [value] = await sq.read();
-        disposeExecution([sq], [g]);
-        total += value;
-      }
-      const norm = Math.sqrt(total);
-      await debugCheck(this.step + 1, 'gradient-norm', 'global', norm, { clipNorm });
-      if (Number.isFinite(norm) && norm > clipNorm) {
-        const scale = clipNorm / norm;
-        gradients = gradients.map((g) => {
-          const factor = T.tensor([scale], [], g.backend);
-          const out = T.mul(g, factor);
-          clipped.push(out, factor);
-          return out;
-        });
-      }
+    if (clipNorm !== undefined && clipNorm > 0 && gradients.length) {
+      // Global-norm clip, fully on the parameter backend (no per-step readback):
+      // scale = 1 / max(1, ||g|| / clip), with ||g|| = exp(0.5 * log(sum g^2)).
+      const backend = gradients[0].backend;
+      const temps: Tensor[] = [];
+      const t = <X extends Tensor>(x: X): X => (temps.push(x), x);
+      const half = t(T.tensor([0.5], [], backend)),
+        one = t(T.tensor([1], [], backend)),
+        inverse = t(T.tensor([1 / clipNorm], [], backend));
+      const sums = gradients.map((g) =>
+        t(
+          T.sum(
+            t(T.mul(g, g)),
+            g.shape.map((_, i) => i),
+          ),
+        ),
+      );
+      const total = sums.slice(1).reduce((acc, x) => t(T.add(acc, x)), sums[0]);
+      const norm = t(T.exp(t(T.mul(half, t(T.log(total))))));
+      const scale = t(T.recip(t(T.max(one, t(T.mul(norm, inverse))))));
+      if (trainingDebugEnabled() && this.step % DEBUG_EVERY === 0)
+        await debugCheck(this.step + 1, 'gradient-norm', 'global', norm, { clipNorm });
+      const scaled = gradients.map((g) => t(T.mul(g, scale)));
+      clipped.push(...scaled);
+      this.releaseClip = () => temps.forEach((x) => x.dispose());
+      gradients = scaled;
     }
     this.step++;
-    if (trainingDebugEnabled()) {
+    if (trainingDebugEnabled() && this.step % DEBUG_EVERY === 0) {
       let i = 0;
       for (const [key, parameter] of parameters) {
         if (await debugCheck(this.step, 'parameter-before', key, parameter)) break;
@@ -215,9 +222,13 @@ export class Optimizer {
       }
     } finally {
       corrections.forEach((t) => t.dispose());
-      clipped.forEach((t) => t.dispose());
+      if (this.releaseClip) {
+        this.releaseClip();
+        this.releaseClip = undefined;
+      }
+      void clipped;
     }
-    if (trainingDebugEnabled()) {
+    if (trainingDebugEnabled() && this.step % DEBUG_EVERY === 0) {
       for (const [key, parameter] of parameters) {
         if (
           await debugCheck(this.step, 'parameter-after', key, parameter, {
