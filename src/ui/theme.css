@@ -3773,3 +3773,103 @@ input[type='range'] {
 .benchmark-table tr > td.is-best {
   color: var(--good);
 }
+
+/* ---------- narrow screens (phones, 320-560px) ---------- */
+@media (max-width: 560px) {
+  .canvas-toolbar {
+    flex-wrap: wrap;
+    right: var(--s3);
+  }
+  .topbar {
+    gap: var(--s2);
+    padding: 0 var(--s2);
+    min-width: 0;
+  }
+  .topbar > * {
+    flex-shrink: 0;
+  }
+  .topbar .brand {
+    font-size: 0;
+  }
+  .topbar .brand-mark {
+    font-size: 15px;
+  }
+  .topbar .demo-tag,
+  .topbar .crumb + .spacer + .tag,
+  .topbar .music-volume {
+    display: none;
+  }
+  .topbar .crumb {
+    flex: 1 1 auto;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar .spacer {
+    display: none;
+  }
+  .topbar .lang-select {
+    width: 76px;
+    min-width: 0;
+    max-width: 76px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .panel {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .level-desc,
+  .markdown-copy {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* side panels are narrow even on desktop: show benchmark rows as cards */
+.benchmark-evidence {
+  container-type: inline-size;
+}
+@container (max-width: 440px) {
+  .benchmark-table,
+  .benchmark-table thead,
+  .benchmark-table tbody,
+  .benchmark-table tr,
+  .benchmark-table th,
+  .benchmark-table td {
+    display: block;
+  }
+  .benchmark-table thead {
+    display: none;
+  }
+  .benchmark-table tr {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-bottom: 1px solid var(--line);
+    padding: 6px 0;
+  }
+  .benchmark-table tr > th[scope='row'] {
+    grid-column: 1 / -1;
+    border: 0;
+    padding: 0 4px 4px;
+    color: var(--text);
+  }
+  .benchmark-table tr > th[scope='row'] small {
+    display: inline;
+    margin-left: 6px;
+  }
+  .benchmark-table tr > td,
+  .benchmark-table tr > td:last-child,
+  .benchmark-table tr > td:first-child {
+    width: auto;
+    border: 0;
+    padding: 2px 4px;
+    text-align: left;
+  }
+  .benchmark-table tr > td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--faint);
+    font-size: 10px;
+  }
+}

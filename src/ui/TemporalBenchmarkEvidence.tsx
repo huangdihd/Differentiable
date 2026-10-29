@@ -17,10 +17,20 @@ const focusByLevel: Readonly<Record<string, BenchmarkModel>> = {
   'time-forecast': 'rnn-attention',
 };
 
-function formatMse(locale: Locale, value: number): string {
+/** Levels that come before attention is taught must not show attention evidence. */
+const attentionLevels: ReadonlySet<string> = new Set(['time-attention', 'time-forecast']);
+
+/** MSE spans several orders of magnitude, so use one scientific style: 7.83e-2, 1.39e-4. */
+export function formatMse(value: number): string {
+  if (value === 0) return '0';
+  const [mantissa, exponent] = value.toExponential(2).split('e');
+  return `${mantissa}e${Number(exponent)}`;
+}
+
+function formatWeight(locale: Locale, value: number): string {
   return new Intl.NumberFormat(locale, {
-    maximumSignificantDigits: 3,
-    minimumSignificantDigits: 2,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
   }).format(value);
 }
 
@@ -38,10 +48,11 @@ export function TemporalBenchmarkEvidence({
   if (!focus) return null;
   const showAttentionProbe = levelId === 'time-attention';
 
-  const focusResult = benchmarkArtifact.results.find((result) => result.model === focus);
-  const best = Math.min(
-    ...benchmarkArtifact.results.flatMap((result) => result.delays.map((d) => d.meanMse)),
+  const results = benchmarkArtifact.results.filter(
+    (result) => attentionLevels.has(levelId) || result.model !== 'rnn-attention',
   );
+  const focusResult = results.find((result) => result.model === focus);
+  const best = Math.min(...results.flatMap((result) => result.delays.map((d) => d.meanMse)));
 
   return (
     <section className="benchmark-evidence" aria-label={t('benchmark.title')}>
@@ -61,7 +72,7 @@ export function TemporalBenchmarkEvidence({
           </tr>
         </thead>
         <tbody>
-          {benchmarkArtifact.results.map((result) => (
+          {results.map((result) => (
             <tr className={result.model === focus ? 'is-focus' : ''} key={result.model}>
               <th scope="row">
                 {t(`benchmark.model.${result.model}`)}
@@ -75,8 +86,9 @@ export function TemporalBenchmarkEvidence({
                 <td
                   key={measurement.delay}
                   className={measurement.meanMse === best ? 'is-best' : undefined}
+                  data-label={t('benchmark.delay', { delay: measurement.delay })}
                 >
-                  {formatMse(locale, measurement.meanMse)}
+                  {formatMse(measurement.meanMse)}
                 </td>
               ))}
             </tr>
@@ -97,14 +109,14 @@ export function TemporalBenchmarkEvidence({
                 <span className="attention-weight-track" aria-hidden="true">
                   <span style={{ width: `${weight * 100}%` }} />
                 </span>
-                <strong>{formatMse(locale, weight)}</strong>
+                <strong>{formatWeight(locale, weight)}</strong>
               </div>
             ))}
           </div>
           <p className="benchmark-note">
             {t('benchmark.attentionProbeNote', {
               position: 2,
-              weight: formatMse(locale, benchmarkArtifact.attentionProbe.weights[1]),
+              weight: formatWeight(locale, benchmarkArtifact.attentionProbe.weights[1]),
             })}
           </p>
         </div>

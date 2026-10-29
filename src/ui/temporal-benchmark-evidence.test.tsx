@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { TemporalBenchmarkEvidence } from './TemporalBenchmarkEvidence';
+import { TemporalBenchmarkEvidence, formatMse } from './TemporalBenchmarkEvidence';
 
 const t = (key: string, params?: Readonly<Record<string, string | number>>) =>
   `${key}${params ? ` ${JSON.stringify(params)}` : ''}`;
@@ -35,5 +35,31 @@ describe('temporal benchmark evidence', () => {
     expect(attention).toContain('class="attention-probe"');
     expect(attention.match(/class="attention-weight( is-match)?"/g)).toHaveLength(4);
     expect(forecast).not.toContain('class="attention-probe"');
+  });
+
+  it('hides attention evidence before attention is taught', () => {
+    for (const levelId of [
+      'time-window-limit',
+      'time-rnn',
+      'time-rnn-window',
+      'time-rnn-delay',
+      'time-recall-bottleneck',
+    ]) {
+      const html = renderToStaticMarkup(
+        <TemporalBenchmarkEvidence levelId={levelId} locale="en" t={t} />,
+      );
+      expect(html).not.toContain('rnn-attention');
+      expect(html).not.toContain('attention-probe');
+      expect(html.match(/<tr/g)).toHaveLength(3);
+    }
+  });
+
+  it('formats MSE with one scientific style and labels each cell', () => {
+    expect(formatMse(0.0782880187)).toBe('7.83e-2');
+    expect(formatMse(0.00013941309)).toBe('1.39e-4');
+    const html = renderToStaticMarkup(
+      <TemporalBenchmarkEvidence levelId="time-rnn" locale="en" t={t} />,
+    );
+    expect(html).toContain('data-label="benchmark.delay {&quot;delay&quot;:2}"');
   });
 });

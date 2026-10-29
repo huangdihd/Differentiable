@@ -1081,7 +1081,7 @@
   "levels.time-player-comparison.metricSamples": "目标位置",
   "levels.time-player-comparison.metricOptimizer": "优化器",
   "benchmark.lede": "误差越低越好。高亮行是本关的 {model}。",
-  "benchmark.reading": "数字为均方误差（MSE），绿色为全表最低。",
+  "benchmark.reading": "数字为均方误差（MSE），绿色为全表最低。1.39e-4 即 0.000139。",
   "benchmark.parameterCount": "{n} 个参数",
   "benchmark.methodTitle": "实验方法"
 }

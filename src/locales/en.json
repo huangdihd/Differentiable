@@ -1084,7 +1084,7 @@
   "levels.time-player-comparison.metricSamples": "Targets",
   "levels.time-player-comparison.metricOptimizer": "Optimizer",
   "benchmark.lede": "Lower error is better. The highlighted row is this level's {model}.",
-  "benchmark.reading": "Values are mean squared error (MSE); green is the lowest in the table.",
+  "benchmark.reading": "Values are mean squared error (MSE); green is the lowest in the table. 1.39e-4 means 0.000139.",
   "benchmark.parameterCount": "{n} parameters",
   "benchmark.methodTitle": "Method"
 }

@@ -181,7 +181,14 @@
   .workspace {
     grid-template-columns: 1fr;
     grid-template-rows: auto 70vh auto;
-    overflow: auto;
+    grid-auto-rows: auto;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .workspace > .panel {
+    min-height: auto;
+    overflow: visible;
   }
   .road {
     grid-template-columns: repeat(4, minmax(0, 1fr));
