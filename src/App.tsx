@@ -166,12 +166,12 @@ export default function App() {
         if (!active || !progress) return undefined;
         setSave((s) => ({ ...s, progress }));
         storageReady.current = true;
+        setLoaded(true);
         return c.init();
       })
       .then((r) => {
         if (!active || !r) return;
         setBackend(r.backend);
-        setLoaded(true);
         const fellBack = !!r.fallback;
         setFallback(fellBack);
         if (fellBack && !isBackendFallbackDialogDismissed()) setFallbackDialog(true);
@@ -292,7 +292,11 @@ export default function App() {
       {!loaded ? (
         <main className="home blueprint-bg">
           <div className="home-inner" role="status">
-            {t(failure ? 'storage.progress_load_failed' : 'storage.progress_loading')}
+            {t(
+              failure?.key === 'storage.progress_load_failed'
+                ? 'storage.progress_load_failed'
+                : 'storage.progress_loading',
+            )}
           </div>
         </main>
       ) : showPlayerComparison &&
