@@ -2,7 +2,7 @@ import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import { createDefaultRegistry, type GraphJSON } from '../engine/graph';
 import * as T from '../engine/tensor';
 import { gameLevels } from '../levels/catalog';
-import { initialProgress, type ForwardLevel } from '../engine/levels';
+import { initialProgress, type ForwardLevel, type ObservationLevel } from '../engine/levels';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createExampleRegistry,
@@ -51,7 +51,9 @@ describe('worker runtime protocol', () => {
     const runtime = new WorkerRuntime((message) => messages.push(message));
     runtimes.push(runtime);
     await runtime.handle({ type: 'init', backend: 'cpu', requestId: 1, revision: 0 });
-    const level = gameLevels.find((item) => item.referenceGraph)!;
+    const level = gameLevels
+      .filter((level) => level.kind !== 'observation')
+      .find((item) => item.referenceGraph)!;
     expect(level).toBeDefined();
     await runtime.handle({
       type: 'compile',
@@ -61,6 +63,37 @@ describe('worker runtime protocol', () => {
       revision: 0,
     });
     expect(messages.at(-1)).toMatchObject({ type: 'reply', data: { diagnostics: [] } });
+  });
+  it('rejects graph requests for observation-only lessons', async () => {
+    const level: ObservationLevel = {
+      kind: 'observation',
+      id: 'observation',
+      titleKey: 'observation.title',
+      descriptionKey: 'observation.description',
+      unlock: [],
+    };
+    const h = harness([level]);
+    await h.send({ type: 'init', backend: 'cpu' });
+    const graphRequest = { levelId: level.id, graph: sigmoidSolution };
+    const commands: Command[] = [
+      { type: 'compile', ...graphRequest },
+      { type: 'evaluate', ...graphRequest },
+      { type: 'backward', ...graphRequest },
+      { type: 'start', ...graphRequest },
+      { type: 'trainStep', ...graphRequest },
+      { type: 'generate', ...graphRequest, prompt: '', length: 1 },
+      {
+        type: 'probe',
+        ...graphRequest,
+        endpoint: { node: 'neg', port: 'out' },
+        inputs: { x: [-4, -1, 0, 1, 4] },
+      },
+    ];
+    for (const command of commands)
+      expect(await h.send(command), command.type).toMatchObject({
+        type: 'error',
+        error: { key: 'worker.invalid_request', params: {} },
+      });
   });
   it('requires init and falls back to CPU in Node', async () => {
     const h = harness();

@@ -7,6 +7,8 @@ import {
 } from './engine/graph';
 import {
   applyResult,
+  acknowledgeObservation,
+  type CircuitLevel,
   levelOutputShapes,
   type Level,
   type LevelResult,
@@ -53,6 +55,8 @@ import { caseInputs, fullValues } from './ui/tensor-values';
 import { diagnosticNode, graphDiagnostic } from './ui/diagnostic';
 import { formatValue } from './ui/format-value';
 import TensorGrid from './ui/TensorGrid';
+import { FixedWindowLimitLesson } from './ui/FixedWindowLimitLesson';
+import { PlayerRnnComparison } from './ui/PlayerRnnComparison';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
 import {
@@ -80,7 +84,7 @@ import TensorTransformView, { tensorTransformKind } from './ui/TensorTransformVi
 import { Coach } from './ui/Coach';
 import {
   STORAGE_VERSION,
-  loadProgress,
+  createInitialProgress,
   isAutodiffUnlocked,
   isExpressionUnlocked,
   loadProgressWithMigration,
@@ -97,6 +101,7 @@ import { MusicToggle } from './ui/MusicToggle';
 import { SfxToggle } from './ui/SfxToggle';
 import { sfx, type SfxName } from './audio/sfx';
 import { MathText } from './ui/MathText';
+import { TemporalBenchmarkEvidence } from './ui/TemporalBenchmarkEvidence';
 import { levelPapers } from './levels/papers';
 import { levelLearningResources } from './levels/learning-resources';
 import { testCaseLocation } from './ui/test-case-location';
@@ -112,21 +117,29 @@ type T = ReturnType<typeof createTranslator>;
 
 export default function App() {
   const [save, setSave] = useState(() => ({
-    progress: loadProgress(),
+    progress: createInitialProgress(),
     settings: { language: loadLanguage() },
   }));
+  const storageReady = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const saver = useMemo(
     () =>
-      createThrottledSave(
-        (value: { progress: Progress; settings: { language: Locale } }) =>
-          saveSave({ version: STORAGE_VERSION, ...value }),
-        400,
-      ),
+      createThrottledSave((value: { progress: Progress; settings: { language: Locale } }) => {
+        if (!storageReady.current) return false;
+        const saved = saveSave({ version: STORAGE_VERSION, ...value });
+        setSaveFailed(!saved);
+        return saved;
+      }, 400),
     [],
   );
   const [loaded, setLoaded] = useState(false);
   const [level, setLevel] = useState<Level>();
-  const [backend, setBackend] = useState('pending');
+  const [showPlayerComparison, setShowPlayerComparison] = useState(false);
+  const openLevel = (next?: Level) => {
+    setShowPlayerComparison(false);
+    setLevel(next);
+  };
+  const [backend, setBackend] = useState<'pending' | 'cpu' | 'webgpu'>('pending');
   const [failure, setFailure] = useState<WorkerError>();
   const [fallback, setFallback] = useState(false);
   const [fallbackDialog, setFallbackDialog] = useState(false);
@@ -138,16 +151,27 @@ export default function App() {
     const c = new WorkerClient();
     client.current = c;
     let active = true;
-    loadProgressWithMigration(gameLevels, undefined, setRevoked)
+    storageReady.current = false;
+    setLoaded(false);
+    saver.cancel();
+    loadProgressWithMigration(gameLevels, undefined, setRevoked, () => active)
+      .catch(() => {
+        if (active) {
+          saver.cancel();
+          setFailure({ key: 'storage.progress_load_failed', params: {} });
+        }
+        return undefined;
+      })
       .then(async (progress) => {
-        if (!active) return undefined;
+        if (!active || !progress) return undefined;
         setSave((s) => ({ ...s, progress }));
-        setLoaded(true);
+        storageReady.current = true;
         return c.init();
       })
       .then((r) => {
         if (!active || !r) return;
         setBackend(r.backend);
+        setLoaded(true);
         const fellBack = !!r.fallback;
         setFallback(fellBack);
         if (fellBack && !isBackendFallbackDialogDismissed()) setFallbackDialog(true);
@@ -155,9 +179,12 @@ export default function App() {
       .catch((e) => setFailure(e.detail ?? { key: 'worker.transport_error', params: {} }));
     return () => {
       active = false;
+      saver.flush();
+      storageReady.current = false;
+      saver.cancel();
       c.dispose();
     };
-  }, []);
+  }, [saver]);
   useEffect(() => {
     document.documentElement.lang = save.settings.language;
     document.title = level ? `${t(level.titleKey)} · ${t('app.title')}` : t('app.title');
@@ -165,9 +192,16 @@ export default function App() {
   }, [save, saver, level, loaded]);
   useEffect(() => {
     const flush = () => saver.flush();
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (saver.flush()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', beforeUnload);
     window.addEventListener('pagehide', flush);
     return () => {
       flush();
+      window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('pagehide', flush);
     };
   }, [saver]);
@@ -189,7 +223,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => setLevel(undefined)}>
+        <button className="brand" onClick={() => openLevel()}>
           <span className="brand-mark">∂</span>
           {t('app.title')}
         </button>
@@ -232,10 +266,18 @@ export default function App() {
           ))}
         </select>
       </header>
-      {failure && (
-        <p className="status status-fail banner">
-          {translateDiagnostic(save.settings.language, failure)}
-        </p>
+      {(failure || saveFailed) && (
+        <div className="status status-fail banner" role="alert">
+          {failure && <p>{translateDiagnostic(save.settings.language, failure)}</p>}
+          {saveFailed && (
+            <p>
+              {t('storage.progress_save_failed')}{' '}
+              <button type="button" className="btn" onClick={() => saver.flush()}>
+                {t('storage.retry_save')}
+              </button>
+            </p>
+          )}
+        </div>
       )}
       {fallbackDialog && (
         <BackendFallbackDialog
@@ -247,14 +289,54 @@ export default function App() {
           }}
         />
       )}
-      {level ? (
+      {!loaded ? (
+        <main className="home blueprint-bg">
+          <div className="home-inner" role="status">
+            {t(failure ? 'storage.progress_load_failed' : 'storage.progress_loading')}
+          </div>
+        </main>
+      ) : showPlayerComparison &&
+        level?.id === 'time-rnn' &&
+        (backend === 'cpu' || backend === 'webgpu') ? (
+        <PlayerRnnComparison
+          locale={save.settings.language}
+          code={entry!.code}
+          t={t}
+          progress={save.progress}
+          backend={backend}
+          onBack={() => setShowPlayerComparison(false)}
+          onContinue={() => openLevel(nextOf(level))}
+        />
+      ) : level?.kind === 'observation' ? (
+        <FixedWindowLimitLesson
+          code={entry!.code}
+          t={t}
+          backend={backend === 'cpu' || backend === 'webgpu' ? backend : undefined}
+          onContinue={() => {
+            sfx.play('pass');
+            setSave((current) => ({
+              ...current,
+              progress: acknowledgeObservation(current.progress, level),
+            }));
+            const next = nextOf(level);
+            if (next) openLevel(next);
+          }}
+        />
+      ) : level ? (
         <Editor
           key={level.id}
           level={level}
           progress={save.progress}
           onProgress={progress}
-          onExit={() => setLevel(undefined)}
-          onNext={nextOf(level) ? () => setLevel(nextOf(level)) : undefined}
+          onExit={() => openLevel()}
+          onNext={
+            nextOf(level)
+              ? () => {
+                  if (level.id === 'time-rnn') setShowPlayerComparison(true);
+                  else openLevel(nextOf(level));
+                }
+              : undefined
+          }
           locale={save.settings.language}
           backend={backend}
           client={client}
@@ -265,7 +347,7 @@ export default function App() {
           t={t}
           progress={save.progress}
           ready={backend !== 'pending'}
-          onOpen={setLevel}
+          onOpen={openLevel}
           revoked={revoked}
           onDismissRevoked={() => setRevoked([])}
         />
@@ -456,7 +538,7 @@ const nextOf = (level: Level) =>
   level.unlock.map((id) => gameLevels.find((l) => l.id === id)).find(Boolean);
 
 type EditorProps = {
-  level: Level;
+  level: CircuitLevel;
   progress: Progress;
   onProgress: (p: Progress) => void;
   onExit: () => void;
@@ -1154,7 +1236,7 @@ function Editor({
   const openGradientView = async (
     graph: GraphJSON,
     intro?: string,
-    reveal?: NonNullable<Level['revealGraph']>,
+    reveal?: NonNullable<CircuitLevel['revealGraph']>,
   ) => {
     const c = client.current;
     if (!c) return;
@@ -1539,6 +1621,7 @@ function Editor({
           <div className="level-desc">
             <MathText text={t(level.descriptionKey)} />
           </div>
+          <TemporalBenchmarkEvidence levelId={level.id} locale={locale} t={t} />
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
           {lossLandscape && (
             <LossLandscapePlot
@@ -1596,13 +1679,12 @@ function Editor({
             />
           )}
           {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
-            <p className="hint hint-open" key={key}>
+            <div className="hint hint-open" key={key}>
               <span className="hint-n">{i + 1}</span>
-              {/* One flex item: the text's own spans and formulas must flow as a paragraph. */}
-              <span className="hint-text">
+              <div className="hint-text">
                 <MathText text={t(key)} />
-              </span>
-            </p>
+              </div>
+            </div>
           ))}
           {hintsShown < (level.hintsKeys?.length ?? 0) && (
             <button className="hint-toggle" onClick={() => setHintsShown((n) => n + 1)}>
@@ -2090,9 +2172,9 @@ function Editor({
               );
             })}
             {level.outputNoteKey && (
-              <p className="probe-note">
+              <div className="probe-note">
                 <MathText text={t(level.outputNoteKey)} />
-              </p>
+              </div>
             )}
             <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
           </section>
@@ -2404,6 +2486,7 @@ function Editor({
           onClose={() => setModal(false)}
           onExit={onExit}
           onNext={onNext}
+          nextLabel={level.id === 'time-rnn' ? t('levels.time-player-comparison.start') : undefined}
           onReveal={
             level.revealGraph
               ? () => {
@@ -2456,6 +2539,7 @@ function WinModal({
   onClose,
   onExit,
   onNext,
+  nextLabel,
   onReveal,
 }: {
   t: T;
@@ -2473,6 +2557,7 @@ function WinModal({
   onClose: () => void;
   onExit: () => void;
   onNext?: () => void;
+  nextLabel?: string;
   onReveal?: () => void;
 }) {
   const rows = ['topNodes', 'expandedPrimitives', 'parameterCount'] as const;
@@ -2574,7 +2659,7 @@ function WinModal({
           </button>
           {onNext && (
             <button className="btn btn-primary" onClick={onNext} autoFocus>
-              {t('ui.nextLevel')} →
+              {nextLabel ?? t('ui.nextLevel')} →
             </button>
           )}
         </div>

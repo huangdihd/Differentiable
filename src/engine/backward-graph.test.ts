@@ -3,6 +3,7 @@ import { buildBackwardGraph, traceBackward } from './backward-graph';
 import { compileGraph, createDefaultRegistry, type ShapePorts, type GraphJSON } from './graph';
 import { CpuBackend } from './cpu';
 import { Random } from './random';
+import type { ForwardLevel } from './levels';
 import * as T from './tensor';
 import { gameLevels } from '../levels/catalog';
 import { referenceRegistry } from '../levels/level-helpers';
@@ -10,7 +11,9 @@ import { referenceRegistry } from '../levels/level-helpers';
 // Nested attention/GPT graphs can exceed Vitest's 5s default under full-suite contention.
 vi.setConfig({ testTimeout: 30_000 });
 
-const registry = referenceRegistry(gameLevels.filter((l) => l.kind !== 'train'));
+const registry = referenceRegistry(
+  gameLevels.filter((l): l is ForwardLevel => l.kind === 'forward' || l.kind === 'derivative'),
+);
 const square: GraphJSON = {
   version: 1,
   nodes: [
@@ -61,9 +64,9 @@ describe('backward graph', () => {
       'engine.data.length',
     );
   });
-  for (const level of gameLevels.filter(
-    (l) => /^[012]-/.test(l.id) || ['4-2', '4-5', '5-5', '6-4'].includes(l.id),
-  )) {
+  for (const level of gameLevels
+    .filter((level) => level.kind !== 'observation')
+    .filter((l) => /^[012]-/.test(l.id) || ['4-2', '4-5', '5-5', '6-4'].includes(l.id))) {
     it(`matches eager backward for all fixed/generated/variant cases: ${level.id}`, async () => {
       const backend = new CpuBackend();
       const groups =

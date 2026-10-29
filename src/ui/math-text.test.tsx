@@ -1,22 +1,40 @@
-import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MathText } from './MathText';
-import zh from '../locales/zh-CN.json';
+import { describe, expect, it } from 'vitest';
 import en from '../locales/en.json';
+import zh from '../locales/zh-CN.json';
+import { MathText } from './MathText';
 
 const html = (text: string) => renderToStaticMarkup(<MathText text={text} />);
 
 const mathCopyKey = /^levels\.[^.]+\.(description|hint\d+)$/;
 
 function validateMathCopy(text: string) {
+  let inDisplayMath = false;
+  let displayMathLines = 0;
+
   for (const line of text.split('\n')) {
-    if (line.includes('$$')) {
-      expect(line).toMatch(/^\$\$[^$\n]+\$\$$/);
-    } else {
-      // Removing complete inline pairs must leave no unmatched delimiters.
-      expect(line.replace(/\$[^$\n]+\$/g, '')).not.toContain('$');
+    if (line === '$$') {
+      if (inDisplayMath) {
+        expect(displayMathLines).toBeGreaterThan(0);
+      } else {
+        displayMathLines = 0;
+      }
+      inDisplayMath = !inDisplayMath;
+      continue;
     }
+
+    if (inDisplayMath) {
+      expect(line).not.toContain('$');
+      if (line.trim()) displayMathLines += 1;
+      continue;
+    }
+
+    expect(line).not.toContain('$$');
+    // Removing complete inline pairs must leave no unmatched delimiters.
+    expect(line.replace(/\$[^$\n]+\$/g, '')).not.toContain('$');
   }
+
+  expect(inDisplayMath).toBe(false);
 }
 
 describe('locale math markup', () => {
@@ -26,6 +44,11 @@ describe('locale math markup', () => {
         if (mathCopyKey.test(key)) {
           expect(typeof value).toBe('string');
           validateMathCopy(value as string);
+          const output = html(value as string);
+          expect(output).not.toContain('katex-error');
+          if ((value as string).includes('$$')) {
+            expect(output).toContain('class="katex-display"');
+          }
         } else {
           // Also covers nested plural forms, not just string-valued entries.
           expect(JSON.stringify(value)).not.toContain('$');
@@ -42,50 +65,58 @@ describe('locale math markup', () => {
 });
 
 describe('MathText', () => {
-  it('leaves copy without formulas as text and line breaks', () => {
-    expect(html('one\ntwo')).toBe('one<br/>two');
+  it('renders paragraphs and preserves authored line breaks', () => {
+    const output = html('one\ntwo\n\nthree');
+    expect(output).toMatch(/<p>one<br\/>\s*two<\/p>/);
+    expect(output).toContain('<p>three</p>');
   });
 
-  it('sets variables italic, functions and numbers upright', () => {
-    const out = html('so $y = exp(x₁) + 2$ here');
-    expect(out).toContain('<span class="math" role="math">');
-    expect(out).toContain('<var>y</var>');
-    expect(out).toContain('<span class="m-fn">exp</span>');
-    expect(out).toContain('<var>x<sub>1</sub></var>');
-    expect(out).toContain('<span class="m-num">2</span>');
+  it('renders emphasis, strong text, inline code, and fenced code', () => {
+    const output = html('**strong**, *emphasis*, and `inline`\n\n```ts\nconst answer = 42;\n```');
+    expect(output).toContain('<strong>strong</strong>');
+    expect(output).toContain('<em>emphasis</em>');
+    expect(output).toContain('<code>inline</code>');
+    expect(output).toContain('<code class="language-ts">const answer = 42;');
   });
 
-  it('splits an unknown letter run into a product of variables', () => {
-    expect(html('$xW$')).toContain('<var>x</var><var>W</var>');
+  it('renders headings, lists, block quotes, and links', () => {
+    const output = html(
+      '# Heading\n\n> Quote\n\n1. first\n2. second\n\n[Documentation](https://example.com)',
+    );
+    expect(output).toContain('<h1>Heading</h1>');
+    expect(output).toContain('<blockquote>');
+    expect(output).toContain('<ol>');
+    expect(output).toContain('<li>first</li>');
+    expect(output).toContain('<a href="https://example.com">Documentation</a>');
   });
 
-  it('turns a $$ line into a displayed formula without an extra break', () => {
-    const out = html('before\n$$a − b$$\nafter');
-    expect(out).toMatch(/^before<span class="math-block" role="math">.*<\/span>after$/);
+  it('renders GFM tables, strikethrough, and task lists', () => {
+    const output = html(
+      '| Name | Value |\n| --- | ---: |\n| x | 1 |\n\n~~obsolete~~\n\n- [x] checked\n- [ ] pending',
+    );
+    expect(output).toContain('<table>');
+    expect(output).toContain('<th>Name</th>');
+    expect(output).toContain('<td>x</td>');
+    expect(output).toContain('<del>obsolete</del>');
+    expect(output).toContain('class="contains-task-list"');
+    expect(output).toContain('type="checkbox"');
   });
 
-  it('renders braced superscripts and subscripts as scripts without showing braces', () => {
-    const out = html('$e^{100} + x_{row}$');
-    expect(out).toContain('<var>e</var><sup><span class="m-num">100</span></sup>');
-    expect(out).toContain('<var>x</var><sub><var>r</var><var>o</var><var>w</var></sub>');
-    expect(out).not.toContain('^{');
-    expect(out).not.toContain('_{');
+  it('renders inline and display math with KaTeX', () => {
+    const output = html(
+      'Inline $y = \\frac{a_1}{b^2}$.\n\n$$\n\\operatorname{softmax}(x_i) = \\frac{e^{x_i}}{\\sum_j e^{x_j}}\n$$',
+    );
+    expect(output).toContain('class="katex"');
+    expect(output).toContain('class="mfrac"');
+    expect(output).toContain('class="katex-display"');
+    expect(output).not.toContain('katex-error');
   });
 
-  it('renders an expanded two-feature neuron with numeric subscripts', () => {
-    const out = html('$$p=w_{1}x_{1}+w_{2}x_{2}+b$$');
-    expect(out.match(/<sub><span class="m-num">1<\/span><\/sub>/g)).toHaveLength(2);
-    expect(out.match(/<sub><span class="m-num">2<\/span><\/sub>/g)).toHaveLength(2);
-    expect(out).not.toContain('_');
-  });
-
-  it('renders chain-rule derivatives as stacked fractions', () => {
-    const out = html('$$\\frac{∂f}{∂w}=\\frac{∂f}{∂z}·\\frac{∂z}{∂w}$$');
-    expect(out).toContain('class="math-block has-frac"');
-    expect(out.match(/class="m-frac"/g)).toHaveLength(3);
-    expect(out.match(/class="m-op"/g)).toHaveLength(2);
-    expect(out).toContain('<span class="m-frac-num"><var>∂</var><var>f</var></span>');
-    expect(out).toContain('<span class="m-frac-den"><var>∂</var><var>w</var></span>');
-    expect(out).not.toContain('∂f/∂w');
+  it('does not inject raw HTML', () => {
+    const output = html('safe <b onclick="attack()">text</b> <script>alert(1)</script>');
+    expect(output).toContain('safe');
+    expect(output).not.toContain('<b');
+    expect(output).not.toContain('<script');
+    expect(output).not.toContain('onclick');
   });
 });

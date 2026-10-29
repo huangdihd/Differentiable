@@ -117,10 +117,24 @@ export interface TrainLevel extends LevelMetadata {
   lossOutput?: string;
   threshold: { loss: number; accuracy?: number };
 }
-export type Level = ForwardLevel | TrainLevel;
+export interface ObservationLevel extends Pick<
+  LevelMetadata,
+  | 'id'
+  | 'titleKey'
+  | 'descriptionKey'
+  | 'chapter'
+  | 'hintsKeys'
+  | 'unlock'
+  | 'unlockFeatures'
+  | 'unlockComponents'
+> {
+  kind: 'observation';
+}
+export type CircuitLevel = ForwardLevel | TrainLevel;
+export type Level = CircuitLevel | ObservationLevel;
 
 /** Required output names and shapes, with the primary output as the legacy fallback. */
-export function levelOutputShapes(level: Level): ShapePorts {
+export function levelOutputShapes(level: CircuitLevel): ShapePorts {
   if (
     level.interface.outputs &&
     (!Object.hasOwn(level.interface.outputs, level.interface.output) ||
@@ -273,7 +287,7 @@ export function trainingEvaluationModel(
 }
 /** Tests compile and execute the actual user graph, never a solution-specific evaluator. */
 export async function evaluateLevel(
-  level: Level,
+  level: CircuitLevel,
   graph: GraphJSON,
   options: {
     registry?: ComponentRegistry;
@@ -560,10 +574,27 @@ export function saveGraph(progress: Progress, levelId: string, graph: GraphJSON)
     savedGraphs: { ...progress.savedGraphs, [levelId]: structuredClone(graph) },
   };
 }
-/** Pure progression: only an unlocked, matching, passing level unlocks its successors. */
+/** Reading an unlocked observation advances the route without inventing a circuit result. */
+export function acknowledgeObservation(progress: Progress, level: Level): Progress {
+  if (level.kind !== 'observation' || !progress.unlocked.includes(level.id)) return progress;
+  const components = level.unlockComponents ?? [];
+  if (
+    progress.passed.includes(level.id) &&
+    level.unlock.every((id) => progress.unlocked.includes(id)) &&
+    components.every((name) => progress.unlockedComponents.includes(name))
+  )
+    return progress;
+  return {
+    ...progress,
+    passed: [...new Set([...progress.passed, level.id])],
+    unlocked: [...new Set([...progress.unlocked, ...level.unlock])],
+    unlockedComponents: [...new Set([...progress.unlockedComponents, ...components])],
+  };
+}
+/** Pure progression: only an unlocked, matching, passing circuit unlocks its successors. */
 export function applyResult(
   progress: Progress,
-  level: Level,
+  level: CircuitLevel,
   result: LevelResult,
   graph?: GraphJSON,
 ): Progress {

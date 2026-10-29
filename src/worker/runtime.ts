@@ -1,8 +1,7 @@
 import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
+import type { Backend } from '../engine/backend';
 import { trainingBackward } from '../engine/training-backward';
 import { createBackend } from '../engine/backend-selection';
-import { CpuBackend } from '../engine/cpu';
-import { BackendError } from '../engine/webgpu';
 import {
   compileGraph,
   computationGraph,
@@ -40,20 +39,10 @@ import { gameLevels } from '../levels/catalog';
 import { VOCAB, encode, decode } from '../levels/corpus';
 import { availableComponents, buildPlayerRegistry } from '../levels/registry';
 import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
+import { workerError } from './error';
 
-/** Never send exception prose or stack traces across the player-facing boundary. */
-export function workerError(error: unknown): WorkerError {
-  if (error instanceof GraphError) {
-    const { message: _message, ...params } = error.params;
-    return { key: error.key, node: error.node, port: error.port, params };
-  }
-  if (error instanceof BackendError) return { key: error.key, params: error.params };
-  const key =
-    error instanceof Error && /^(engine|training|levels|worker)\.[a-z0-9_.]+$/.test(error.message)
-      ? error.message
-      : 'worker.execution_error';
-  return { key, params: {} };
-}
+export { workerError } from './error';
+
 interface Run {
   request: Extract<WorkerRequest, { type: 'start' }>;
   level: TrainLevel;
@@ -76,6 +65,7 @@ export class WorkerRuntime {
   private registry: ComponentRegistry;
   private initialized = false;
   private disposed = false;
+  private backend?: Backend;
   private revision = -1;
   private latestRevision = -1;
   private queue: Promise<void> = Promise.resolve();
@@ -249,6 +239,8 @@ export class WorkerRuntime {
     this.disposed = true;
     await this.queue;
     this.release();
+    this.backend?.dispose?.();
+    this.backend = undefined;
     this.generationParameters = undefined;
   }
   private schedule() {
@@ -398,11 +390,9 @@ export class WorkerRuntime {
       }
       if (request.type === 'init') {
         if (this.initialized) throw new Error('worker.already_initialized');
-        const selection =
-          request.backend === 'cpu'
-            ? { backend: new CpuBackend(), kind: 'cpu' as const }
-            : await createBackend();
+        const selection = await createBackend(request.backend ?? 'auto');
         T.setDefaultBackend(selection.backend);
+        this.backend = selection.backend;
         this.initialized = true;
         this.reply(request, {
           backend: selection.kind,
@@ -466,6 +456,7 @@ export class WorkerRuntime {
       }
       const sourceLevel = this.levels.find((l) => l.id === request.levelId);
       if (!sourceLevel) throw new Error('worker.unknown_level');
+      if (sourceLevel.kind === 'observation') throw new Error('worker.invalid_request');
       const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
       if (request.type === 'generate') {
         if (level.kind !== 'train' || level.generates !== true)

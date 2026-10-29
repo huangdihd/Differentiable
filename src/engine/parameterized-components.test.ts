@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { traceBackward } from './backward-graph';
-import { graphMetrics } from './levels';
+import { graphMetrics, type ForwardLevel } from './levels';
 import { configurableModule } from './parameterized-components';
 import {
   ComponentRegistry,
@@ -46,6 +46,45 @@ const passthrough = (name: string, inputs: readonly string[]): ComponentDefiniti
       { id: 'output', component: 'output', attrs: { name: 'out' } },
     ],
     edges: [{ from: { node: inputs[0], port: 'out' }, to: { node: 'output', port: 'x' } }],
+  },
+});
+const recurrentWindowDefinition = (
+  name: string,
+  cell: string,
+  stateInput: string,
+  initialShape: number[],
+): ComponentDefinition => ({
+  name,
+  inputs: ['x', 'wx', 'wh', 'b'],
+  outputs: ['out'],
+  subgraph: {
+    version: 1,
+    nodes: [
+      ...['x', 'wx', 'wh', 'b'].map((input) => ({
+        id: input,
+        component: 'input',
+        attrs: { name: input },
+      })),
+      { id: 'initial_width', component: 'const', attrs: { shape: initialShape, value: 0 } },
+      { id: 'step_0', component: cell },
+      { id: 'step_1', component: cell },
+      { id: 'output', component: 'output', attrs: { name: 'out' } },
+    ],
+    edges: [
+      { from: { node: 'x', port: 'out' }, to: { node: 'step_0', port: 'x' } },
+      {
+        from: { node: 'initial_width', port: 'out' },
+        to: { node: 'step_0', port: stateInput },
+      },
+      { from: { node: 'step_0', port: 'out' }, to: { node: 'step_1', port: stateInput } },
+      { from: { node: 'step_1', port: 'out' }, to: { node: 'output', port: 'x' } },
+      ...['wx', 'wh', 'b'].flatMap((parameter) =>
+        ['step_0', 'step_1'].map((step) => ({
+          from: { node: parameter, port: 'out' },
+          to: { node: step, port: parameter },
+        })),
+      ),
+    ],
   },
 });
 const linearDefinition = (): ComponentDefinition => ({
@@ -444,7 +483,11 @@ describe('configurable parameterized components', () => {
       },
     },
   ])('compiles the earned $component implementation with automatic parameters', (fixture) => {
-    const registry = referenceRegistry(gameLevels.filter((level) => level.kind !== 'train'));
+    const registry = referenceRegistry(
+      gameLevels.filter(
+        (level): level is ForwardLevel => level.kind === 'forward' || level.kind === 'derivative',
+      ),
+    );
     const model: GraphJSON = {
       version: 1,
       nodes: [
@@ -494,6 +537,75 @@ describe('configurable parameterized components', () => {
       x.dispose();
     }
   });
+
+  it.each([
+    {
+      component: 'rnn_cell',
+      inputs: ['x', 'h', 'wx', 'wh', 'b'],
+      attrs: { input_features: 3, hidden_features: 5 },
+      parameters: { wx: [3, 5], wh: [5, 5], b: [5] },
+    },
+    {
+      component: 'rnn_window',
+      inputs: ['x', 'wx', 'wh', 'b'],
+      attrs: { input_features: 1, hidden_features: 5 },
+      parameters: { wx: [1, 5], wh: [5, 5], b: [5] },
+    },
+  ])('generates configured parameters for $component', (fixture) => {
+    const expanded = expand(
+      passthrough(fixture.component, fixture.inputs),
+      { automatic_parameters: true, ...fixture.attrs },
+      { x: [2, 3] },
+    );
+    for (const [name, shape] of Object.entries(fixture.parameters))
+      expect(generated(expanded, name)?.attrs?.shape).toEqual(shape);
+  });
+
+  it.each(['rnn_window'])('keeps %s input width fixed to one scalar per time step', (component) => {
+    const configurable = configurableModule(passthrough(component, ['x', 'wx', 'wh', 'b']));
+    expect(
+      configurable.attributes?.find((attribute) => attribute.name === 'input_features'),
+    ).toMatchObject({
+      min: 1,
+      max: 1,
+      default: 1,
+    });
+  });
+
+  it.each([
+    {
+      component: 'rnn_window',
+      cell: 'rnn_cell',
+      stateInput: 'h',
+      initialShape: [8],
+      expectedInitialShape: [5],
+    },
+  ])(
+    'shares $component parameters across unrolled cells and adapts its initial width',
+    (fixture) => {
+      const expanded = expand(
+        recurrentWindowDefinition(
+          fixture.component,
+          fixture.cell,
+          fixture.stateInput,
+          fixture.initialShape,
+        ),
+        { automatic_parameters: true, input_features: 1, hidden_features: 5 },
+        { x: [2, 6] },
+      );
+
+      expect(generated(expanded, 'initial_width')?.attrs).toEqual({
+        shape: fixture.expectedInitialShape,
+        value: 0,
+      });
+      expect(expanded.nodes.filter((node) => node.component === 'param')).toHaveLength(3);
+      for (const parameter of ['wx', 'wh', 'b']) {
+        expect(
+          expanded.edges.filter((edge) => edge.from.node === parameter).map((edge) => edge.to.node),
+        ).toEqual(['step_0', 'step_1']);
+      }
+    },
+  );
 
   it('generates configured parameters for positional embeddings, FFNs, and Transformer blocks', () => {
     const positional = expand(

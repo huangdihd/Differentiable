@@ -10,6 +10,7 @@ import { chapter3ForwardLevels, chapter3Levels, chapter3TrainLevel } from './cha
 import { referenceRegistry } from './level-helpers';
 import { availableComponents, buildPlayerRegistry } from './registry';
 
+const circuitLevels = gameLevels.filter((level) => level.kind !== 'observation');
 const preceding = [...chapter0Levels, ...chapter1Levels, ...chapter2Levels];
 const registry = referenceRegistry([...preceding, ...chapter3ForwardLevels]);
 const playable = (level: (typeof chapter3Levels)[number]) => ({
@@ -208,12 +209,12 @@ describe('gradient descent curriculum', () => {
 
   it('earns linear before losses without giving construction lessons future components', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of gameLevels) {
+    for (const level of circuitLevels) {
       if (level.id === '3-3') {
         for (const id of ['3-3', '3-4', '3-5', '3-6']) {
           expect(
             availableComponents(
-              gameLevels.find((l) => l.id === id)!,
+              circuitLevels.find((l) => l.id === id)!,
               progress,
             ),
           ).toContain('linear');
@@ -264,7 +265,7 @@ describe('gradient descent curriculum', () => {
         expect(linear.native).toBeUndefined();
         expect(
           availableComponents(
-            gameLevels.find((l) => l.id === '3-6')!,
+            circuitLevels.find((l) => l.id === '3-6')!,
             next,
           ),
         ).toContain('linear');

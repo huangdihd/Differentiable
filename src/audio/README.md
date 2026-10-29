@@ -25,15 +25,16 @@ music.dispose();
 All chapters use 70 BPM, 4/4, an eight-bar harmonic cycle (four chords, two bars
 each). Notes are scale degrees rather than arbitrary chromatic pitches.
 
-| Chapter | Tonality           | Voices (cumulative)                   |
-| ------- | ------------------ | ------------------------------------- |
-| 0       | A minor pentatonic | Soft sine pad, sparse triangle plucks |
-| 1       | D minor pentatonic | + sine bass                           |
-| 2       | E natural minor    | + second pluck layer                  |
-| 3       | G minor pentatonic | + short, soft tonal pulse             |
-| 4       | C natural minor    | + sustained sine upper layer          |
-| 5       | F natural minor    | Denser second pluck layer             |
-| 6       | A natural minor    | Additional pulse, fullest arrangement |
+| Chapter | Topic       | Tonality           | Voices (cumulative)                   |
+| ------- | ----------- | ------------------ | ------------------------------------- |
+| 0       | Scalars     | A minor pentatonic | Soft sine pad, sparse triangle plucks |
+| 1       | Derivatives | D minor pentatonic | + sine bass                           |
+| 2       | Tensors     | E natural minor    | + second pluck layer                  |
+| 3       | Learning    | G minor pentatonic | + short, soft tonal pulse             |
+| 4       | Sequences   | C natural minor    | + sustained sine upper layer          |
+| 5       | Time series | B natural minor    | Denser second pluck layer             |
+| 6       | Attention   | F natural minor    | Additional pulse                      |
+| 7       | GPT         | A natural minor    | Fullest arrangement                   |
 
 A 1.7 kHz lowpass softens the voices. A quiet single 640 ms delay provides space
 without feedback buildup. Long envelopes overlap bar boundaries. Chapter changes

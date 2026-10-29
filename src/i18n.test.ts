@@ -160,11 +160,13 @@ describe('i18n', () => {
       const descent = locales[locale]['levels.3-1.description'];
       expect(surface).toContain('$∇f=(∂f/∂a,∂f/∂b)$');
       expect(surface).not.toMatch(/负梯度|negative gradient|gradient descent|梯度下降|∇L|η/);
-      expect(backprop).toContain('$$z=w·x+b$$');
-      expect(backprop).toContain('$$f=σ(z)$$');
-      expect(backprop).toContain('$g=\\frac{∂f}{∂z}$');
+      expect(backprop).toContain('$$\nz=w·x+b\n$$');
+      expect(backprop).toContain('$$\nf=σ(z)\n$$');
+      expect(backprop).toContain('$$\ng=\\frac{∂f}{∂z}\n$$');
       expect(backprop).toMatch(/上游梯度|upstream gradient/);
-      expect(backprop).toMatch(/只(?:反传|处理) \$z=w·x\+b\$|backpropagate only through \$z=w·x\+b\$/);
+      expect(backprop).toMatch(
+        /只(?:反传|处理) \$z=w·x\+b\$|backpropagate only through \$z=w·x\+b\$/,
+      );
       expect(backprop).toMatch(/不(?:需要重新计算|用再算) Sigmoid|without recomputing Sigmoid/);
       expect(backprop).toMatch(/没有(?:提供|给).*b|not provided/);
       expect(backprop).not.toMatch(/∂z\/∂w=x|∂z\/∂x=w|∂z\/∂b=1/);
@@ -222,7 +224,7 @@ describe('i18n', () => {
       expect(neuron).toMatch(/显示 3-2|display 3-2/i);
       expect(neuron).toMatch(/神经元|neuron/i);
       expect(neuron).toMatch(/预测|prediction/i);
-      expect(neuron).toContain('$$p=w_{1}x_{1}+w_{2}x_{2}+b$$');
+      expect(neuron).toContain('$$\np=w_{1}x_{1}+w_{2}x_{2}+b\n$$');
       expect(neuron).toContain('$p=w·x+b$');
       expect(neuron).toContain('$Xw+b$');
       expect(neuron).toContain('$XW+b$');
@@ -241,6 +243,155 @@ describe('i18n', () => {
       expect(hints).toMatch(/without −0\.1|不做 −0\.1/);
       expect(`${gradient} ${hints}`).not.toContain('$2(p−t)$');
       expect(`${gradient} ${hints}`).not.toMatch(/∇|∂L\/∂w[₁₂₃ᵢ]/);
+    }
+  });
+  it('explains how to build k and why one-hot matrix multiplication performs a lookup', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const description = locales[locale]['levels.4-2.description'];
+      const hints = `${locales[locale]['levels.4-2.hint1']} ${locales[locale]['levels.4-2.hint2']}`;
+      expect(description).toMatch(/独热编码.*idx 和 k|One-hot.*idx and k/is);
+      expect(`${description} ${hints}`).toMatch(/table.*第 0 轴|axis 0.*table/is);
+      expect(`${description} ${hints}`).toMatch(/序列.*k=\[0|Range.*k=\[0/is);
+      expect(description).toContain('0A+0B+1C+0D+0E=C');
+      expect(description).toMatch(/0.*其他行.*1.*保留 C|zeroes.*every other row.*1 keeps C/is);
+      expect(description).toMatch(/idx=\[2,0\].*C.*A/is);
+      expect(description).toContain('\\operatorname{one\\_hot}(idx,k)');
+      expect(description).toContain('\\times');
+      expect(description).toMatch(/不能把 5 或 k 写死|hard-coding 5 or k/i);
+    }
+  });
+  it('contrasts fixed-window character prediction with recurrent memory', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const oneCharacter = locales[locale]['levels.4-3.description'];
+      const twoCharacters = locales[locale]['levels.4-5.description'];
+      const recurrent = locales[locale]['levels.time-rnn.description'];
+      expect(oneCharacter).toContain('$P(x_{t+1}\\mid x_t)$');
+      expect(oneCharacter).toMatch(/不是有记忆|无记忆|memoryless|not yet.*memory/is);
+      expect(oneCharacter).toMatch(/lit.*cat/is);
+      expect(oneCharacter).toMatch(/RNN.*隐藏状态|RNN.*hidden state/is);
+      expect(twoCharacters).toContain('$P(x_{t+1}\\mid x_{t-1},x_t)$');
+      expect(twoCharacters).toMatch(/顺序.*重要|Order matters/i);
+      expect(twoCharacters).toMatch(/上下文长度.*固定为 2|context length.*fixed at 2/is);
+      expect(twoCharacters).toMatch(/没有隐藏状态|no hidden state/i);
+      expect(recurrent).toMatch(/固定后缀|fixed suffix/i);
+      expect(recurrent).toMatch(/隐藏状态.*前面|hidden state.*earlier/is);
+      expect(recurrent).toMatch(/复用同一组权重|Reusing the same weights/i);
+    }
+  });
+  it('keeps the fixed-window observation before building RNN', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const t = createTranslator(locale);
+      const note = t('levels.time-window-limit.demonstrationNote');
+      const explanation = t('levels.time-window-limit.explanation');
+      const next = t('levels.time-window-limit.next');
+      expect(t('levels.time-window-limit.description')).toContain('4-6');
+      expect(t('levels.time-window-limit.description')).not.toContain('RNN');
+      expect(t('levels.time-window-limit.afterTraining')).toContain('160');
+      expect(t('levels.time-window-limit.afterMoreTraining')).toMatch(/160.*320/);
+      expect(note).toMatch(/隔离实验|Isolated experiment/i);
+      expect(note).toMatch(/不读取你的训练权重|not your saved weights/i);
+      expect(note).toMatch(/同一模型和优化器|same model and optimizer/i);
+      expect(t('levels.time-window-limit.sameOutput')).toContain('th');
+      expect(explanation).toMatch(/最多答对一个|at most one answer/i);
+      expect(explanation).toMatch(/随机采样.*碰巧|Sampling may differ by chance/i);
+      expect(explanation).toMatch(/不是对整体准确率|not an overall accuracy/i);
+      expect(next).toContain('RNN');
+      expect(next).toMatch(/记忆并非无限|not unlimited memory/i);
+      expect(t('levels.time-window-limit.continue')).toMatch(/搭建 RNN|Build the RNN/);
+    }
+  });
+  it('describes the post-build experiment as retraining both player circuits, not old weights or a fallback', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const t = createTranslator(locale);
+      const text = (key: string) => t(`levels.time-player-comparison.${key}`);
+      const comparison = text('comparisonNote');
+      expect(text('freshWeights')).toMatch(
+        /使用你的电路重新训练，非沿用旧权重|Retrain using your circuits, not your old weights/i,
+      );
+      expect(text('freshWeights')).not.toMatch(/预制|prebuilt/i);
+      expect(text('freshWeights')).toMatch(
+        /8 维字符嵌入和 24→27 输出层|8-wide character embedding, a 24→27 output layer/i,
+      );
+      expect(comparison).toContain('1,495');
+      expect(comparison).toMatch(
+        /全语料行内每个目标位置 ≥ 2|every within-line target position ≥ 2 in the full corpus/i,
+      );
+      expect(comparison).toMatch(/含末尾换行|including the final newline/i);
+      expect(comparison).toMatch(
+        /更新数、Adam、学习率和种子相同|Same update count, Adam, learning rate and seed/i,
+      );
+      expect(comparison).toMatch(/参数量和算力不同|parameter counts and compute differ/i);
+      expect(comparison).toMatch(
+        /训练语料内的拟合实验，不是泛化评测|training-corpus fitting, not a generalization test/i,
+      );
+      expect(text('resetNote')).toMatch(
+        /同一组权重，只变输入，不额外训练|Same weights, only the input changes; no extra training/i,
+      );
+      expect(text('conclusion')).toMatch(/不保证答对|does not guarantee a correct answer/i);
+      expect(text('failed')).toMatch(/对照实验未能完成|comparison experiment could not finish/i);
+      expect(text('failed')).not.toMatch(/预制|无效|修复|prebuilt|invalid|must be fixed/i);
+      expect(text('continue')).toMatch(/下一关|Next level/);
+      expect(text('back')).toMatch(/返回编辑|Back to editing/);
+    }
+  });
+  it('keeps both experiment namespaces in parity and retires reference-RNN and manual controls', () => {
+    for (const prefix of ['levels.time-window-limit.', 'levels.time-player-comparison.']) {
+      const keys = (dictionary: object) =>
+        Object.keys(dictionary)
+          .filter((key) => key.startsWith(prefix))
+          .sort();
+      expect(keys(locales.en)).toEqual(keys(locales['zh-CN']));
+      for (const locale of ['en', 'zh-CN'] as const) {
+        const t = createTranslator(locale);
+        for (const key of keys(locales[locale]))
+          expect(t(key)).not.toMatch(/两个连线|two wires|take_last_two|50\s*%/i);
+        expect(t(prefix + 'case', { n: 2 })).toBe(locale === 'en' ? 'Sample 2' : '样本 2');
+        expect(t(prefix + 'trainingProgress', { model: 'RNN', step: 170, total: 320 })).toContain(
+          '170 / 320',
+        );
+      }
+    }
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const dictionary = locales[locale];
+      const t = createTranslator(locale);
+      for (const key of [
+        'predictSpace',
+        'predictE',
+        'sharedPrediction',
+        'tryPrediction',
+        'runRecurrent',
+        'resetHistory',
+        'comparisonNote',
+      ]) {
+        expect(Object.hasOwn(dictionary, 'levels.time-window-limit.' + key)).toBe(false);
+      }
+      expect(Object.hasOwn(dictionary, 'ports.take_last_two.history')).toBe(false);
+      expect(Object.hasOwn(dictionary, 'components.take_last_two')).toBe(false);
+      expect(t('levels.time-player-comparison.matchedSnapshot', { step: 320 })).toContain('320');
+      expect(
+        t('levels.time-player-comparison.modelMetrics', {
+          model: 'RNN',
+          parameters: 1234,
+          samples: 1495,
+        }),
+      ).toMatch(/RNN.*1,234.*1,495/);
+    }
+  });
+  it('explains probability sampling from intervals through the actual 4-4 circuit', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const description = locales[locale]['levels.4-4.description'];
+      const hints = `${locales[locale]['levels.4-4.hint1']} ${locales[locale]['levels.4-4.hint2']}`;
+      expect(description).toMatch(/概率最大的字|highest probability/i);
+      expect(description).toMatch(/区间.*宽.*概率|interval.*width.*probability/is);
+      expect(description).toContain('p=[0.2,0.5,0.3]');
+      expect(description).toContain('c=[0.2,0.7,1]');
+      expect(description).toMatch(/u=0\.6.*输出 1|u=0\.6.*outputs 1/is);
+      expect(`${description} ${hints}`).toMatch(/插入维度|Insert dimension/i);
+      expect(`${description} ${hints}`).toMatch(/逐元素相乘|element-wise multiplication/i);
+      expect(`${description} ${hints}`).toMatch(/轴 0.*求和|Sum along axis 0/is);
+      expect(hints).toMatch(/u≥c/);
+      expect(hints).toContain('[1,0,0]');
+      expect(hints).toMatch(/最后一轴.*求和|Sum along the last axis/i);
     }
   });
   it('connects MSE visually to squared loss and chapter 2 Mean', () => {
@@ -287,7 +438,10 @@ describe('i18n', () => {
     }
   });
   it('teaches momentum as two recurrent state outputs', () => {
-    const level = gameLevels.find((candidate) => candidate.id === '3-7')!;
+    const level = gameLevels.find(
+      (candidate) => candidate.kind === 'forward' && candidate.id === '3-7',
+    )!;
+    if (level.kind !== 'forward') throw new Error('Momentum must be a circuit lesson');
     expect(level.interface.outputs).toEqual({ updatedWeight: [], updatedMomentum: [] });
     for (const locale of ['en', 'zh-CN'] as const) {
       const text = [
@@ -427,6 +581,7 @@ describe('i18n', () => {
         for (const key of level.hintsKeys ?? []) expect(keys.has(key)).toBe(true);
         for (const name of level.unlockComponents ?? [])
           expect(keys.has(`components.${name}`)).toBe(true);
+        if (level.kind === 'observation') continue;
         for (const name of level.available) expect(keys.has(`components.${name}`)).toBe(true);
         for (const output of Object.keys(
           level.interface.outputs ?? { [level.interface.output]: level.interface.outputShape },
@@ -437,7 +592,42 @@ describe('i18n', () => {
       }
     }
   });
-  it('covers chapter-six weight ports in both languages', () => {
+  it('uses the requested Transformer lesson title in both languages', () => {
+    expect(locales.en['levels.6-3.title']).toBe('Attention Is All You Need');
+    expect(locales['zh-CN']['levels.6-3.title']).toBe('注意力是你需要的一切');
+  });
+  it('covers recurrent settings and component-specific bias ports in both languages', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const keys = new Set(Object.keys(locales[locale]));
+      expect(keys.has('ui.input_features')).toBe(true);
+      for (const component of ['rnn_cell', 'rnn_window'])
+        expect(keys.has(`ports.${component}.b`)).toBe(true);
+    }
+  });
+  it('covers the temporal benchmark evidence in both languages', () => {
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const keys = new Set(Object.keys(locales[locale]));
+      for (const key of [
+        'benchmark.title',
+        'benchmark.seed',
+        'benchmark.model',
+        'benchmark.parameters',
+        'benchmark.delay',
+        'benchmark.method',
+        'benchmark.attentionProbe',
+        'benchmark.position',
+        'benchmark.attentionProbeNote',
+        'benchmark.model.fixed-window',
+        'benchmark.model.rnn',
+        'benchmark.model.rnn-attention',
+      ])
+        expect(keys.has(key), `${locale}: ${key}`).toBe(true);
+      expect(locales[locale]['benchmark.method']).toMatch(/CPU/);
+      expect(locales[locale]['benchmark.method']).toContain('[0.5,1.5)');
+      expect(locales[locale]['benchmark.method']).toContain('[−0.2,0.2)');
+    }
+  });
+  it('covers GPT weight ports in both languages', () => {
     for (const locale of ['en', 'zh-CN'] as const) {
       const keys = new Set(Object.keys(locales[locale]));
       for (const port of ['wq', 'wk', 'wv', 'wo', 'w1', 'b1', 'w2', 'b2'])

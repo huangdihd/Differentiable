@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { gameLevels } from '../levels/catalog';
 import { ComponentRegistry } from '../engine/graph';
-import { nodePorts, portRows, SYMBOLS } from './graph-geometry';
+import { categoryOf, nodePorts, portRows, SYMBOLS } from './graph-geometry';
 
 it('reshape dimension ports and node height follow the target rank', () => {
   const registry = new ComponentRegistry().register({
@@ -54,14 +54,25 @@ it('uses consistent binary-expression symbols for four arithmetic operations', (
 });
 
 it('size is available wherever reshape is available', () => {
-  for (const level of gameLevels.filter((level) => level.available.includes('reshape')))
+  for (const level of gameLevels
+    .filter((level) => level.kind !== 'observation')
+    .filter((level) => level.available.includes('reshape')))
     expect(level.available).toContain('size');
   expect(SYMBOLS.size).toBe('|x|ₖ');
 });
 
+it('classifies the RNN window with the learning components', () => {
+  expect(SYMBOLS.rnn_window).toBe('RNN×T');
+  expect(categoryOf('rnn_cell')).toBe('learn');
+  expect(categoryOf('rnn_window')).toBe('learn');
+  expect(categoryOf('temporal_attention')).toBe('attn');
+});
+
 it('every part a player can place has a node symbol', () => {
   const names = new Set(
-    gameLevels.flatMap((level) => [...(level.unlockComponents ?? []), ...level.available]),
+    gameLevels
+      .filter((level) => level.kind !== 'observation')
+      .flatMap((level) => [...(level.unlockComponents ?? []), ...level.available]),
   );
   expect([...names].filter((name) => !SYMBOLS[name])).toEqual([]);
 });

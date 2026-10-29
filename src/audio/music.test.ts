@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe('score', () => {
   it('is reproducible, seeded, in scale and in a restrained range', () => {
-    for (let chapter = 0; chapter <= 6; chapter++) {
+    for (let chapter = 0; chapter <= 7; chapter++) {
       const { root, scale } = CHAPTER_MUSIC[chapter];
       for (let bar = 0; bar < 64; bar++) {
         const notes = generateBar(chapter, bar, 42);
@@ -76,25 +76,26 @@ describe('score', () => {
         }
       }
     }
-    expect(generateBar(6, 5, 1)).not.toEqual(generateBar(6, 5, 2));
+    expect(generateBar(7, 5, 1)).not.toEqual(generateBar(7, 5, 2));
   });
   it('adds voices monotonically and increases density', () => {
     let previous = new Set<string>();
     const counts: number[] = [];
-    for (let chapter = 0; chapter <= 6; chapter++) {
+    for (let chapter = 0; chapter <= 7; chapter++) {
       const notes = Array.from({ length: 32 }, (_, bar) => generateBar(chapter, bar, 42)).flat();
       const voices = new Set<string>(notes.map((note) => note.voice));
       for (const voice of previous) expect(voices.has(voice)).toBe(true);
       previous = voices;
       counts.push(notes.length);
     }
-    expect(counts[0]).toBeLessThan(counts[6]);
+    expect(counts[0]).toBeLessThan(counts[7]);
+    expect(generateBar(6, 0, 42)).not.toEqual(generateBar(7, 0, 42));
   });
   it('clamps chapter indices including nonfinite input', () => {
     expect(clampChapter(-5)).toBe(0);
-    expect(clampChapter(99)).toBe(6);
+    expect(clampChapter(99)).toBe(7);
     expect(clampChapter(NaN)).toBe(0);
-    expect(clampChapter(Infinity)).toBe(6);
+    expect(clampChapter(Infinity)).toBe(7);
   });
 });
 

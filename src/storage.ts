@@ -1,9 +1,16 @@
 import type { GraphJSON } from './engine/graph';
-import { evaluateLevel, initialProgress, type Level, type Progress } from './engine/levels';
+import {
+  acknowledgeObservation,
+  evaluateLevel,
+  initialProgress,
+  type CircuitLevel,
+  type Level,
+  type Progress,
+} from './engine/levels';
 import { availableComponents, buildPlayerRegistry } from './levels/registry';
 import { browserLocale, isLocale, type Locale } from './i18n';
 
-export const STORAGE_VERSION = 9;
+export const STORAGE_VERSION = 10;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
 export interface StorageLike {
@@ -141,18 +148,29 @@ export function isExpressionUnlocked(progress: Progress, levels: readonly Level[
 export function createInitialProgress(): Progress {
   return initialProgress(['0-1']);
 }
+/** An absent store/key is new progress; a failed read must never authorize an empty save. */
+function readProgressEnvelope(source: StorageSource): {
+  storage: StorageLike | undefined;
+  raw: string | null;
+  envelope?: Record<string, unknown>;
+} {
+  const storage = source();
+  const raw = storage?.getItem(STORAGE_KEY) ?? null;
+  if (raw === null) return { storage, raw };
+  const envelope: unknown = JSON.parse(raw);
+  if (!record(envelope)) throw new Error('Invalid progress envelope');
+  return { storage, raw, envelope };
+}
 export function loadProgress(source: StorageSource = browserStorage): Progress {
   try {
-    const raw = source()?.getItem(STORAGE_KEY);
-    if (raw) {
-      const envelope: unknown = JSON.parse(raw);
-      if (record(envelope) && envelope.version === STORAGE_VERSION && isProgress(envelope.progress))
-        return envelope.progress;
-    }
-  } catch {
-    /* Corrupt data, unavailable storage, and getter failures are recoverable. */
+    const { envelope } = readProgressEnvelope(source);
+    if (!envelope) return createInitialProgress();
+    if (envelope.version !== STORAGE_VERSION || !isProgress(envelope.progress))
+      throw new Error('Unsupported or invalid progress');
+    return envelope.progress;
+  } catch (cause) {
+    throw new Error('storage.progress_load_failed', { cause });
   }
-  return createInitialProgress();
 }
 /** Remap level IDs only: graph component names and unlocked components are stable. */
 function remapProgressIds(progress: Progress, ids: Readonly<Record<string, string>>): Progress {
@@ -248,7 +266,10 @@ function migrateChapter1GradientMerge(progress: Progress): Progress {
 /** v7 replaces every earlier 1-11 circuit with the local backward step for z=w·x+b. */
 function migrateBackpropFullPass(progress: Progress, levels: readonly Level[]): Progress {
   const changed = levels.some(
-    (level) => level.id === '1-11' && Object.hasOwn(level.interface.inputs, '∂f/∂z'),
+    (level) =>
+      level.kind !== 'observation' &&
+      level.id === '1-11' &&
+      Object.hasOwn(level.interface.inputs, '∂f/∂z'),
   );
   if (!changed) return progress;
   const graduated = progress.passed.includes('1-11');
@@ -323,8 +344,9 @@ function migrateUpstreamGradientInputs(progress: Progress, levels: readonly Leve
   const changed = new Map(
     levels
       .filter(
-        (level) =>
-          level.revalidateOnLoad &&
+        (level): level is CircuitLevel =>
+          level.kind !== 'observation' &&
+          !!level.revalidateOnLoad &&
           Object.hasOwn(level.interface.inputs, '∂L/∂p') &&
           !Object.hasOwn(level.interface.inputs, 't'),
       )
@@ -377,7 +399,9 @@ function migrateUpstreamGradientInputs(progress: Progress, levels: readonly Leve
 
 /** Regression now places a scalar-batch Linear; repair drafts saved with its old 2-wide defaults. */
 function migrateRegressionLinearDefaults(progress: Progress, levels: readonly Level[]): Progress {
-  const defaults = levels.find((level) => level.id === '3-4')?.componentDefaults?.linear;
+  const level = levels.find((level) => level.id === '3-4');
+  if (!level || level.kind === 'observation') return progress;
+  const defaults = level.componentDefaults?.linear;
   if (defaults?.in_features !== 1 || defaults.out_features !== 1) return progress;
   const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> => {
     const graph = graphs['3-4'];
@@ -418,7 +442,9 @@ function migrateRegressionLinearDefaults(progress: Progress, levels: readonly Le
 
 /** Momentum now exposes both recurrent state values; keep old drafts editable, then revalidate passes. */
 function migrateMomentumOutputs(progress: Progress, levels: readonly Level[]): Progress {
-  const outputs = levels.find((level) => level.id === '3-7')?.interface.outputs;
+  const level = levels.find((level) => level.id === '3-7');
+  if (!level || level.kind === 'observation') return progress;
+  const outputs = level.interface.outputs;
   if (!outputs?.updatedWeight || !outputs.updatedMomentum) return progress;
   const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> => {
     const graph = graphs['3-7'];
@@ -464,7 +490,12 @@ function migrateSemanticOutputNames(
 ): Progress {
   const outputByLevel = new Map(
     levels
-      .filter((level) => !level.interface.outputs && level.interface.output !== 'y')
+      .filter(
+        (level): level is CircuitLevel =>
+          level.kind !== 'observation' &&
+          !level.interface.outputs &&
+          level.interface.output !== 'y',
+      )
       .map((level) => [level.id, level.interface.output]),
   );
   const migrateGraphs = (graphs: Record<string, GraphJSON>): Record<string, GraphJSON> =>
@@ -493,6 +524,21 @@ function migrateSemanticOutputNames(
   };
 }
 
+/** Observation completion has no circuit artifacts; keep read credit and all other drafts. */
+function removeObservationCircuits(progress: Progress, levels: readonly Level[]): Progress {
+  const observations = new Set(
+    levels.filter((level) => level.kind === 'observation').map((level) => level.id),
+  );
+  const withoutObservations = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).filter(([id]) => !observations.has(id)));
+  return {
+    ...progress,
+    savedGraphs: withoutObservations(progress.savedGraphs),
+    passedSolutions: withoutObservations(progress.passedSolutions),
+    bestScores: withoutObservations(progress.bestScores),
+  };
+}
+
 /** Recheck changed contracts in catalog order so later lessons use repaired component fallbacks. */
 async function revalidateSolutions(
   progress: Progress,
@@ -501,7 +547,12 @@ async function revalidateSolutions(
   const revoked: string[] = [];
   for (const level of levels) {
     const solution = progress.passedSolutions[level.id];
-    if (!level.revalidateOnLoad || !progress.passed.includes(level.id)) continue;
+    if (
+      level.kind === 'observation' ||
+      !level.revalidateOnLoad ||
+      !progress.passed.includes(level.id)
+    )
+      continue;
     const result = solution
       ? await evaluateLevel(
           { ...level, available: availableComponents(level, progress) },
@@ -524,21 +575,31 @@ async function revalidateSolutions(
  * using verified reference circuits when old graphs are absent or no longer compatible.
  * Changed-contract saved solutions are never replaced with automatic completion credit.
  * Optional onRevoked receives revoked level IDs once, after persistence (only when nonempty).
+ * Failed reads, invalid saves, and migration exceptions reject without replacing the stored data.
+ * Inactive loads or changed stored bytes reject before writing, notifying, or returning stale progress.
+ * Missing storage or a missing key starts a new game; denied reads are not proof of missing data.
  * The return value remains Promise<Progress>; synchronous loadProgress does not revalidate.
  */
 export async function loadProgressWithMigration(
   levels: readonly Level[],
   source: StorageSource = browserStorage,
   onRevoked?: (levelIds: string[]) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<Progress> {
-  let legacy: Progress;
   try {
-    const raw = source()?.getItem(STORAGE_KEY);
-    if (!raw) return createInitialProgress();
-    const envelope: unknown = JSON.parse(raw);
-    if (!record(envelope)) return createInitialProgress();
+    const { storage, raw, envelope } = readProgressEnvelope(source);
+    const finishLoad = (progress: Progress, persist: boolean, revoked: string[] = []): Progress => {
+      // Even unchanged loads must not hand stale progress to the caller's autosave.
+      const currentRaw = storage?.getItem(STORAGE_KEY) ?? null;
+      if (!isCurrent() || currentRaw !== raw) throw new Error('Progress load is no longer current');
+      if (persist) saveProgress(progress, () => storage);
+      if (revoked.length) onRevoked?.(revoked);
+      return progress;
+    };
+    if (!envelope) return finishLoad(createInitialProgress(), false);
     if (
       envelope.version === STORAGE_VERSION ||
+      envelope.version === 9 ||
       envelope.version === 8 ||
       envelope.version === 7 ||
       envelope.version === 6 ||
@@ -547,7 +608,7 @@ export async function loadProgressWithMigration(
       envelope.version === 3 ||
       envelope.version === 2
     ) {
-      if (!isProgress(envelope.progress)) return createInitialProgress();
+      if (!isProgress(envelope.progress)) throw new Error('Invalid progress');
       let progress = envelope.progress;
       if (envelope.version === 2) progress = migrateChapter2(progress);
       if (envelope.version === 2 || envelope.version === 3)
@@ -561,6 +622,8 @@ export async function loadProgressWithMigration(
       progress = migrateMomentumOutputs(progress, levels);
       progress = migrateUpstreamGradientInputs(progress, levels);
       progress = migrateRegressionLinearDefaults(progress, levels);
+      // Repair current envelopes too: 5-1 became an observation without a version bump.
+      progress = removeObservationCircuits(progress, levels);
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
       const restored = {
@@ -585,21 +648,31 @@ export async function loadProgressWithMigration(
       };
       const repaired = JSON.stringify(restored) !== JSON.stringify(envelope.progress);
       const revoked = await revalidateSolutions(restored, levels);
-      if (envelope.version !== STORAGE_VERSION || repaired || revoked.length)
-        saveProgress(restored, source);
-      if (revoked.length) onRevoked?.(revoked);
-      return restored;
+      return finishLoad(
+        restored,
+        envelope.version !== STORAGE_VERSION || repaired || revoked.length > 0,
+        revoked,
+      );
     }
-    if (envelope.version !== 1 || !record(envelope.progress)) return createInitialProgress();
+    if (envelope.version !== 1 || !record(envelope.progress))
+      throw new Error('Unsupported or invalid legacy progress');
     const candidate = { ...envelope.progress, passedSolutions: {} };
-    if (!isProgress(candidate)) return createInitialProgress();
-    legacy = migrateBackpropFullPass(
+    if (!isProgress(candidate)) throw new Error('Invalid legacy progress');
+    const legacy = migrateBackpropFullPass(
       migrateChapter1GradientMerge(migrateChapter1GradientOrder(migrateChapter2(candidate))),
       levels,
     );
-  } catch {
-    return createInitialProgress();
+    const { progress, revoked } = await migrateLegacyProgress(legacy, levels);
+    return finishLoad(progress, true, revoked);
+  } catch (cause) {
+    throw new Error('storage.progress_load_failed', { cause });
   }
+}
+
+async function migrateLegacyProgress(
+  legacy: Progress,
+  levels: readonly Level[],
+): Promise<{ progress: Progress; revoked: string[] }> {
   const mapId = (id: string) => {
     if (levels.some((level) => level.id === id)) return id;
     if (id === 'sigmoid' || id === 'derivative')
@@ -617,7 +690,7 @@ export async function loadProgressWithMigration(
     levels,
   );
   const known = new Set(levels.map((level) => level.id));
-  const progress = createInitialProgress();
+  let progress = createInitialProgress();
   progress.unlocked = [
     ...new Set([
       ...progress.unlocked,
@@ -644,6 +717,10 @@ export async function loadProgressWithMigration(
   const passed = new Set(legacy.passed.map(mapId));
   const last = levels.reduce((index, level, i) => (passed.has(level.id) ? i : index), -1);
   for (const level of levels.slice(0, last + 1)) {
+    if (level.kind === 'observation') {
+      if (passed.has(level.id)) progress = acknowledgeObservation(progress, level);
+      continue;
+    }
     // New lessons must not become completed merely because a legacy milestone follows them.
     if (
       ['square', '1-10', '1-11', 'axes', 'reshape', 'loss-intro', 'neuron', 'layer'].includes(
@@ -676,9 +753,7 @@ export async function loadProgressWithMigration(
       break;
     }
   }
-  saveProgress(progress, source);
-  if (revoked.length) onRevoked?.(revoked);
-  return progress;
+  return { progress: removeObservationCircuits(progress, levels), revoked };
 }
 export function saveProgress(progress: Progress, source: StorageSource = browserStorage): boolean {
   try {
@@ -709,6 +784,7 @@ export function loadLanguage(
           envelope.version === 6 ||
           envelope.version === 7 ||
           envelope.version === 8 ||
+          envelope.version === 9 ||
           envelope.version === STORAGE_VERSION) &&
         isLocale(envelope.language)
       )
@@ -731,7 +807,8 @@ export function saveLanguage(locale: Locale, source: StorageSource = browserStor
   }
 }
 /** Trailing throttle (not debounce): continuous edits save at most once per interval.
- * Call flush on pagehide/unmount; cancel discards pending work. Exceptions report false.
+ * Call flush on pagehide/unmount; cancel discards pending work. Failed writes remain pending
+ * for an explicit flush or new schedule, without automatic retries. Exceptions report false.
  */
 export function createThrottledSave<T>(save: (value: T) => boolean | void, delayMs = 300) {
   if (!Number.isFinite(delayMs) || delayMs < 0) throw new RangeError('Invalid save interval');
@@ -741,10 +818,12 @@ export function createThrottledSave<T>(save: (value: T) => boolean | void, delay
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
     const next = pending;
-    pending = undefined;
     if (!next) return true;
     try {
-      return save(next.value) !== false;
+      if (save(next.value) === false) return false;
+      // A save callback may schedule a newer snapshot; only clear the one just saved.
+      if (pending === next) pending = undefined;
+      return true;
     } catch {
       return false;
     }

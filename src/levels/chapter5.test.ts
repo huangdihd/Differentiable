@@ -9,6 +9,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels, chapter4TrainLevels } from './chapter4';
+import { temporalForwardLevels } from './chapter-temporal';
 import {
   attentionConfig,
   chapter5ForwardLevels,
@@ -23,6 +24,7 @@ const preceding = [
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...temporalForwardLevels,
 ];
 const registry = referenceRegistry([...preceding, ...chapter5ForwardLevels]);
 const earned = [...preceding, ...chapter5ForwardLevels].flatMap(
@@ -60,7 +62,7 @@ for (const id of ['5-2', '5-4']) {
   });
 }
 
-it('chapter five contracts preserve progression, interfaces and expanded par', () => {
+it('Attention contracts preserve progression, interfaces and expanded par', () => {
   console.info(
     'chapter5 par',
     chapter5Levels.map((level) => [level.id, level.par]),
@@ -85,7 +87,7 @@ it('chapter five contracts preserve progression, interfaces and expanded par', (
   }
 });
 
-it('old chapter-four graduates unlock chapter five without losing saved circuits', async () => {
+it('old sequence graduates unlock temporal prediction without losing saved circuits', async () => {
   const data = new Map<string, string>();
   const source = () => ({
     getItem: (key: string) => data.get(key) ?? null,
@@ -96,7 +98,7 @@ it('old chapter-four graduates unlock chapter five without losing saved circuits
   const graph = chapter4TrainLevels[1].referenceGraph!;
   const progress = {
     ...createInitialProgress(),
-    unlocked: ['4-5'],
+    unlocked: ['4-5', '5-1'],
     passed: ['4-5'],
     savedGraphs: { '4-5': graph },
     passedSolutions: { '4-5': graph },
@@ -104,7 +106,7 @@ it('old chapter-four graduates unlock chapter five without losing saved circuits
   expect(saveProgress(progress, source)).toBe(true);
   const levels = [...chapter4TrainLevels, ...chapter5Levels];
   const restored = await loadProgressWithMigration(levels, source);
-  expect(restored.unlocked).toEqual(['4-5', '5-1']);
+  expect(restored.unlocked).toEqual(['4-5', '5-1', 'time-window-limit']);
   expect(restored.savedGraphs).toEqual(progress.savedGraphs);
   expect(restored.passedSolutions).toEqual(progress.passedSolutions);
   expect(saveProgress(restored, source)).toBe(true);

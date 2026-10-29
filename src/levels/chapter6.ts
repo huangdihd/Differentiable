@@ -8,6 +8,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
+import { temporalForwardLevels } from './chapter-temporal';
 import { chapter5ForwardLevels, chapter5TrainLevels } from './chapter5';
 import { chapter6ForwardLevels } from './chapter6-forward';
 import { corpusTokens, vocabularySize } from './corpus';
@@ -20,6 +21,7 @@ export const gptPreceding = [
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...temporalForwardLevels,
   ...chapter5ForwardLevels,
   ...chapter6ForwardLevels,
 ];
@@ -109,7 +111,7 @@ export const chapter6TrainLevels: TrainLevel[] = [
   withPar<TrainLevel>(
     {
       id: '6-4',
-      chapter: '6',
+      chapter: '7',
       kind: 'train',
       generates: true,
       resample: true,

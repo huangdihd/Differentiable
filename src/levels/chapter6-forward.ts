@@ -7,6 +7,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
+import { temporalForwardLevels } from './chapter-temporal';
 import { chapter5ForwardLevels, chapter5TrainLevels } from './chapter5';
 import { withPar } from './level-helpers';
 
@@ -16,6 +17,7 @@ export const chapter6Preceding = [
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...temporalForwardLevels,
   ...chapter5ForwardLevels,
 ];
 const available = chapter5TrainLevels[0].available;
@@ -204,7 +206,7 @@ for (let index = 1; index <= 3; index++) {
     withPar<ForwardLevel>(
       {
         id: `6-${index}`,
-        chapter: '6',
+        chapter: '7',
         kind: 'forward',
         titleKey: `levels.6-${index}.title`,
         descriptionKey: `levels.6-${index}.description`,

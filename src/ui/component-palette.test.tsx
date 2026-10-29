@@ -17,7 +17,10 @@ describe('component palette', () => {
       { name: 'log' },
       { name: 'square' },
       { name: 'dsigmoid' },
+      { name: 'rnn_window' },
       { name: 'param' },
+      { name: 'rnn_cell' },
+      { name: 'temporal_attention' },
       { name: 'attention' },
       { name: 'custom' },
     ];
@@ -40,6 +43,12 @@ describe('component palette', () => {
       'square',
       'sqrt',
     ]);
+    expect(
+      groups.find((group) => group.category === 'learn')?.entries.map((entry) => entry.name),
+    ).toEqual(['param', 'rnn_cell', 'rnn_window']);
+    expect(
+      groups.find((group) => group.category === 'attn')?.entries.map((entry) => entry.name),
+    ).toEqual(['temporal_attention', 'attention']);
   });
 
   it('server-renders independently open groups, counts and entry states', () => {

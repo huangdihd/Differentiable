@@ -9,6 +9,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels, chapter4TrainLevels } from './chapter4';
+import { temporalForwardLevels } from './chapter-temporal';
 import { corpusTokens, vocabularySize } from './corpus';
 import { withPar } from './level-helpers';
 
@@ -18,6 +19,7 @@ const preceding = [
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...temporalForwardLevels,
 ];
 const available = [...chapter4TrainLevels[0].available, 'arange'];
 export const attentionConfig = { N: 128, T: 8, D: 12 };
@@ -203,7 +205,7 @@ function masked(x: T.Tensor) {
 }
 const metadata = (index: number) => ({
   id: `5-${index}`,
-  chapter: '5',
+  chapter: '6',
   titleKey: `levels.5-${index}.title`,
   descriptionKey: `levels.5-${index}.description`,
   hintsKeys: [`levels.5-${index}.hint1`, `levels.5-${index}.hint2`],

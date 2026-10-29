@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { evaluateSuite } from './level-suite';
 import { mul, tensor } from './tensor';
-import type { Level } from './levels';
+import type { CircuitLevel } from './levels';
 
 it('combines forward and derivative checks without stopping after a failure', async () => {
   const base = {
@@ -13,7 +13,7 @@ it('combines forward and derivative checks without stopping after a failure', as
     unlock: [],
     fixed: [{ id: 'one', inputs: { x: [1] } }],
   };
-  const tests: Level[] = [
+  const tests: CircuitLevel[] = [
     { ...base, kind: 'forward', reference: ({ x }) => mul(x, tensor([1], [], x.backend)) },
     { ...base, kind: 'derivative', reference: ({ x }) => mul(x, x) },
   ];

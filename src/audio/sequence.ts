@@ -20,12 +20,13 @@ export const CHAPTER_MUSIC = [
   { root: 52, scale: minor }, // E natural minor
   { root: 55, scale: pentatonic }, // G minor pentatonic
   { root: 48, scale: minor }, // C natural minor
-  { root: 53, scale: minor }, // F natural minor
-  { root: 57, scale: minor }, // A natural minor
+  { root: 59, scale: minor }, // B natural minor (time series)
+  { root: 53, scale: minor }, // F natural minor (attention)
+  { root: 57, scale: minor }, // A natural minor (GPT)
 ] as const;
 
 export function clampChapter(chapter: number): number {
-  return Number.isNaN(chapter) ? 0 : Math.max(0, Math.min(6, Math.floor(chapter)));
+  return Number.isNaN(chapter) ? 0 : Math.max(0, Math.min(7, Math.floor(chapter)));
 }
 
 /** Pure, independently addressable bars; no mutable PRNG shared with the scheduler. */

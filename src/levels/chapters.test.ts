@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateLevel, graphMetrics } from '../engine/levels';
+import { evaluateLevel, graphMetrics, type TrainLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
 import { Random } from '../engine/random';
 import { catalog, gameLevels } from './catalog';
@@ -8,6 +8,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
+import { temporalForwardLevels } from './chapter-temporal';
 import { chapter5ForwardLevels } from './chapter5';
 import { chapter6ForwardLevels } from './chapter6';
 import { formulaGraph, formulaOutputsGraph, referenceRegistry } from './level-helpers';
@@ -20,6 +21,7 @@ const registry = referenceRegistry([
   ...chapter2Levels,
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
+  ...temporalForwardLevels,
   ...chapter5ForwardLevels,
   ...chapter6ForwardLevels,
 ]);
@@ -61,6 +63,13 @@ describe('formal chapter catalog', () => {
       ...Array.from({ length: 4 }, (_, i) => `4-${i + 1}`),
       'reshape',
       '4-5',
+      'time-window-limit',
+      'time-rnn',
+      'time-rnn-window',
+      'time-rnn-delay',
+      'time-recall-bottleneck',
+      'time-attention',
+      'time-forecast',
       ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),
       ...Array.from({ length: 4 }, (_, i) => `6-${i + 1}`),
     ]);
@@ -75,18 +84,48 @@ describe('formal chapter catalog', () => {
       ['reshape', '4-5'],
       ['4-5', '4-6'],
     ]);
+    expect(
+      catalog.filter((entry) => entry.chapter === 5).map(({ level, code }) => [level.id, code]),
+    ).toEqual([
+      ['time-window-limit', '5-1'],
+      ['time-rnn', '5-2'],
+      ['time-rnn-window', '5-3'],
+      ['time-rnn-delay', '5-4'],
+      ['time-recall-bottleneck', '5-5'],
+      ['time-attention', '5-6'],
+      ['time-forecast', '5-7'],
+    ]);
+    expect(
+      catalog.filter((entry) => entry.chapter === 6).map(({ level, code }) => [level.id, code]),
+    ).toEqual(Array.from({ length: 5 }, (_, i) => [`5-${i + 1}`, `6-${i + 1}`]));
+    expect(
+      catalog.filter((entry) => entry.chapter === 7).map(({ level, code }) => [level.id, code]),
+    ).toEqual(Array.from({ length: 4 }, (_, i) => [`6-${i + 1}`, `7-${i + 1}`]));
     for (const [index, level] of gameLevels.entries()) {
+      expect(level.id).not.toBe('');
+      expect(level.titleKey).not.toBe('');
+      expect(level.descriptionKey).not.toBe('');
       expect(level.unlock).toEqual(
         index === gameLevels.length - 1 ? [] : [gameLevels[index + 1].id],
       );
-      expect(level.referenceGraph).toBeDefined();
-      expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
-      for (const name of level.available) expect(registry.get(name)?.primitive).toBeDefined();
       for (const key of [
         level.titleKey,
         level.descriptionKey,
         ...(level.hintsKeys ?? []),
         ...(level.unlockFeatures ?? []),
+      ]) {
+        expect(en).toHaveProperty(key);
+        expect(zh).toHaveProperty(key);
+      }
+      if (level.kind === 'observation') {
+        for (const property of ['graph', 'referenceGraph', 'par', 'interface', 'available'])
+          expect(level).not.toHaveProperty(property);
+        continue;
+      }
+      expect(level.referenceGraph).toBeDefined();
+      expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
+      for (const name of level.available) expect(registry.get(name)?.primitive).toBeDefined();
+      for (const key of [
         ...(level.revealGraph?.introKey ? [level.revealGraph.introKey] : []),
         ...(level.revealGraph?.playerBackwardLabelKey
           ? [level.revealGraph.playerBackwardLabelKey]
@@ -102,7 +141,10 @@ describe('formal chapter catalog', () => {
         expect(zh).toHaveProperty(key);
       }
     }
-    expect(gameLevels.find((level) => level.id === 'xor')?.presets).toEqual(['matmul', 'softmax']);
+    expect(
+      gameLevels.find((level): level is TrainLevel => level.kind === 'train' && level.id === 'xor')
+        ?.presets,
+    ).toEqual(['matmul', 'softmax']);
     expect(chapter1LevelById('1-11').unlockFeatures).toContain('levels.features.autodiff');
   });
 
@@ -339,7 +381,9 @@ describe('formal chapter catalog', () => {
   }
 
   it('preserved XOR reference trains with earned tensor components', async () => {
-    const level = gameLevels.find((level) => level.id === 'xor')!;
+    const level = gameLevels.find(
+      (level): level is TrainLevel => level.kind === 'train' && level.id === 'xor',
+    )!;
     const available = [
       ...level.available,
       ...[...chapter0Levels, ...chapter2Levels].flatMap((item) => item.unlockComponents ?? []),

@@ -7,7 +7,7 @@ import {
   type GraphJSON,
   type GraphNode,
 } from '../engine/graph';
-import type { Level } from '../engine/levels';
+import type { CircuitLevel } from '../engine/levels';
 import type { ExpressionGraph } from '../engine/expression';
 
 export interface Point {
@@ -94,7 +94,7 @@ export function nodePosition(node: GraphNode): Point {
     y: typeof node.ui?.y === 'number' ? node.ui.y : 0,
   };
 }
-export function initialGraph(level: Level): GraphJSON {
+export function initialGraph(level: CircuitLevel): GraphJSON {
   return {
     version: 1,
     nodes: [
@@ -118,7 +118,7 @@ export function initialGraph(level: Level): GraphJSON {
   };
 }
 export function createEditorState(
-  level: Level,
+  level: CircuitLevel,
   graph: GraphJSON = initialGraph(level),
   /** Palette list: level primitives plus player components (see availableComponents). */
   available: readonly string[] = level.available,

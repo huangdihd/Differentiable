@@ -21,6 +21,7 @@ export interface Backend {
   submit(commands: readonly Command[]): void;
   read(handle: Handle): Promise<Float32Array>;
   release(handle: Handle): void;
+  dispose?(): void;
 }
 export function size(shape: Shape): number {
   if (shape.some((d) => !Number.isSafeInteger(d) || d < 0)) throw new Error('engine.shape.invalid');

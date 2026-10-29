@@ -51,6 +51,9 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   multi_head: 'attn×2',
   feed_forward: 'FFN',
   transformer_block: 'block',
+  rnn_cell: 'RNN',
+  rnn_window: 'RNN×T',
+  temporal_attention: 'attnₜ',
 };
 
 /**
@@ -95,7 +98,7 @@ const FAMILIES: Record<Category, readonly string[]> = {
     'embedding',
   ],
   grad: ['dsigmoid', 'dtanh'],
-  learn: ['param', 'linear', 'mse', 'cross_entropy'],
+  learn: ['param', 'linear', 'mse', 'cross_entropy', 'rnn_cell', 'rnn_window'],
   attn: [
     'sample',
     'attn_scores',
@@ -105,6 +108,7 @@ const FAMILIES: Record<Category, readonly string[]> = {
     'multi_head',
     'feed_forward',
     'transformer_block',
+    'temporal_attention',
   ],
 };
 const CATEGORY = new Map(

@@ -1,9 +1,9 @@
 import { ComponentRegistry, createDefaultRegistry, type GraphJSON } from '../engine/graph';
-import type { Level, Progress } from '../engine/levels';
+import type { CircuitLevel, Level, Progress } from '../engine/levels';
 import { configurableModule } from '../engine/parameterized-components';
 
 /** Palette and compiler policy: a level cannot use the component it is building. */
-export function availableComponents(level: Level, progress: Progress): string[] {
+export function availableComponents(level: CircuitLevel, progress: Progress): string[] {
   const excluded = new Set([...(level.forbidden ?? []), ...(level.unlockComponents ?? [])]);
   return [
     ...new Set([...level.available, ...progress.unlockedComponents, ...(level.presets ?? [])]),
@@ -15,7 +15,8 @@ export function buildPlayerRegistry(
   levels: readonly Level[],
   progress: Progress,
 ): ComponentRegistry {
-  const presets = new Set(levels.flatMap((level) => [...(level.presets ?? [])]));
+  const circuitLevels = levels.filter((level) => level.kind !== 'observation');
+  const presets = new Set(circuitLevels.flatMap((level) => [...(level.presets ?? [])]));
   const definitions = new Map(
     createDefaultRegistry()
       .list()
@@ -27,7 +28,7 @@ export function buildPlayerRegistry(
       )
       .map((definition) => [definition.name, definition]),
   );
-  for (const level of levels) {
+  for (const level of circuitLevels) {
     for (const name of level.unlockComponents ?? []) {
       const passed =
         progress.passed.includes(level.id) && progress.unlockedComponents.includes(name);

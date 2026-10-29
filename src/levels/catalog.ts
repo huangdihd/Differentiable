@@ -5,13 +5,14 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3Levels, chapter3ForwardLevels } from './chapter3';
 import { chapter4Levels } from './chapter4';
+import { temporalLevels } from './chapter-temporal';
 import { chapter5Levels } from './chapter5';
 import { chapter6Levels } from './chapter6';
 import { xorLevel, xorSolution } from './examples';
 import { referenceRegistry } from './level-helpers';
 
-/** The road from a + b to GPT. Chapters without levels yet are shown as upcoming. */
-export const CHAPTERS = [0, 1, 2, 3, 4, 5, 6] as const;
+/** The road from a + b through time-series prediction and Attention to GPT. */
+export const CHAPTERS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
 
 export interface CatalogEntry {
   level: Level;
@@ -56,6 +57,7 @@ export const gameLevels: Level[] = [
     ).expandedPrimitives,
   },
   ...chapter4Levels,
+  ...temporalLevels,
   ...chapter5Levels,
   ...chapter6Levels,
 ];

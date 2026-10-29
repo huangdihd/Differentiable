@@ -16,7 +16,13 @@ import {
   STORAGE_VERSION,
 } from './storage';
 import type { GraphJSON } from './engine/graph';
-import type { ForwardLevel } from './engine/levels';
+import * as levelEngine from './engine/levels';
+import {
+  acknowledgeObservation,
+  type CircuitLevel,
+  type ForwardLevel,
+  type ObservationLevel,
+} from './engine/levels';
 import { chapter0Levels } from './levels/chapter0';
 import { chapter1Levels } from './levels/chapter1';
 import { derivativeSolution } from './levels/examples';
@@ -104,7 +110,10 @@ function staleLossGradientGraph(output: string, vector: boolean): GraphJSON {
     ],
   };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 describe('storage', () => {
   it('validates and roundtrips optional per-level training settings', () => {
     const { source } = memory();
@@ -160,7 +169,200 @@ describe('storage', () => {
     expect(saveProgress(restored, source)).toBe(true);
     expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
   });
-  it('unlocks chapter six for saved chapter-five graduates without changing their graphs', async () => {
+  it('inserts the temporal route after an old 4-5 graduate without disturbing later access', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const solution = structuredClone(
+      gameLevels.find(
+        (level): level is CircuitLevel => level.kind !== 'observation' && level.id === '4-5',
+      )!.referenceGraph!,
+    );
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['4-5', '5-1'],
+      passed: ['4-5'],
+      savedGraphs: { '4-5': solution },
+      passedSolutions: { '4-5': solution },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.unlocked).toEqual(expect.arrayContaining(['4-5', '5-1', 'time-window-limit']));
+    expect(restored.passed).toEqual(['4-5']);
+    expect(restored.savedGraphs['4-5']).toEqual(solution);
+    expect(restored.passedSolutions['4-5']).toEqual(solution);
+  });
+  describe.each([9, STORAGE_VERSION])('observation migration from v%i', (version) => {
+    it.each(['predictor', 'crop', 'dynamic-index'])(
+      'clears the old %s 5-1 artifacts without revoking completion or other drafts',
+      async (contract) => {
+        const { gameLevels } = await import('./levels/catalog');
+        const { data, source } = memory();
+        const contractNodes: Record<string, GraphJSON['nodes']> = {
+          predictor: [
+            { id: 'weights', component: 'input', attrs: { name: 'weights' } },
+            { id: 'bias', component: 'input', attrs: { name: 'bias' } },
+          ],
+          crop: [{ id: 'crop', component: 'take_last_two' }],
+          'dynamic-index': [
+            { id: 'length', component: 'size', attrs: { axis: 1 } },
+            { id: 'positions', component: 'arange' },
+            { id: 'selected', component: 'sum', attrs: { axes: [-1] } },
+          ],
+        };
+        const oldSolution: GraphJSON = {
+          version: 1,
+          nodes: [
+            { id: 'history', component: 'input', attrs: { name: 'history' } },
+            { id: 'target', component: 'input', attrs: { name: 'target' } },
+            ...contractNodes[contract],
+            {
+              id: 'output',
+              component: 'output',
+              attrs: { name: contract === 'predictor' ? 'prediction' : 'window' },
+            },
+          ],
+          edges: [{ from: { node: 'history', port: 'out' }, to: { node: 'output', port: 'x' } }],
+        };
+        const score = { topNodes: 18, expandedPrimitives: 18, parameterCount: 0 };
+        const progress = {
+          ...createInitialProgress(),
+          unlocked: ['time-window-limit', 'time-forecast', 'custom'],
+          passed: ['time-window-limit', 'custom'],
+          savedGraphs: { 'time-window-limit': oldSolution, custom: graph },
+          passedSolutions: { 'time-window-limit': oldSolution, custom: graph },
+          bestScores: { 'time-window-limit': score, custom: score },
+        };
+        data.set(STORAGE_KEY, JSON.stringify({ version, progress }));
+        const onRevoked = vi.fn();
+
+        const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+        expect(restored.passed).toEqual(progress.passed);
+        expect(restored.passedSolutions).toEqual({ custom: graph });
+        expect(restored.bestScores).toEqual({ custom: score });
+        expect(restored.savedGraphs).toEqual({ custom: graph });
+        expect(restored.unlocked).toEqual(
+          expect.arrayContaining([...progress.unlocked, 'time-rnn']),
+        );
+        expect(onRevoked).not.toHaveBeenCalled();
+        expect(loadProgress(source)).toEqual(restored);
+        const persisted = data.get(STORAGE_KEY);
+        expect(JSON.parse(persisted!).version).toBe(STORAGE_VERSION);
+        expect(await loadProgressWithMigration(gameLevels, source, onRevoked)).toEqual(restored);
+        expect(data.get(STORAGE_KEY)).toBe(persisted);
+        expect(onRevoked).not.toHaveBeenCalled();
+      },
+    );
+  });
+  it('clears an unfinished 5-1 draft without marking the observation as read', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const draft: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'history', component: 'input', attrs: { name: 'history' } },
+        { id: 'target', component: 'input', attrs: { name: 'target' } },
+        { id: 'output', component: 'output', attrs: { name: 'window' } },
+      ],
+      edges: [],
+    };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['time-window-limit'],
+      savedGraphs: { 'time-window-limit': draft, custom: graph },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+
+    const restored = await loadProgressWithMigration(gameLevels, source);
+
+    expect(restored.savedGraphs).toEqual({ custom: graph });
+    expect(restored.passed).toEqual([]);
+    expect(restored.unlocked).not.toContain('time-rnn');
+  });
+  it('reloads a current observation acknowledgement without scores, solutions, or lost drafts', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const level = gameLevels.find(
+      (candidate): candidate is ObservationLevel =>
+        candidate.kind === 'observation' && candidate.id === 'time-window-limit',
+    )!;
+    expect(level).toBeDefined();
+    const { data, source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['time-window-limit'],
+      savedGraphs: { custom: graph },
+    };
+    const acknowledged = acknowledgeObservation(progress, level);
+    expect(saveProgress(acknowledged, source)).toBe(true);
+    const onRevoked = vi.fn();
+
+    const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+    expect(restored.passed).toEqual(['time-window-limit']);
+    expect(restored.unlocked).toContain('time-rnn');
+    expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    expect(restored.passedSolutions).toEqual({});
+    expect(restored.bestScores).toEqual({});
+    expect(onRevoked).not.toHaveBeenCalled();
+    expect(acknowledgeObservation(restored, level)).toBe(restored);
+    const persisted = data.get(STORAGE_KEY);
+    expect(await loadProgressWithMigration(gameLevels, source, onRevoked)).toEqual(restored);
+    expect(data.get(STORAGE_KEY)).toBe(persisted);
+    expect(loadProgress(source)).toEqual(restored);
+  });
+  it('revokes the old query-less temporal attention pass without removing downstream access', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const level = gameLevels.find(
+      (candidate): candidate is CircuitLevel =>
+        candidate.kind !== 'observation' && candidate.id === 'time-attention',
+    )!;
+    const oldSolution = structuredClone(level.referenceGraph!);
+    oldSolution.nodes = oldSolution.nodes.filter(
+      (node) => !(node.component === 'input' && node.attrs?.name === 'query'),
+    );
+    oldSolution.edges = oldSolution.edges.filter(
+      (edge) => edge.from.node !== 'query' && edge.to.node !== 'query',
+    );
+    const finalState = oldSolution.nodes.find((node) => node.id === 'query');
+    expect(finalState).toBeUndefined();
+    oldSolution.nodes.push({ id: 'legacy_query', component: 'sum', attrs: { axes: [1] } });
+    oldSolution.edges.push({
+      from: { node: 'history', port: 'out' },
+      to: { node: 'legacy_query', port: 'x' },
+    });
+    const output = oldSolution.nodes.find((node) => node.component === 'output')!;
+    oldSolution.edges.find((edge) => edge.to.node === output.id)!.from = {
+      node: 'legacy_query',
+      port: 'out',
+    };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ['time-attention', 'time-forecast', '5-1'],
+      passed: ['time-attention'],
+      savedGraphs: { 'time-attention': oldSolution },
+      passedSolutions: { 'time-attention': oldSolution },
+      bestScores: {
+        'time-attention': { topNodes: 3, expandedPrimitives: 1, parameterCount: 0 },
+      },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const onRevoked = vi.fn();
+
+    const restored = await loadProgressWithMigration(gameLevels, source, onRevoked);
+
+    expect(restored.passed).not.toContain('time-attention');
+    expect(restored.passedSolutions).not.toHaveProperty('time-attention');
+    expect(restored.bestScores).not.toHaveProperty('time-attention');
+    expect(restored.savedGraphs['time-attention']).toEqual(oldSolution);
+    expect(restored.unlocked).toEqual(
+      expect.arrayContaining(['time-attention', 'time-forecast', '5-1']),
+    );
+    expect(onRevoked).toHaveBeenCalledWith(['time-attention']);
+  });
+  it('unlocks stable GPT ID 6-1 for saved Attention graduates without changing their graphs', async () => {
     const { gameLevels } = await import('./levels/catalog');
     const { source } = memory();
     const solution = structuredClone(graph);
@@ -184,6 +386,49 @@ describe('storage', () => {
     expect(await loadProgressWithMigration(gameLevels, source)).toEqual(restored);
     expect(saveProgress(createInitialProgress(), source)).toBe(true);
     expect((await loadProgressWithMigration(gameLevels, source)).unlocked).not.toContain('6-1');
+  });
+  it('preserves stable Attention and GPT IDs while displayed chapter numbers move', async () => {
+    const { gameLevels } = await import('./levels/catalog');
+    const { source } = memory();
+    const ids = ['5-1', '5-5', '6-1', '6-4'];
+    const score = { topNodes: 2, expandedPrimitives: 1, parameterCount: 0 };
+    const graphs = Object.fromEntries(
+      ids.map((id) => [
+        id,
+        structuredClone(
+          gameLevels.find(
+            (level): level is CircuitLevel => level.kind !== 'observation' && level.id === id,
+          )!.referenceGraph!,
+        ),
+      ]),
+    );
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: ids,
+      passed: ids,
+      savedGraphs: graphs,
+      passedSolutions: graphs,
+      bestScores: Object.fromEntries(ids.map((id) => [id, score])),
+      trainingSettings: {
+        '5-5': { learningRate: 0.03, optimizer: 'adam' as const },
+        '6-4': { learningRate: 0.01, optimizer: 'adam' as const },
+      },
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const restored = await loadProgressWithMigration(gameLevels, source);
+    for (const id of ids) {
+      expect(restored.unlocked).toContain(id);
+      expect(restored.passed).toContain(id);
+      expect(restored.savedGraphs[id]).toEqual(graphs[id]);
+      expect(restored.passedSolutions[id]).toEqual(graphs[id]);
+      expect(restored.bestScores[id]).toEqual(score);
+    }
+    expect(restored.trainingSettings).toEqual(progress.trainingSettings);
+    expect(restored.unlocked).toContain('5-2');
+    expect(restored.unlocked).toContain('6-2');
+    expect(Object.keys(restored.savedGraphs)).toEqual(ids);
+    expect(Object.keys(restored.passedSolutions)).toEqual(ids);
+    expect(Object.keys(restored.bestScores)).toEqual(ids);
   });
   it.each([STORAGE_VERSION])(
     'restores axes access without changing other data in version %s saves',
@@ -857,7 +1102,10 @@ describe('storage', () => {
   it('removes the obsolete vector-gradient weight input without revoking a compatible solution', async () => {
     const { gameLevels } = await import('./levels/catalog');
     const { source } = memory();
-    const level = gameLevels.find((candidate) => candidate.id === '3-2')!;
+    const level = gameLevels.find(
+      (candidate): candidate is CircuitLevel =>
+        candidate.kind !== 'observation' && candidate.id === '3-2',
+    )!;
     const solution = JSON.parse(JSON.stringify(level.referenceGraph!)) as GraphJSON;
     solution.nodes.unshift({
       id: 'legacy-w',
@@ -1012,13 +1260,108 @@ describe('storage', () => {
       savedGraphs: { '2-3': graph },
     });
   });
-  it('rejects corrupt, wrong-version and deeply invalid stored values', () => {
+  it.each([1, 9, STORAGE_VERSION])(
+    'preserves v%s saves when migration reads throw and allows retry',
+    async (version) => {
+      const { data, source } = memory();
+      const storage = source();
+      const write = vi.spyOn(storage, 'setItem');
+      const level = genericOutputLevel('legacy-milestone', []);
+      const progress = {
+        ...createInitialProgress(),
+        unlocked: [level.id],
+        passed: [level.id],
+        savedGraphs: { [level.id]: level.referenceGraph! },
+        passedSolutions: { [level.id]: level.referenceGraph! },
+      };
+      const raw = JSON.stringify({ version, progress });
+      data.set(STORAGE_KEY, raw);
+      const failure = new Error('migration interface read failed');
+      let unavailable = true;
+      const brokenLevel: ForwardLevel = {
+        ...level,
+        get interface() {
+          if (unavailable) throw failure;
+          return level.interface;
+        },
+      };
+      const onRevoked = vi.fn();
+
+      await expect(
+        loadProgressWithMigration([brokenLevel], () => storage, onRevoked),
+      ).rejects.toMatchObject({ message: 'storage.progress_load_failed', cause: failure });
+      expect(data.get(STORAGE_KEY)).toBe(raw);
+      expect(write).not.toHaveBeenCalled();
+      expect(onRevoked).not.toHaveBeenCalled();
+
+      unavailable = false;
+      const restored = await loadProgressWithMigration([brokenLevel], () => storage);
+      expect(restored.passed).toContain(level.id);
+      expect(restored.savedGraphs).toEqual(progress.savedGraphs);
+    },
+  );
+  it.each([1, 9, STORAGE_VERSION])(
+    'preserves v%s saves after a later evaluation rejects and allows retry',
+    async (version) => {
+      const { data, source } = memory();
+      const storage = source();
+      const write = vi.spyOn(storage, 'setItem');
+      const levels = ['legacy-first', 'legacy-second'].map((id) => ({
+        ...genericOutputLevel(id, []),
+        revalidateOnLoad: true,
+      }));
+      const solutions = Object.fromEntries(
+        levels.map((level) => [level.id, level.referenceGraph!]),
+      );
+      const progress = {
+        ...createInitialProgress(),
+        unlocked: levels.map((level) => level.id),
+        passed: levels.map((level) => level.id),
+        savedGraphs: solutions,
+        passedSolutions: solutions,
+      };
+      const raw = JSON.stringify({ version, progress });
+      data.set(STORAGE_KEY, raw);
+      const failure = new Error('evaluation interrupted');
+      const evaluate = levelEngine.evaluateLevel;
+      const evaluation = vi
+        .spyOn(levelEngine, 'evaluateLevel')
+        .mockImplementationOnce(evaluate)
+        .mockRejectedValueOnce(failure);
+      const onRevoked = vi.fn();
+
+      await expect(
+        loadProgressWithMigration(levels, () => storage, onRevoked),
+      ).rejects.toMatchObject({ message: 'storage.progress_load_failed', cause: failure });
+      expect(evaluation).toHaveBeenCalledTimes(2);
+      expect(data.get(STORAGE_KEY)).toBe(raw);
+      expect(write).not.toHaveBeenCalled();
+      expect(onRevoked).not.toHaveBeenCalled();
+
+      const restored = await loadProgressWithMigration(levels, () => storage);
+      expect(restored.passed).toEqual(progress.passed);
+      expect(restored.savedGraphs).toEqual(solutions);
+      expect(restored.passedSolutions).toEqual(solutions);
+    },
+  );
+  it('rejects corrupt, wrong-version and deeply invalid stored values without overwriting them', async () => {
     const { data, source } = memory();
+    const storage = source();
+    const write = vi.spyOn(storage, 'setItem');
     for (const raw of [
+      '',
       '{',
       'null',
+      '[]',
       '{}',
       JSON.stringify({ version: 99, progress: createInitialProgress() }),
+      JSON.stringify({ version: String(STORAGE_VERSION), progress: createInitialProgress() }),
+      JSON.stringify({ version: STORAGE_VERSION, progress: null }),
+      JSON.stringify({
+        version: STORAGE_VERSION,
+        progress: { ...createInitialProgress(), passed: ['locked'] },
+      }),
+      JSON.stringify({ version: 1, progress: null }),
       JSON.stringify({
         version: 1,
         progress: {
@@ -1028,8 +1371,17 @@ describe('storage', () => {
       }),
     ]) {
       data.set(STORAGE_KEY, raw);
-      expect(loadProgress(source)).toEqual(createInitialProgress());
+      expect(() => loadProgress(() => storage)).toThrow('storage.progress_load_failed');
+      await expect(loadProgressWithMigration([], () => storage)).rejects.toThrow(
+        'storage.progress_load_failed',
+      );
+      expect(data.get(STORAGE_KEY)).toBe(raw);
+      expect(write).not.toHaveBeenCalled();
     }
+    const progress = { ...createInitialProgress(), savedGraphs: { '0-1': graph } };
+    data.set(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, progress }));
+    expect(loadProgress(() => storage)).toEqual(progress);
+    await expect(loadProgressWithMigration([], () => storage)).resolves.toEqual(progress);
   });
   it('migrates legacy milestones with validated graphs and reference fallback', async () => {
     const { source, data } = memory();
@@ -1127,7 +1479,9 @@ describe('storage', () => {
     const { gameLevels } = await import('./levels/catalog');
     const { data, source } = memory();
     const descent = structuredClone(
-      gameLevels.find((level) => level.id === '3-1')!.referenceGraph!,
+      gameLevels.find(
+        (level): level is CircuitLevel => level.kind !== 'observation' && level.id === '3-1',
+      )!.referenceGraph!,
     );
     const output = descent.nodes.find((node) => node.component === 'output')!;
     output.attrs = { name: 'y', note: 'preserve' };
@@ -1227,7 +1581,7 @@ describe('storage', () => {
     ).toBe(false);
     expect(isProgress({ ...createInitialProgress(), passed: ['locked'] })).toBe(false);
   });
-  it('catches storage acquisition, get/set method getters, and quota errors', () => {
+  it('distinguishes unreadable storage from missing storage while tolerating failed writes', async () => {
     const denied = () => {
       throw new Error('denied');
     };
@@ -1245,12 +1599,64 @@ describe('storage', () => {
         throw new Error('quota');
       },
     });
-    for (const source of [denied, getter, quota, () => undefined]) {
+    for (const source of [denied, getter]) {
+      expect(() => loadProgress(source)).toThrow('storage.progress_load_failed');
+      await expect(loadProgressWithMigration([], source)).rejects.toThrow(
+        'storage.progress_load_failed',
+      );
+    }
+    for (const source of [quota, () => undefined]) {
       expect(loadProgress(source)).toEqual(createInitialProgress());
+      await expect(loadProgressWithMigration([], source)).resolves.toEqual(createInitialProgress());
+    }
+    for (const source of [denied, getter, quota, () => undefined]) {
       expect(saveProgress(createInitialProgress(), source)).toBe(false);
       expect(loadLanguage(source, 'en')).toBe('en');
       expect(saveLanguage('zh-CN', source)).toBe(false);
     }
+  });
+  it('leaves saves untouched when reads are denied and retries after access returns', async () => {
+    const { data, source } = memory();
+    const progress = { ...createInitialProgress(), savedGraphs: { '0-1': graph } };
+    const raw = JSON.stringify({ version: STORAGE_VERSION, progress });
+    data.set(STORAGE_KEY, raw);
+    const failure = new Error('read denied');
+    let denied = true;
+    const storage = {
+      getItem(key: string) {
+        if (denied) throw failure;
+        return source().getItem(key);
+      },
+      setItem: vi.fn(source().setItem),
+    };
+
+    expect(() => loadProgress(() => storage)).toThrow('storage.progress_load_failed');
+    await expect(loadProgressWithMigration([], () => storage)).rejects.toMatchObject({
+      message: 'storage.progress_load_failed',
+      cause: failure,
+    });
+    expect(data.get(STORAGE_KEY)).toBe(raw);
+    expect(storage.setItem).not.toHaveBeenCalled();
+
+    denied = false;
+    expect(loadProgress(() => storage)).toEqual(progress);
+    await expect(loadProgressWithMigration([], () => storage)).resolves.toEqual(progress);
+  });
+  it('loads existing read-only saves without replacing them when migration persistence fails', async () => {
+    const { data, source } = memory();
+    const progress = { ...createInitialProgress(), savedGraphs: { '0-1': graph } };
+    const raw = JSON.stringify({ version: 9, progress });
+    data.set(STORAGE_KEY, raw);
+    const storage = {
+      getItem: source().getItem,
+      setItem: vi.fn(() => {
+        throw new Error('read-only storage');
+      }),
+    };
+
+    await expect(loadProgressWithMigration([], () => storage)).resolves.toEqual(progress);
+    expect(storage.setItem).toHaveBeenCalledOnce();
+    expect(data.get(STORAGE_KEY)).toBe(raw);
   });
   it('still saves language when the progress write fails', () => {
     const { source, data } = memory();
@@ -1330,6 +1736,353 @@ describe('storage', () => {
     fails.schedule(undefined);
     expect(fails.flush()).toBe(false);
   });
+});
+
+describe.each([1, 9, STORAGE_VERSION])('concurrent progress loads from v%i', (version) => {
+  it.each(['inactive', 'saved', 'removed'] as const)(
+    'rejects an interrupted evaluation when the load is %s without writing or notifying',
+    async (interruption) => {
+      const { data, source } = memory();
+      const storage = source();
+      const read = vi.spyOn(storage, 'getItem');
+      const write = vi.spyOn(storage, 'setItem');
+      const level = { ...genericOutputLevel('concurrent', []), revalidateOnLoad: true };
+      const progress = {
+        ...createInitialProgress(),
+        unlocked: [level.id],
+        passed: [level.id],
+        savedGraphs: { [level.id]: level.referenceGraph! },
+        passedSolutions: { [level.id]: level.referenceGraph! },
+      };
+      const raw = JSON.stringify({ version, progress });
+      data.set(STORAGE_KEY, raw);
+      let releaseEvaluation!: () => void;
+      const evaluationReady = new Promise<void>((resolve) => {
+        releaseEvaluation = resolve;
+      });
+      const evaluation = vi.spyOn(levelEngine, 'evaluateLevel').mockImplementation(async () => {
+        await evaluationReady;
+        return {
+          levelId: level.id,
+          passed: false,
+          tests: [],
+          metrics: { topNodes: 0, expandedPrimitives: 0, parameterCount: 0 },
+        };
+      });
+      const onRevoked = vi.fn();
+      let active = true;
+      const loading = loadProgressWithMigration(
+        [level],
+        () => storage,
+        onRevoked,
+        () => active,
+      );
+      expect(evaluation).toHaveBeenCalledOnce();
+      expect(read).toHaveBeenCalledOnce();
+
+      if (interruption === 'inactive') active = false;
+      if (interruption === 'saved') {
+        const newer = { ...createInitialProgress(), savedGraphs: { newer: graph } };
+        expect(saveProgress(newer, () => storage)).toBe(true);
+      }
+      if (interruption === 'removed') data.delete(STORAGE_KEY);
+      const retained = data.get(STORAGE_KEY);
+      write.mockClear();
+      releaseEvaluation();
+
+      await expect(loading).rejects.toThrow('storage.progress_load_failed');
+      expect(data.get(STORAGE_KEY)).toBe(retained);
+      expect(write).not.toHaveBeenCalled();
+      expect(onRevoked).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('progress load ownership', () => {
+  it.each(['inactive', 'saved'] as const)(
+    'rejects an unchanged current snapshot when %s before returning it to autosave',
+    async (interruption) => {
+      const { data, source } = memory();
+      const storage = source();
+      const write = vi.spyOn(storage, 'setItem');
+      expect(saveProgress(createInitialProgress(), () => storage)).toBe(true);
+      let active = true;
+      const loading = loadProgressWithMigration(
+        [],
+        () => storage,
+        undefined,
+        () => active,
+      );
+      if (interruption === 'inactive') active = false;
+      if (interruption === 'saved') {
+        expect(
+          saveProgress(
+            { ...createInitialProgress(), savedGraphs: { newer: graph } },
+            () => storage,
+          ),
+        ).toBe(true);
+      }
+      const retained = data.get(STORAGE_KEY);
+      write.mockClear();
+
+      await expect(loading).rejects.toThrow('storage.progress_load_failed');
+      expect(data.get(STORAGE_KEY)).toBe(retained);
+      expect(write).not.toHaveBeenCalled();
+    },
+  );
+
+  it('lets a newer load finish while an inactive StrictMode load is still evaluating', async () => {
+    const { data, source } = memory();
+    const storage = source();
+    const write = vi.spyOn(storage, 'setItem');
+    const level = { ...genericOutputLevel('concurrent', []), revalidateOnLoad: true };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: [level.id],
+      passed: [level.id],
+      passedSolutions: { [level.id]: level.referenceGraph! },
+    };
+    data.set(STORAGE_KEY, JSON.stringify({ version: 9, progress }));
+    let releaseEvaluation!: () => void;
+    const evaluationReady = new Promise<void>((resolve) => {
+      releaseEvaluation = resolve;
+    });
+    const result = {
+      levelId: level.id,
+      passed: true,
+      tests: [],
+      metrics: { topNodes: 0, expandedPrimitives: 0, parameterCount: 0 },
+    };
+    vi.spyOn(levelEngine, 'evaluateLevel')
+      .mockImplementationOnce(async () => {
+        await evaluationReady;
+        return { ...result, passed: false };
+      })
+      .mockResolvedValue(result);
+    let active = true;
+    const onRevoked = vi.fn();
+    const older = loadProgressWithMigration(
+      [level],
+      () => storage,
+      onRevoked,
+      () => active,
+    );
+    active = false;
+    const newer = await loadProgressWithMigration([level], () => storage);
+    expect(newer.passed).toEqual([level.id]);
+    expect(write).toHaveBeenCalledOnce();
+    const retained = data.get(STORAGE_KEY);
+    releaseEvaluation();
+
+    await expect(older).rejects.toThrow('storage.progress_load_failed');
+    expect(data.get(STORAGE_KEY)).toBe(retained);
+    expect(write).toHaveBeenCalledOnce();
+    expect(onRevoked).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'does not return new progress to an inactive load (storage: %s)',
+    async (available) => {
+      const { source } = memory();
+      const storage = source();
+      const write = vi.spyOn(storage, 'setItem');
+      await expect(
+        loadProgressWithMigration(
+          [],
+          () => (available ? storage : undefined),
+          undefined,
+          () => false,
+        ),
+      ).rejects.toThrow('storage.progress_load_failed');
+      expect(write).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('throttled save recovery', () => {
+  it.each(['false', 'throw'] as const)(
+    'retains a %s failure until an explicit flush retries it',
+    (failure) => {
+      vi.useFakeTimers();
+      const save = vi
+        .fn<(value: number) => boolean>()
+        .mockImplementationOnce(() => {
+          if (failure === 'throw') throw new Error('write failed');
+          return false;
+        })
+        .mockReturnValue(true);
+      const saver = createThrottledSave(save, 100);
+      saver.schedule(1);
+      expect(saver.flush()).toBe(false);
+      vi.advanceTimersByTime(1000);
+      expect(save.mock.calls).toEqual([[1]]);
+      expect(saver.flush()).toBe(true);
+      expect(save.mock.calls).toEqual([[1], [1]]);
+      expect(saver.flush()).toBe(true);
+      expect(save).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('retains a timer-triggered failure without scheduling an automatic retry', () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    const saver = createThrottledSave(save, 100);
+    saver.schedule(1);
+    vi.advanceTimersByTime(1000);
+    expect(save.mock.calls).toEqual([[1]]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(saver.flush()).toBe(true);
+    expect(save.mock.calls).toEqual([[1], [1]]);
+  });
+
+  it('replaces a failed pending snapshot with newly scheduled progress', () => {
+    vi.useFakeTimers();
+    const save = vi
+      .fn<(value: number) => boolean>()
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+    const saver = createThrottledSave(save, 100);
+    saver.schedule(1);
+    expect(saver.flush()).toBe(false);
+    saver.schedule(2);
+    expect(saver.flush()).toBe(true);
+    expect(save.mock.calls).toEqual([[1], [2]]);
+    vi.advanceTimersByTime(1000);
+    expect(save).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['success', 'false', 'throw'] as const)(
+    'keeps newer work scheduled inside a %s callback',
+    (result) => {
+      vi.useFakeTimers();
+      const save = vi.fn<(value: number) => boolean>().mockReturnValue(true);
+      const saver = createThrottledSave(save, 100);
+      save.mockImplementationOnce(() => {
+        saver.schedule(2);
+        if (result === 'throw') throw new Error('write failed');
+        return result === 'success';
+      });
+      saver.schedule(1);
+      expect(saver.flush()).toBe(result === 'success');
+      expect(saver.flush()).toBe(true);
+      expect(save.mock.calls).toEqual([[1], [2]]);
+      vi.advanceTimersByTime(1000);
+      expect(save).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('allows cancel to explicitly discard a failed pending save', () => {
+    vi.useFakeTimers();
+    const save = vi.fn().mockReturnValue(false);
+    const saver = createThrottledSave(save, 100);
+    saver.schedule(1);
+    vi.advanceTimersByTime(100);
+    expect(save.mock.calls).toEqual([[1]]);
+    saver.cancel();
+    expect(saver.flush()).toBe(true);
+    vi.advanceTimersByTime(1000);
+    expect(save).toHaveBeenCalledOnce();
+  });
+});
+
+describe('observation acknowledgement', () => {
+  const level: ObservationLevel = {
+    kind: 'observation',
+    id: 'time-window-limit',
+    titleKey: 'levels.temporal.window.title',
+    descriptionKey: 'levels.temporal.window.description',
+    chapter: '5',
+    unlock: ['time-rnn'],
+  };
+
+  it('does not acknowledge locked observations or circuit lessons', () => {
+    const locked = createInitialProgress();
+    expect(acknowledgeObservation(locked, level)).toBe(locked);
+    expect(acknowledgeObservation(locked, chapter0Levels[0])).toBe(locked);
+  });
+
+  it('advances only progression without mutating input or manufacturing circuit artifacts', () => {
+    const score = { topNodes: 2, expandedPrimitives: 1, parameterCount: 0 };
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: [level.id, 'custom'],
+      passed: ['custom'],
+      savedGraphs: { custom: graph },
+      passedSolutions: { custom: graph },
+      bestScores: { custom: score },
+      trainingSettings: { custom: { learningRate: 0.1 } },
+    };
+    const original = structuredClone(progress);
+
+    const acknowledged = acknowledgeObservation(progress, level);
+
+    expect(progress).toEqual(original);
+    expect(acknowledged.passed).toEqual(['custom', level.id]);
+    expect(acknowledged.unlocked).toEqual([level.id, 'custom', 'time-rnn']);
+    expect(acknowledged.unlockedComponents).toEqual(progress.unlockedComponents);
+    expect(acknowledged.savedGraphs).toBe(progress.savedGraphs);
+    expect(acknowledged.passedSolutions).toBe(progress.passedSolutions);
+    expect(acknowledged.bestScores).toBe(progress.bestScores);
+    expect(acknowledged.trainingSettings).toBe(progress.trainingSettings);
+    expect(acknowledgeObservation(acknowledged, level)).toBe(acknowledged);
+  });
+
+  it('repairs missing successors for existing read credit without duplicating completion', () => {
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: [level.id],
+      passed: [level.id],
+    };
+    const acknowledged = acknowledgeObservation(progress, level);
+    expect(acknowledged.passed).toEqual([level.id]);
+    expect(acknowledged.unlocked).toEqual([level.id, 'time-rnn']);
+    expect(acknowledgeObservation(acknowledged, level)).toBe(acknowledged);
+  });
+
+  it('does not revalidate an observation even if stale circuit flags remain at runtime', async () => {
+    const { source } = memory();
+    const progress = {
+      ...createInitialProgress(),
+      unlocked: [level.id],
+      passed: [level.id],
+    };
+    expect(saveProgress(progress, source)).toBe(true);
+    const onRevoked = vi.fn();
+    const staleLevel = { ...level, revalidateOnLoad: true };
+    const restored = await loadProgressWithMigration([staleLevel], source, onRevoked);
+    expect(restored.passed).toEqual([level.id]);
+    expect(restored.unlocked).toContain('time-rnn');
+    expect(restored.passedSolutions).toEqual({});
+    expect(restored.bestScores).toEqual({});
+    expect(onRevoked).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'preserves v1 explicit read credit (%s) without crediting unread observations',
+    async (read) => {
+      const { data, source } = memory();
+      const successor = genericOutputLevel('later', []);
+      const progress = {
+        ...createInitialProgress(),
+        unlocked: [level.id, successor.id],
+        passed: [...(read ? [level.id] : []), successor.id],
+        savedGraphs: { [level.id]: graph, [successor.id]: successor.referenceGraph! },
+        bestScores: { [level.id]: { topNodes: 2, expandedPrimitives: 1, parameterCount: 0 } },
+      };
+      data.set(STORAGE_KEY, JSON.stringify({ version: 1, progress }));
+      const onRevoked = vi.fn();
+
+      const restored = await loadProgressWithMigration([level, successor], source, onRevoked);
+
+      expect(restored.passed.includes(level.id)).toBe(read);
+      expect(restored.passed).toContain(successor.id);
+      expect(restored.savedGraphs).toEqual({ [successor.id]: successor.referenceGraph! });
+      expect(restored.passedSolutions).not.toHaveProperty(level.id);
+      expect(restored.bestScores).not.toHaveProperty(level.id);
+      expect(onRevoked).not.toHaveBeenCalled();
+      expect(await loadProgressWithMigration([level, successor], source)).toEqual(restored);
+    },
+  );
 });
 
 it('the gradient view unlocks with the autodiff level, not with chapter 2', async () => {

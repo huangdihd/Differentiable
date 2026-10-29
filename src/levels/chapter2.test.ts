@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { compileGraph, createDefaultRegistry, type GraphJSON } from '../engine/graph';
-import { applyResult, evaluateLevel, graphMetrics, initialProgress } from '../engine/levels';
+import {
+  acknowledgeObservation,
+  applyResult,
+  evaluateLevel,
+  graphMetrics,
+  initialProgress,
+} from '../engine/levels';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
 import { catalog, gameLevels } from './catalog';
@@ -338,6 +344,10 @@ describe('tensor curriculum', () => {
     // Exercise prerequisite transitions without repeating dedicated training tests.
     for (const level of gameLevels) {
       expect(progress.unlocked).toContain(level.id);
+      if (level.kind === 'observation') {
+        progress = acknowledgeObservation(progress, level);
+        continue;
+      }
       expect(availableComponents(level, progress)).not.toContain(level.unlockComponents?.[0]);
       progress = applyResult(
         progress,
@@ -354,7 +364,9 @@ describe('tensor curriculum', () => {
     expect(progress.unlocked).toContain('3-4');
     expect(
       availableComponents(
-        gameLevels.find((level) => level.id === 'xor')!,
+        gameLevels
+          .filter((level) => level.kind !== 'observation')
+          .find((level) => level.id === 'xor')!,
         progress,
       ),
     ).toEqual(expect.arrayContaining(['matmul', 'softmax']));

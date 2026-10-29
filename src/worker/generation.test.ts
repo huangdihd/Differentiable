@@ -267,7 +267,7 @@ it('snapshots exact post-step parameters, survive plan release, and invalidate o
 const sequenceTrainLevels = gameLevels.filter(
   (level) => level.kind === 'train' && level.id === '5-5',
 );
-it('registers the generating chapter 5 capstone', () => {
+it('registers the Attention capstone under its stable ID', () => {
   expect(sequenceTrainLevels).toHaveLength(1);
   expect(sequenceTrainLevels[0]).toMatchObject({ generates: true });
 });

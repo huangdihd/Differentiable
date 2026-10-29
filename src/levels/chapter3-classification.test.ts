@@ -1,13 +1,23 @@
 import { expect, it } from 'vitest';
 import type { GraphJSON } from '../engine/graph';
-import { applyResult, initialProgress, evaluateLevel } from '../engine/levels';
+import {
+  applyResult,
+  initialProgress,
+  evaluateLevel,
+  type CircuitLevel,
+  type ForwardLevel,
+} from '../engine/levels';
 import { gameLevels } from './catalog';
 import { chapter3ClassificationLevels, chapter3ForwardLevels } from './chapter3';
 import { referenceRegistry } from './level-helpers';
 import { availableComponents, buildPlayerRegistry } from './registry';
+
+const circuitLevels = gameLevels.filter((level) => level.kind !== 'observation');
 it('earns the player cross_entropy subgraph with p/t ports', async () => {
   let progress = initialProgress(gameLevels.map((l) => l.id));
-  for (const level of gameLevels.filter((l) => l.kind !== 'train')) {
+  for (const level of gameLevels.filter(
+    (l): l is ForwardLevel => l.kind === 'forward' || l.kind === 'derivative',
+  )) {
     if (level.id === '3-7') break;
     const result = await evaluateLevel(
       { ...level, available: availableComponents(level, progress) },
@@ -30,14 +40,16 @@ it('classification worker traces retain three steps, accuracy and output loss gr
     gameLevels.flatMap((l) => l.unlockComponents ?? []),
   );
   progress.passed = gameLevels.map((l) => l.id);
-  progress.passedSolutions = Object.fromEntries(gameLevels.map((l) => [l.id, l.referenceGraph!]));
+  progress.passedSolutions = Object.fromEntries(
+    circuitLevels.map((l) => [l.id, l.referenceGraph!]),
+  );
   const runtime = new WorkerRuntime((m) => messages.push(m), gameLevels, progress);
   let requestId = 0;
   try {
     await runtime.handle({ type: 'init', backend: 'cpu', revision: 0, requestId: ++requestId });
     for (const level of [
       ...chapter3ClassificationLevels,
-      gameLevels.find((level) => level.id === 'xor')!,
+      circuitLevels.find((level) => level.id === 'xor')!,
     ]) {
       let last = Infinity;
       for (let i = 1; i <= 3; i++) {
@@ -68,9 +80,11 @@ it('classification worker traces retain three steps, accuracy and output loss gr
     await runtime.dispose();
   }
 });
-const forwards = gameLevels.filter((l) => l.kind !== 'train');
+const forwards = gameLevels.filter(
+  (l): l is ForwardLevel => l.kind === 'forward' || l.kind === 'derivative',
+);
 const registry = referenceRegistry(forwards);
-const playable = (level: (typeof gameLevels)[number]) => ({
+const playable = (level: CircuitLevel) => ({
   ...level,
   available: [...level.available, ...forwards.flatMap((l) => l.unlockComponents ?? [])],
 });

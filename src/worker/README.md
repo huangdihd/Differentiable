@@ -1,5 +1,86 @@
 # Graph worker API
 
+## Isolated character experiments
+
+Displayed lesson 5-1 owns one instance of `fixed-window-worker.ts`, separate from
+the graph Worker below. Its initial request is
+`{ type: 'train', model: 'fixed-window' }`, without player progress; the UI also sends
+the main game's selected `backend` (`cpu` or `webgpu`) when it is known. This retains
+the independent 4-6 reference experiment: the original 512-example dataset, seed
+4105 and Adam .03, with 160 updates followed by continuation to 320. No RNN is
+trained in 5-1. After revealing the identical `th` inputs, the UI's “Build RNN”
+action calls `acknowledgeObservation` and enters `time-rnn`.
+
+After passing `time-rnn`, Next opens temporary `PlayerRnnComparison` with one
+Worker per model. Each first request supplies
+`{ type: 'train', model: 'fixed-window' | 'rnn', backend, playerProgress }`. The fixed-window
+experiment compiles `passedSolutions['4-5']`; the RNN compiles and executes the
+actual cell in `passedSolutions['time-rnn']`. Both use `compileGraph` and the player
+registry from `buildPlayerRegistry`, including player component dependencies.
+Compilation disables native shortcuts so saved nested implementations are executed
+rather than substituted. Extra parameters inside a player RNN cell are shared
+across time and batch shapes and included in the same optimizer under `cell/` keys.
+A missing saved top-level circuit fails explicitly. Nested components follow the
+same player registry rules as the editor: saved implementations are retained, and
+already-earned components remain usable if their old solution was revoked. The
+experiment does not require extra dependency saves beyond the original level.
+The player built the RNN cell, not the whole character model: embedding
+width 8, hidden width 24, the 27-character output head and fresh initial weights
+belong to the experiment fixture.
+
+`fixed-window-batch.ts` validates the fixed-window graph at the original 512-row
+shape, then adapts only verified row-preserving reshape signatures for the new
+training and prediction batch sizes. This includes nested components and resolved
+dimension ports. It does not rewrite saved graphs, parameter shapes, constants or
+feature widths; unrecognized shape incompatibilities retain their engine diagnostic.
+
+The dedicated protocol is `fixed-window-protocol.ts`; its initial request may
+include `backend` and `playerProgress`. `backend` selects the same backend type as the
+main game, while the comparison Worker still creates its own backend instance. `playerProgress`
+is required for the RNN and for the post-build fixed-window comparison. Send it only once per Worker. Later requests omit it and
+continue the same parameters and Adam state. Switching a live Worker's model or
+resupplying progress to replace its graph, duplicate runs, and extra runs are
+rejected. Post-build checkpoints are 320/640 updates, unlike 5-1's 160/320.
+Replies are `progress` (step, totalSteps, loss), `result` (snapshot), or `error`
+(structured key, parameters and optional node/port; no exception prose or stack).
+The comparison UI displays this diagnostic and identifies the affected model; a
+training failure alone does not mean the player's circuit is invalid.
+Snapshots include model identity, measured parameter/sample counts,
+seed, learning rate, measured loss and two full next-character distributions. The
+fixed-window prediction readback accepts finite nonnegative output weights and
+normalizes them like text generation; it does not reject a numerically equivalent
+distribution merely because its floating-point sum is not exactly 1.
+RNN snapshots also include `resetPredictions`: same weights, zero state,
+last-two-character input only, without retraining.
+
+For the post-build comparison, `character-comparison-data.ts` supplies all 1,495
+eligible within-line target positions to both models, with seed 4105 and Adam .01.
+Training and evaluation use these same positions: losses are training-corpus
+fitting losses, **not** held-out measurements. Same task and target positions do
+not mean equal parameters or compute. Parameter counts are computed from actual
+models; the conventional reference counts of 1,299 (fixed window) and 1,683 (RNN
+fixture) are not hard-coded promises for player circuits. The original 4-6 lesson
+and 5-1 experiment keep their datasets and hyperparameters. RNN execution packs
+active lines, shares their causal prefixes, excludes targets from inputs, and
+normalizes summed log probabilities by the total valid target count. Measured
+predictions do not guarantee that both examples become correct or that the RNN
+has unlimited memory.
+
+Each model owns a separate backend instance, fresh weights and independent Adam state.
+The backend type follows the main game (`cpu` or `webgpu`); independence means that the
+Worker creates its own backend instead of borrowing or transferring the main Worker's
+backend. CPU and WebGPU selection failures remain explicit rather than silently changing
+the requested comparison backend.
+Experiments borrow circuit definitions, not saved training weights; they do not
+mutate player graphs or formal training and never read or write player storage.
+A failed experiment must be recreated; retry restarts only the affected model.
+Leaving terminates the Workers and discards experiment weights. This protocol
+does not award completion. Only 5-1 uses observation acknowledgement; the post-build
+comparison adds no level and persists neither view mode nor weights. Back returns
+to `time-rnn`; Continue after both models' runs opens `time-rnn-window`.
+
+## Player graph Worker
+
 Import `WorkerClient` from `src/worker`. Its default constructor creates the Vite
 module worker; an injected `WorkerTransport` supports Node protocol tests.
 

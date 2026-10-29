@@ -50,16 +50,21 @@ describe('optimizer save compatibility', () => {
   );
 
   it.each(['Adam', 'rmsprop', '', null, 0, false, {}, []])(
-    'rejects an invalid optimizer %j and recovers corrupt saves',
-    (optimizer) => {
+    'rejects an invalid optimizer %j without replacing the stored progress',
+    async (optimizer) => {
       const { data, source } = memory();
       const progress = {
         ...createInitialProgress(),
         trainingSettings: { '3-4': { learningRate: 0.2, optimizer } },
       };
       expect(isProgress(progress)).toBe(false);
-      data.set(STORAGE_KEY, JSON.stringify({ version: STORAGE_VERSION, progress }));
-      expect(loadProgress(source)).toEqual(createInitialProgress());
+      const raw = JSON.stringify({ version: STORAGE_VERSION, progress });
+      data.set(STORAGE_KEY, raw);
+      expect(() => loadProgress(source)).toThrow('storage.progress_load_failed');
+      await expect(loadProgressWithMigration(gameLevels, source)).rejects.toThrow(
+        'storage.progress_load_failed',
+      );
+      expect(data.get(STORAGE_KEY)).toBe(raw);
     },
   );
 

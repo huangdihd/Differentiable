@@ -131,7 +131,7 @@ const metadata = (index: number) => ({
   descriptionKey: `levels.4-${index}.description`,
   hintsKeys: [`levels.4-${index}.hint1`, `levels.4-${index}.hint2`],
   available: index >= 2 ? [...available, 'arange'] : available,
-  unlock: index === 5 ? ['5-1'] : index === 4 ? ['reshape'] : [`4-${index + 1}`],
+  unlock: index === 5 ? ['time-window-limit'] : index === 4 ? ['reshape'] : [`4-${index + 1}`],
   referenceGraph: answer(index),
 });
 function forwardCases(index: number, inputs: ShapePorts) {

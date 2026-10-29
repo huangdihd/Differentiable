@@ -59,6 +59,19 @@ const freshId = (graph: GraphJSON, base: string) => {
   return id;
 };
 
+/** Keep the expanded window's zero state aligned with its configured hidden width. */
+function adaptRecurrentWindow(graph: GraphJSON, attrs: Attributes): void {
+  const initialWidth = graph.nodes.find((node) => node.id === 'initial_width');
+  if (!initialWidth) return;
+  const shape = initialWidth.attrs?.shape;
+  initialWidth.attrs = {
+    ...initialWidth.attrs,
+    shape: Array.isArray(shape)
+      ? [...shape.slice(0, -1), number(attrs, 'hidden_features')]
+      : [number(attrs, 'hidden_features')],
+  };
+}
+
 /** Treat rank-one x as a batch of scalars when Linear declares one input feature. */
 function adaptScalarBatchLinear(graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
   if (attrs.automatic_parameters !== true || attrs.in_features !== 1 || inputs?.x?.length !== 1)
@@ -129,6 +142,29 @@ const MODULES: Readonly<Record<string, ModuleSpec>> = {
       normal('tokens', (a) => [number(a, 'num_embeddings'), number(a, 'embedding_dim')]),
       normal('positions', (a) => [number(a, 'max_length'), number(a, 'embedding_dim')]),
     ],
+  },
+  rnn_cell: {
+    attributes: [automatic, integer('input_features', 1), integer('hidden_features', 8)],
+    defaults: { automatic_parameters: true, input_features: 1, hidden_features: 8 },
+    parameters: [
+      normal('wx', (a) => [number(a, 'input_features'), number(a, 'hidden_features')]),
+      normal('wh', (a) => [number(a, 'hidden_features'), number(a, 'hidden_features')]),
+      zeros('b', (a) => [number(a, 'hidden_features')]),
+    ],
+  },
+  rnn_window: {
+    attributes: [
+      automatic,
+      integer('input_features', 1, { max: 1 }),
+      integer('hidden_features', 8),
+    ],
+    defaults: { automatic_parameters: true, input_features: 1, hidden_features: 8 },
+    parameters: [
+      normal('wx', (a) => [number(a, 'input_features'), number(a, 'hidden_features')]),
+      normal('wh', (a) => [number(a, 'hidden_features'), number(a, 'hidden_features')]),
+      zeros('b', (a) => [number(a, 'hidden_features')]),
+    ],
+    adapt: adaptRecurrentWindow,
   },
   feed_forward: {
     attributes: [automatic, integer('features', 8), integer('hidden_features', 16)],

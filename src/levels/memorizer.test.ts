@@ -1,13 +1,15 @@
 import { expect, it } from 'vitest';
 import type { GraphJSON } from '../engine/graph';
-import { evaluateLevel, type TrainLevel } from '../engine/levels';
+import { evaluateLevel, type ForwardLevel, type TrainLevel } from '../engine/levels';
 import { Random } from '../engine/random';
 import { gameLevels } from './catalog';
 import { referenceRegistry } from './level-helpers';
 
 // A Parameter shaped like the batch output can fit every training row without reading x.
 // Grading must use a held-out or reordered batch so that lookup table fails.
-const forwards = gameLevels.filter((l) => l.kind !== 'train');
+const forwards = gameLevels.filter(
+  (l): l is ForwardLevel => l.kind === 'forward' || l.kind === 'derivative',
+);
 const registry = referenceRegistry(forwards);
 const earned = forwards.flatMap((l) => l.unlockComponents ?? []);
 const trainLevels = gameLevels.filter((l): l is TrainLevel => l.kind === 'train');
@@ -27,7 +29,11 @@ function memorizer(level: TrainLevel): GraphJSON {
       nodes: [
         { id: 'x', component: 'input', attrs: { name: 'x' } },
         { id: 't', component: 'input', attrs: { name: 't' } },
-        { id: 'table', component: 'param', attrs: { shape: [16], init: 'zeros' } },
+        {
+          id: 'table',
+          component: 'param',
+          attrs: { shape: [...level.interface.inputs.t], init: 'zeros' },
+        },
         { id: 'error', component: 'mse' },
         { id: 'output', component: 'output', attrs: { name: 'loss' } },
       ],
@@ -51,7 +57,17 @@ function memorizer(level: TrainLevel): GraphJSON {
 
 // xor (3-13): its 4 rows are the whole input domain and the table reshuffles per seed, but it
 // has no separate grading batch; left as a truth-table lesson. 6-4 resamples minibatches.
-const guarded = ['3-4', '3-6', '3-8', '3-9', '4-3', '4-5', '5-5'];
+const guarded = [
+  '3-4',
+  '3-6',
+  '3-8',
+  '3-9',
+  '4-3',
+  '4-5',
+  'time-rnn-delay',
+  'time-forecast',
+  '5-5',
+];
 
 it('every fixed-batch training level grades on a separate batch, except the xor truth table', () => {
   const fixed = trainLevels.filter((l) => !l.resample).map((l) => l.id);

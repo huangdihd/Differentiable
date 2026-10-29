@@ -8,7 +8,7 @@ import { matrixAxes } from './output-axes';
 
 describe('matrix output labels', () => {
   for (const { level, code } of catalog) {
-    if (!level.outputAxes || level.kind === 'train') continue;
+    if (level.kind === 'observation' || level.kind === 'train' || !level.outputAxes) continue;
     it(`${code}: labels match every fixed and generated case at every shape`, () => {
       expect(level.outputNoteKey).toBe(`levels.${level.id}.expectedNote`);
       for (const locale of [en, zh]) {

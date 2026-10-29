@@ -1,36 +1,45 @@
-import { expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CpuBackend } from './cpu';
-import { compileGraph, createDefaultRegistry } from './graph';
-import { defaultBackend, setDefaultBackend, tensor } from './tensor';
+import { createBackend } from './backend-selection';
+import { BackendError, WebGpuBackend } from './webgpu';
 
-it('captures the game backend at compilation while new tensors use the selected default', async () => {
-  const previous = defaultBackend;
-  const selected = new CpuBackend();
-  let plan: ReturnType<typeof compileGraph> | undefined;
-  try {
-    setDefaultBackend(selected);
-    plan = compileGraph(
-      {
-        version: 1,
-        nodes: [
-          { id: 'constant', component: 'const', attrs: { value: 3, shape: [] } },
-          { id: 'out', component: 'output', attrs: { name: 'y' } },
-        ],
-        edges: [{ from: { node: 'constant', port: 'out' }, to: { node: 'out', port: 'x' } }],
-      },
-      { registry: createDefaultRegistry(), inputShapes: {} },
-    );
-    const value = tensor([2], []);
-    expect(value.backend).toBe(selected);
-    value.dispose();
-    setDefaultBackend(previous);
-    const outputs = plan.execute({});
-    expect(outputs.y.backend).toBe(selected);
-    expect(await outputs.y.read()).toEqual(new Float32Array([3]));
-    plan.releaseExecution(outputs);
-  } finally {
-    plan?.dispose();
-    setDefaultBackend(previous);
-  }
-  expect(selected.liveBuffers).toBe(0);
+afterEach(() => vi.restoreAllMocks());
+
+describe('backend selection', () => {
+  it('uses CPU without probing WebGPU when CPU is requested', async () => {
+    const create = vi.spyOn(WebGpuBackend, 'create');
+
+    const selection = await createBackend('cpu');
+
+    expect(selection.kind).toBe('cpu');
+    expect(selection.backend).toBeInstanceOf(CpuBackend);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('falls back to CPU only for automatic selection', async () => {
+    const failure = new Error('adapter unavailable');
+    vi.spyOn(WebGpuBackend, 'create').mockRejectedValue(failure);
+
+    const selection = await createBackend('auto');
+
+    expect(selection.kind).toBe('cpu');
+    expect(selection.backend).toBeInstanceOf(CpuBackend);
+    expect(selection.fallbackReason).toBe(failure);
+  });
+
+  it('does not silently change an explicit WebGPU request to CPU', async () => {
+    const failure = new BackendError('engine.gpu.noAdapter');
+    vi.spyOn(WebGpuBackend, 'create').mockRejectedValue(failure);
+
+    await expect(createBackend('webgpu')).rejects.toBe(failure);
+  });
+
+  it('returns WebGPU when it is available', async () => {
+    const backend = { dispose: vi.fn() } as unknown as WebGpuBackend;
+    vi.spyOn(WebGpuBackend, 'create').mockResolvedValue(backend);
+
+    const selection = await createBackend('webgpu');
+
+    expect(selection).toEqual({ backend, kind: 'webgpu' });
+  });
 });

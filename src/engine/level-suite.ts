@@ -1,4 +1,4 @@
-import { evaluateLevel, type Level, type LevelResult, type GraphMetrics } from './levels';
+import { evaluateLevel, type CircuitLevel, type LevelResult, type GraphMetrics } from './levels';
 import type { GraphJSON, ComponentRegistry } from './graph';
 
 /** A level may combine any number of independently seeded forward, derivative,
@@ -10,7 +10,7 @@ export interface LevelSuite {
   descriptionKey: string;
   hintKeys: readonly string[];
   unlockComponents: readonly string[];
-  tests: readonly Level[];
+  tests: readonly CircuitLevel[];
 }
 export interface SuiteResult {
   levelId: string;

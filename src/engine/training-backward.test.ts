@@ -4,10 +4,13 @@ import { gameLevels } from '../levels/catalog';
 import { referenceRegistry } from '../levels/level-helpers';
 import { compileGraph } from './graph';
 import { Random } from './random';
+import type { ForwardLevel } from './levels';
 import * as T from './tensor';
 import { crossEntropy, disposeExecution } from './training';
 
-const registry = referenceRegistry(gameLevels.filter((l) => l.kind !== 'train'));
+const registry = referenceRegistry(
+  gameLevels.filter((l): l is ForwardLevel => l.kind === 'forward' || l.kind === 'derivative'),
+);
 for (const id of ['3-4', '3-6'])
   it(`${id}: loss and parameter gradients match eager backward, initial and current`, async () => {
     const level = gameLevels.find((l) => l.id === id)!;

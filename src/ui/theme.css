@@ -382,6 +382,68 @@ input[type='range'] {
   border-bottom: 1px solid var(--line);
 }
 
+/* ---------- temporal benchmark evidence ---------- */
+.benchmark-evidence {
+  margin: var(--s4) 0;
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--line-strong);
+}
+.benchmark-seed {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.benchmark-table {
+  min-width: 560px;
+}
+.benchmark-table th:first-child {
+  min-width: 168px;
+}
+.benchmark-table tr.is-focus > * {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+.benchmark-note {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.attention-probe {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px dashed var(--line);
+}
+.attention-weights {
+  display: grid;
+  gap: var(--s1);
+}
+.attention-weight {
+  display: grid;
+  grid-template-columns: auto minmax(64px, 1fr) 52px;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+}
+.attention-weight strong {
+  color: var(--text);
+  font-weight: 400;
+  text-align: right;
+}
+.attention-weight-track {
+  height: 8px;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.attention-weight-track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 /* ---------- palette (component library) ---------- */
 .palette-groups {
   display: grid;
@@ -930,7 +992,6 @@ input[type='range'] {
 }
 .level-desc {
   margin: 0;
-  white-space: pre-line;
   font-size: 13px;
   line-height: 1.65;
 }
@@ -3011,89 +3072,140 @@ input[type='range'] {
   }
 }
 
-/* ---------- formulas in level copy ---------- */
-/* Math gets a book serif so it reads as mathematics, not as code. */
-.math,
-.math-block {
-  font-family: var(--math);
+/* ---------- Markdown and formulas in course copy ---------- */
+.markdown-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.markdown-copy > :first-child {
+  margin-top: 0;
+}
+.markdown-copy > :last-child {
+  margin-bottom: 0;
+}
+.markdown-copy p,
+.markdown-copy ul,
+.markdown-copy ol,
+.markdown-copy blockquote,
+.markdown-copy pre,
+.markdown-copy table,
+.markdown-copy hr {
+  margin: 0 0 var(--s3);
+}
+.markdown-copy h1,
+.markdown-copy h2,
+.markdown-copy h3,
+.markdown-copy h4,
+.markdown-copy h5,
+.markdown-copy h6 {
+  margin: var(--s4) 0 var(--s2);
   color: var(--text);
-  font-variant-numeric: lining-nums;
+  font-size: 1em;
+  line-height: 1.35;
 }
-.math {
-  font-size: 1.12em;
-  padding: 0 0.1em;
-  /* An inline formula reads as one word: never break σ′ from (x). Long ones go in $$…$$. */
-  white-space: nowrap;
+.markdown-copy h1,
+.markdown-copy h2 {
+  padding-bottom: var(--s1);
+  border-bottom: 1px solid var(--line);
 }
-.math-block {
-  display: block;
+.markdown-copy ul,
+.markdown-copy ol {
+  padding-left: var(--s5);
+}
+.markdown-copy li + li {
+  margin-top: var(--s1);
+}
+.markdown-copy li > p {
+  margin-bottom: var(--s1);
+}
+.markdown-copy blockquote {
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.markdown-copy blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown-copy a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+.markdown-copy code {
+  padding: 0.08em 0.3em;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+.markdown-copy pre {
+  max-width: 100%;
+  padding: var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.markdown-copy pre code {
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: inherit;
+}
+.markdown-copy table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.markdown-copy th,
+.markdown-copy td {
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.markdown-copy th {
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+}
+.markdown-copy hr {
+  border: 0;
+  border-top: 1px dashed var(--line-strong);
+}
+.markdown-copy del {
+  color: var(--muted);
+}
+.markdown-copy .contains-task-list,
+.markdown-copy .task-list-item {
+  list-style: none;
+}
+.markdown-copy .contains-task-list {
+  padding-left: 0;
+}
+.markdown-copy .task-list-item input {
+  margin: 0 var(--s2) 0 0;
+  accent-color: var(--accent);
+}
+.markdown-copy .katex {
+  color: var(--text);
+  font-size: 1.08em;
+}
+.markdown-copy .katex-display {
   margin: var(--s3) 0;
   padding: var(--s3) var(--s4);
   border-left: 2px solid var(--accent);
   background: var(--panel-2);
-  font-size: 17px;
-  line-height: 1.5;
-  text-align: center;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
 }
-.math var,
-.math-block var {
-  font-style: italic;
-  padding-right: 0.04em;
-}
-.m-fn {
-  font-style: normal;
-}
-.m-op {
-  padding: 0 0.22em;
-}
-.math-block .m-op {
-  padding: 0 0.3em;
-}
-.math-block.has-frac {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.m-frac {
-  display: inline-grid;
-  grid-template-rows: auto auto;
-  margin: 0 0.12em;
-  vertical-align: -0.48em;
-  line-height: 1.05;
-  text-align: center;
-}
-.m-frac-num {
-  padding: 0 0.14em 0.06em;
-  border-bottom: 1px solid currentColor;
-}
-.m-frac-den {
-  padding: 0.06em 0.14em 0;
-}
-.math-block.has-frac .m-frac {
-  vertical-align: initial;
-}
-/* Displayed formulas break only at the <wbr> after = ; terms never split. */
-.math-block var,
-.math-block .m-fn,
-.math-block .m-num {
+.markdown-copy .katex-display > .katex {
+  min-width: max-content;
+  font-size: 1.2em;
   white-space: nowrap;
 }
-.hint .math-block {
-  font-size: 16px;
-}
-.math sub,
-.math-block sub,
-.math sup,
-.math-block sup {
-  font-size: 0.7em;
-  line-height: 0;
-  font-style: normal;
-}
-.math var sub,
-.math-block var sub {
-  margin-left: 0.05em;
+.hint .markdown-copy .katex-display {
+  padding: var(--s2) var(--s3);
 }
 
 /* demo notice: a quiet badge in the topbar, the full note at the foot of the road */
@@ -3253,5 +3365,169 @@ input[type='range'] {
 @media (prefers-reduced-motion: reduce) {
   .tool-grad.is-new {
     animation: none;
+  }
+}
+
+/* Real predictions first; reveal the missing context only after the second run. */
+.window-limit {
+  line-height: 1.6;
+}
+.window-limit-head h1 {
+  font-size: 28px;
+  line-height: 1.3;
+}
+.window-limit-head p,
+.window-limit-case,
+.window-limit-note,
+.window-limit-awaiting,
+.window-limit-probability-label,
+.window-limit-bench-head > span:last-child,
+.window-limit-console-head code,
+.window-limit-actions p,
+.window-limit-metrics,
+.window-limit-input-mode,
+.window-limit-comparison-result > span {
+  color: var(--muted);
+}
+.window-limit-stages {
+  list-style: none;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.window-limit-stages li {
+  border-bottom: 2px solid var(--line);
+}
+.window-limit-stages li.is-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.window-limit-stages li > span {
+  margin-right: var(--s2);
+  font-weight: 600;
+}
+.window-limit-bench,
+.window-limit-console {
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+.window-limit-bench-head {
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-sm);
+}
+.window-limit-example + .window-limit-example {
+  border-left: 1px solid var(--line);
+}
+.window-limit-case,
+.window-limit-note,
+.window-limit-console-head code,
+.window-limit-metrics,
+.window-limit-input-mode,
+.window-limit-comparison-result {
+  font-size: var(--fs-sm);
+}
+.window-limit-history {
+  font-family: var(--mono);
+  font-size: 22px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.window-limit-history .is-excluded {
+  color: var(--faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-strong);
+}
+.window-limit-history mark {
+  padding: 0 2px;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.window-limit-token {
+  border-bottom: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+.window-limit-token.is-correct,
+.window-limit-result.is-correct b,
+.window-limit-comparison-result .is-correct {
+  color: var(--good);
+  border-color: var(--good);
+}
+.window-limit-token.is-wrong,
+.window-limit-result.is-wrong b,
+.window-limit-comparison-result .is-wrong {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.window-limit-case code {
+  color: var(--accent);
+  margin-left: var(--s2);
+}
+.window-limit-input-mode {
+  border-bottom: 1px solid var(--line);
+}
+.window-limit-input-mode input {
+  accent-color: var(--accent);
+}
+.window-limit-comparison-result + .window-limit-comparison-result {
+  border-left: 1px solid var(--line);
+  padding-left: var(--s2);
+}
+.window-limit-comparison-result strong {
+  font-variant-numeric: tabular-nums;
+}
+.window-limit-probabilities {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s2);
+  font-size: var(--fs-sm);
+}
+.window-limit-probabilities ul {
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+.window-limit-details summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.window-limit-bar {
+  background: var(--panel-3);
+}
+.window-limit-bar > span {
+  background: var(--muted);
+}
+.window-limit-probabilities li:first-child .window-limit-bar > span {
+  background: var(--accent);
+}
+.window-limit-run {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.window-limit-run[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.window-limit-run strong {
+  font-size: var(--fs-lg);
+}
+.window-limit-training progress {
+  accent-color: var(--accent);
+}
+.window-limit-error {
+  color: var(--bad);
+}
+.window-limit-conclusion {
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.window-limit-conclusion h2 {
+  color: var(--accent);
+  font-size: var(--fs-xl);
+}
+@media (max-width: 700px) {
+  .window-limit-example + .window-limit-example {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 }

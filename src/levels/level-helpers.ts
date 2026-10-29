@@ -5,7 +5,7 @@ import {
   type GraphJSON,
   type ShapePorts,
 } from '../engine/graph';
-import { graphMetrics, type ForwardLevel, type Level } from '../engine/levels';
+import { graphMetrics, type ForwardLevel, type CircuitLevel } from '../engine/levels';
 import { configurableModule } from '../engine/parameterized-components';
 
 /** A small authoring helper, not a separate evaluator: answers are ordinary GraphJSON. */
@@ -163,7 +163,7 @@ export function referenceRegistry(levels: readonly ForwardLevel[]) {
   return registry;
 }
 
-export function withPar<L extends Level>(level: L, preceding: readonly ForwardLevel[]): L {
+export function withPar<L extends CircuitLevel>(level: L, preceding: readonly ForwardLevel[]): L {
   return {
     atol: 1e-5,
     rtol: 1e-4,

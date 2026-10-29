@@ -22,6 +22,7 @@ export function isNewComponent(seen: readonly string[], component: string): bool
 }
 
 function paletteComponents(level: Level): string[] {
+  if (level.kind === 'observation') return [];
   const excluded = new Set([...(level.forbidden ?? []), ...(level.unlockComponents ?? [])]);
   return [...new Set([...level.available, ...(level.presets ?? [])])].filter(
     (component) => !excluded.has(component),
