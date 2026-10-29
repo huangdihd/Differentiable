@@ -105,7 +105,11 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_id) l
   if (op === 'exp' || op === 'log') {
     return finish(
       `out[i] = ${
-        vjp ? `${g}[i] * (${op === 'exp' ? `${y}[i]` : '1.0 / x0[i]'})` : `${op}(x0[i])`
+        vjp
+          ? `${g}[i] * (${op === 'exp' ? `${y}[i]` : '1.0 / x0[i]'})`
+          : op === 'exp'
+            ? 'exp(min(x0[i], 88.0))' // keep in sync with EXP_SATURATION (cpu.ts)
+            : `${op}(x0[i])`
       };`,
     );
   }

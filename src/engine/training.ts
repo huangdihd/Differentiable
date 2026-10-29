@@ -1,3 +1,4 @@
+import { debugCheck, trainingDebugEnabled } from './training-debug';
 import * as T from './tensor';
 import type { Tensor } from './tensor';
 import { GraphError } from './graph';
@@ -122,12 +123,16 @@ export class Optimizer {
     if (clipNorm !== undefined && clipNorm > 0) {
       let total = 0;
       for (const g of gradients) {
-        const sq = T.sum(T.mul(g, g), g.shape.map((_, i) => i));
+        const sq = T.sum(
+          T.mul(g, g),
+          g.shape.map((_, i) => i),
+        );
         const [value] = await sq.read();
         disposeExecution([sq], [g]);
         total += value;
       }
       const norm = Math.sqrt(total);
+      await debugCheck(this.step + 1, 'gradient-norm', 'global', norm, { clipNorm });
       if (Number.isFinite(norm) && norm > clipNorm) {
         const scale = clipNorm / norm;
         gradients = gradients.map((g) => {
@@ -139,6 +144,13 @@ export class Optimizer {
       }
     }
     this.step++;
+    if (trainingDebugEnabled()) {
+      let i = 0;
+      for (const [key, parameter] of parameters) {
+        if (await debugCheck(this.step, 'parameter-before', key, parameter)) break;
+        if (await debugCheck(this.step, 'gradient', key, gradients[i++])) break;
+      }
+    }
     index = 0;
     // Bias corrections change every step; passing them as data keeps the update kernel's code
     // (and thus the compiled GPU pipeline) identical across steps.
@@ -204,6 +216,19 @@ export class Optimizer {
     } finally {
       corrections.forEach((t) => t.dispose());
       clipped.forEach((t) => t.dispose());
+    }
+    if (trainingDebugEnabled()) {
+      for (const [key, parameter] of parameters) {
+        if (
+          await debugCheck(this.step, 'parameter-after', key, parameter, {
+            kind: this.options.kind,
+          })
+        )
+          break;
+        const moment = this.moments.get(key);
+        if (moment && (await debugCheck(this.step, 'adam-v', key, moment.v))) break;
+        if (moment && (await debugCheck(this.step, 'adam-m', key, moment.m))) break;
+      }
     }
   }
 }

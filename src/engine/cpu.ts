@@ -9,6 +9,9 @@ import {
 } from './backend';
 
 /** Reference f32 backend. Native kernels are registered, not special tensor types. */
+/** exp input ceiling: exp(88) ≈ 1.65e38 stays finite in f32 with headroom for +1 or ×2. */
+export const EXP_SATURATION = 88;
+
 export type CpuKernel = (
   inputs: Float32Array[],
   shapes: Shape[],
@@ -163,7 +166,9 @@ function execute(
       out[i] = vjp
         ? g[i] * (op === 'exp' ? y[i] : 1 / a[i])
         : op === 'exp'
-          ? Math.exp(a[i])
+          ? // Saturate below f32 overflow so player-built exp formulas (tanh = (e^2x-1)/(e^2x+1))
+            // give ~1 instead of inf/inf = NaN; must match the WebGPU kernel.
+            Math.exp(Math.min(a[i], EXP_SATURATION))
           : Math.log(a[i]);
   } else if (op === 'recip') {
     // d(1/x)/dx = -1/x², which is -y².

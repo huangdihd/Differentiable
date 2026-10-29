@@ -30,6 +30,8 @@ export type FixedWindowRequest = {
   backend?: 'cpu' | 'webgpu';
   /** Supplied only when creating a post-build experiment; later runs retain the same circuit. */
   playerProgress?: Progress;
+  /** Dev diagnostic (?devDebug=1): log the first nonfinite optimizer tensor to the console. */
+  debug?: boolean;
 };
 
 export type FixedWindowResponse =

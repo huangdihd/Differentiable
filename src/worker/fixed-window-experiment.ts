@@ -1,3 +1,4 @@
+import { setTrainingDebug } from '../engine/training-debug';
 import type { Backend } from '../engine/backend';
 import { CpuBackend } from '../engine/cpu';
 import { createBackend } from '../engine/backend-selection';
@@ -348,6 +349,7 @@ export class FixedWindowWorkerHandler {
   constructor(private readonly output: (message: FixedWindowResponse) => void) {}
 
   private async initialize(request: FixedWindowRequest): Promise<void> {
+    if (request.debug) setTrainingDebug(true);
     const selection = await createBackend(request.backend ?? 'auto');
     if (this.disposed) {
       selection.backend.dispose?.();

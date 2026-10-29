@@ -93,6 +93,9 @@ export function useFixedWindowExperiment(
         model,
         ...(starting && backend ? { backend } : {}),
         ...(starting && playerProgress ? { playerProgress } : {}),
+        ...(starting && typeof location !== 'undefined' && /[?&]devDebug=1\b/.test(location.search)
+          ? { debug: true }
+          : {}),
       } satisfies FixedWindowRequest);
     } catch {
       fail();
