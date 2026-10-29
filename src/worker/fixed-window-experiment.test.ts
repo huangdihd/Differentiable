@@ -27,10 +27,15 @@ it('really trains 160 then 320 steps in one isolated session, preserves borrowed
   const evaluation = vi.spyOn(TrainingSession.prototype, 'evaluate');
   const disposal = vi.spyOn(GraphPlan.prototype, 'dispose');
   const progress: Extract<FixedWindowResponse, { type: 'progress' }>[] = [];
+  // Immediate start and throttled step-only updates (no loss readback).
+  const stepOnly: number[] = [];
   let backend: CpuBackend | undefined;
   let replayBackend: CpuBackend | undefined;
   try {
-    const pending = experiment.run((report) => progress.push(report));
+    const pending = experiment.run((report) => {
+      if (report.loss !== undefined) progress.push(report);
+      else stepOnly.push(report.step);
+    });
     await expect(experiment.run()).rejects.toThrow('worker.training_busy');
     const first = await pending;
     const session = training.mock.contexts[0] as TrainingSession;
@@ -57,7 +62,10 @@ it('really trains 160 then 320 steps in one isolated session, preserves borrowed
     expect(initial.step).toBe(0);
     expect(first.loss).toBeLessThan(initial.loss);
     const firstSerialized = JSON.stringify(first);
-    const second = await experiment.run((report) => progress.push(report));
+    const second = await experiment.run((report) => {
+      if (report.loss !== undefined) progress.push(report);
+      else stepOnly.push(report.step);
+    });
     expect(JSON.stringify(first)).toBe(firstSerialized);
     expect(second).toMatchObject({ step: 320, stepsPerRun: 160, seed: 4105, learningRate: 0.03 });
     expect(second.loss).toBeGreaterThan(0);
@@ -65,6 +73,9 @@ it('really trains 160 then 320 steps in one isolated session, preserves borrowed
     expect(training.mock.contexts).toEqual([session, session]);
     expect(training.mock.calls.map(([steps]) => steps)).toEqual([160, 160]);
     expect(session.optimizer.step).toBe(320);
+    // Each run reports its starting step before any training work.
+    expect(stepOnly[0]).toBe(0);
+    expect(stepOnly).toContain(160);
     expect(backend.liveBuffers).toBe(buffersAfterFirst);
     expect(progress.map(({ step }) => step)).toEqual(
       Array.from({ length: 32 }, (_, index) => (index + 1) * 10),
@@ -104,17 +115,10 @@ it('really trains 160 then 320 steps in one isolated session, preserves borrowed
     expect(secondProbability).toBeGreaterThan(0.5);
     expect(second.predictions[0].probabilities).not.toEqual(first.predictions[0].probabilities);
 
-    const predictionPlans = (disposal.mock.contexts as GraphPlan[]).filter(
-      (value) => value.inputShapes.x[0] === 1,
-    );
-    expect(predictionPlans).toHaveLength(2);
-    for (const predictionPlan of predictionPlans) {
-      expect(predictionPlan.inputShapes).toEqual({ x: [1, 2] });
-      expect(predictionPlan.parameters).toBe(plan.parameters);
-      for (const parameter of predictionPlan.parameters.values())
-        expect(() => parameter.assertLive()).not.toThrow();
-      expect(() => predictionPlan.execute({})).toThrow('disposed_plan');
-    }
+    // Predictions run on the trained plan itself; no separate batch-1 plan is compiled.
+    expect(
+      (disposal.mock.contexts as GraphPlan[]).filter((value) => value.inputShapes.x[0] === 1),
+    ).toHaveLength(0);
     await expect(experiment.run()).rejects.toThrow('worker.fixed_window_complete');
     expect(training).toHaveBeenCalledTimes(2);
     expect(backend.liveBuffers).toBe(buffersAfterFirst);
@@ -271,13 +275,18 @@ it('normalizes player output weights like generation without changing training, 
   ) {
     expect(steps).toBe(320);
     backend = [...this.model.parameters.values()][0].backend as CpuBackend;
-    return run.call(this, 1, options);
+    return run.call(this, 1, options).then((report) => {
+      predictionsStarted = true;
+      return report;
+    });
   });
+  let predictionsStarted = false;
   const rawOutputs: number[][] = [];
   const read = T.Tensor.prototype.read;
   vi.spyOn(T.Tensor.prototype, 'read').mockImplementation(async function (this: T.Tensor) {
     const values = await read.call(this);
-    if (this.shape[0] === 1 && this.shape[1] === VOCAB.length) rawOutputs.push(Array.from(values));
+    if (predictionsStarted && this.shape.length === 2 && this.shape[1] === VOCAB.length)
+      rawOutputs.push(Array.from(values).slice(0, VOCAB.length));
     return values;
   });
   const experiment = new FixedWindowExperiment(progress);
@@ -407,7 +416,8 @@ it('cancels between optimizer steps and releases tapes, optimizer state, plans a
   const experiment = new FixedWindowExperiment();
   let backend: CpuBackend | undefined;
   await expect(
-    experiment.run(() => {
+    experiment.run((report) => {
+      if (report.loss === undefined) return;
       const session = training.mock.contexts[0] as TrainingSession;
       backend = [...session.model.parameters.values()][0].backend as CpuBackend;
       expect(session.optimizer.step).toBe(10);
@@ -438,11 +448,13 @@ it('releases prediction executions and borrowed plans when readback fails', asyn
     this: TrainingSession,
   ) {
     backend = [...this.model.parameters.values()][0].backend as CpuBackend;
+    predicting = true;
     return { step: 160, loss: 1 };
   });
+  let predicting = false;
   const read = T.Tensor.prototype.read;
   vi.spyOn(T.Tensor.prototype, 'read').mockImplementation(function (this: T.Tensor) {
-    if (this.shape[0] === 1 && this.shape[1] === VOCAB.length)
+    if (predicting && this.shape.length === 2 && this.shape[1] === VOCAB.length)
       return Promise.reject(new Error('private readback diagnostic'));
     return read.call(this);
   });
@@ -606,7 +618,7 @@ it('worker handler rejects duplicate training rather than queueing a second run'
     handler.dispose();
   }
   expect(training).toHaveBeenCalledTimes(1);
-  expect(messages).toEqual([
+  expect(messages.filter((message) => message.type !== 'progress')).toEqual([
     { type: 'error', key: 'worker.training_busy', params: {} },
     { type: 'error', key: 'worker.execution_error', params: {} },
   ]);

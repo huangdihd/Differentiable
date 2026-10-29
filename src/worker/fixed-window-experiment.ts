@@ -191,24 +191,33 @@ export class FixedWindowExperiment {
 
   private async predict(): Promise<FixedWindowPrediction[]> {
     if (!this.trainingPlan?.parameters.size) throw new Error('worker.fixed_window_uninitialized');
-    const plan = this.compile({ x: [1, 2] }, this.trainingPlan.parameters);
+    // Predict with the exact plan that was trained. A separately compiled batch-1 plan can
+    // silently re-initialise any parameter it does not find under the same id (or whose
+    // shape depends on the batch), which made trained models look untrained (≈1/27 each).
+    const plan = this.trainingPlan;
+    const rows = this.batches[0].inputs.x.shape[0];
     try {
       const predictions: FixedWindowPrediction[] = [];
       for (const { history } of fixedWindowExamples) {
         this.assertActive();
         const input = [...history].slice(-2).join('');
-        const x = tensor(encode(input), [1, 2], this.backend);
+        const encoded = encode(input);
+        const x = tensor(
+          Array.from({ length: rows }, () => encoded).flat(),
+          [rows, 2],
+          this.backend,
+        );
         let outputs: TensorPorts | undefined;
         try {
           outputs = plan.execute({ x });
           const output = outputs[this.level.interface.output];
           if (
             output.shape.length !== 2 ||
-            output.shape[0] !== 1 ||
+            output.shape[0] !== rows ||
             output.shape[1] !== VOCAB.length
           )
             throw new Error('levels.output_shape');
-          const weights = Array.from(await output.read());
+          const weights = Array.from(await output.read()).slice(0, VOCAB.length);
           const outputSum = weights.reduce((sum, value) => sum + value, 0);
           const invalidIndex = weights.findIndex((value) => !Number.isFinite(value) || value < 0);
           if (invalidIndex !== -1 || !(outputSum > 0) || !Number.isFinite(outputSum)) {
@@ -244,8 +253,7 @@ export class FixedWindowExperiment {
       }
       return predictions;
     } finally {
-      // Only constants belong to this plan; trainingPlan retains the borrowed parameter map.
-      plan.dispose();
+      // The training plan stays owned by the session.
     }
   }
 
@@ -255,14 +263,26 @@ export class FixedWindowExperiment {
     if (this.completedRuns >= 2) throw new Error('worker.fixed_window_complete');
     this.running = true;
     try {
+      // Report immediately: the first run also pays for backend setup and kernel compilation.
+      const firstStep = this.completedRuns * this.stepsPerRun;
+      onProgress?.({ type: 'progress', step: firstStep, totalSteps: firstStep + this.stepsPerRun });
       const session = await this.initialize();
       const totalSteps = session.optimizer.step + this.stepsPerRun;
+      let lastPost = 0;
       const report = await session.run(this.stepsPerRun, {
         signal: this.cancellation.signal,
         reportEvery: 10,
         onReport: ({ step, loss }) => {
           this.assertActive();
+          lastPost = performance.now();
           onProgress?.({ type: 'progress', step, totalSteps, loss });
+        },
+        // Step-only updates keep the bar moving between loss reports (throttled, no GPU readback).
+        onStep: (step) => {
+          const now = performance.now();
+          if (now - lastPost < 80) return;
+          lastPost = now;
+          onProgress?.({ type: 'progress', step, totalSteps });
         },
       });
       this.assertActive();
