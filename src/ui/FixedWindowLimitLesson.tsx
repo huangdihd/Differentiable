@@ -141,7 +141,9 @@ export function FixedWindowLimitView({
         <section className="experiment-console" aria-label={text('training')}>
           {state.status === 'error' ? (
             <div className="experiment-error" role="alert">
-              <p>{text('failed')}</p>
+              <p>
+                {state.error?.key === 'training.nonfinite' ? text('failedNonfinite') : text('failed')}
+              </p>
               <button type="button" className="btn" onClick={beginTraining}>
                 {text('retry')}
               </button>

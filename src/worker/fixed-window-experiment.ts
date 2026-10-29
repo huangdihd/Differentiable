@@ -175,7 +175,12 @@ export class FixedWindowExperiment {
       this.trainingPlan,
       batch,
       crossEntropy,
-      { ...this.level.optimizer, learningRate: this.learningRate },
+      {
+        ...this.level.optimizer,
+        learningRate: this.learningRate,
+        // Same global-norm clip as the player RNN run, so the comparison stays fair.
+        ...(this.playerCircuit ? { clipNorm: 1 } : {}),
+      },
       this.level.interface.output,
       { accuracy: false, evaluationBatch },
     );

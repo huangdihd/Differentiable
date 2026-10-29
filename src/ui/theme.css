@@ -3669,6 +3669,10 @@ input[type='range'] {
 .experiment-prompt .btn {
   flex-shrink: 0;
 }
+.experiment-error .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .experiment-error {
   padding: var(--s3);
   border: 1px solid var(--bad);

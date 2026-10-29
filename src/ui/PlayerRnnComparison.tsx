@@ -213,19 +213,13 @@ export function PlayerRnnComparisonView({
         <section className="experiment-console" aria-label={text('training')}>
           {activeState.status === 'error' ? (
             <div className="experiment-error" role="alert">
-              <div>
-                <p>{text('failed')}</p>
-                {activeState.error && (
-                  <p className="experiment-meta">
-                    {text(activeModelKey)}: {translateDiagnostic(locale, activeState.error)}{' '}
-                    <code>
-                      {activeState.error.key}
-                      {activeState.error.node && ` · ${activeState.error.node}`}
-                      {activeState.error.port && `:${activeState.error.port}`}
-                    </code>
-                  </p>
-                )}
-              </div>
+              <p>
+                {activeState.error?.key === 'training.nonfinite'
+                  ? text('failedNonfinite')
+                  : activeState.error
+                    ? `${text(activeModelKey)}: ${translateDiagnostic(locale, activeState.error)}`
+                    : text('failed')}
+              </p>
               <button type="button" className="btn" onClick={beginTraining}>
                 {text('retry')}
               </button>

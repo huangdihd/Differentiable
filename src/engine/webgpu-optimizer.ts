@@ -17,7 +17,9 @@ export function optimizerKernel(c: Command): { code: string; workgroups: [number
       break;
     case 'optimizer_adam':
       // x3 = [1 - beta1^t, 1 - beta2^t]: step-dependent, so passed as data, not baked into code.
-      expression = `x0[i] - ${f(a.learningRate)} * (x1[i] / x3[0]) / (sqrt(x2[i] / x3[1]) + ${f(a.epsilon)})`;
+      // Guard sqrt of a tiny second moment: Metal may lower sqrt(v) to v * rsqrt(v), which turns a
+      // flushed-denormal v (rarely used embedding rows) into inf/NaN. Below 1e-30, sqrt(v) << epsilon.
+      expression = `x0[i] - ${f(a.learningRate)} * (x1[i] / x3[0]) / (select(sqrt(x2[i] / x3[1]), 0.0, !(x2[i] / x3[1] > 1.0e-30)) + ${f(a.epsilon)})`;
       break;
     default:
       throw new Error('engine.op.unknown');

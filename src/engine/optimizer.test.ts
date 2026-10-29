@@ -73,3 +73,29 @@ it('clips gradients to a global norm and releases temporaries', async () => {
   parameters.forEach((t) => t.dispose());
   expect(backend.liveBuffers).toBe(0);
 });
+
+it('Adam stays finite when the second moment is denormal or zero', async () => {
+  const backend = new CpuBackend();
+  const parameters = new Map([['w', tensor([1, 1, 1], [3], backend)]]);
+  const optimizer = new Optimizer({ kind: 'adam', learningRate: 0.02 });
+  for (const g of [[1e-30, 0, 1e-20], [0, 0, 0], [1e-38, 1e-45, 0]]) {
+    const gradient = tensor(g, [3], backend);
+    await optimizer.update(parameters, [gradient]);
+    gradient.dispose();
+  }
+  expect([...(await parameters.get('w')!.read())].every(Number.isFinite)).toBe(true);
+  optimizer.dispose();
+  parameters.forEach((t) => t.dispose());
+});
+
+it('WebGPU Adam kernel guards sqrt of a tiny second moment', async () => {
+  const { optimizerKernel } = await import('./webgpu-optimizer');
+  const input = (shape: number[]) => ({ shape }) as never;
+  const spec = optimizerKernel({
+    op: 'optimizer_adam',
+    inputs: [input([4]), input([4]), input([4]), input([2])],
+    output: input([4]),
+    attrs: { learningRate: 0.02, epsilon: 1e-8 },
+  } as never)!;
+  expect(spec.code).toContain('select(sqrt(x2[i] / x3[1]), 0.0, !(x2[i] / x3[1] > 1.0e-30))');
+});

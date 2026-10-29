@@ -299,6 +299,18 @@ for (const locale of ['en', 'zh-CN'] as const) {
       expect(html).not.toContain(view.text('matchedSnapshot', { step: 160 }));
     });
 
+    it('shows a numeric overflow as one plain line without the raw code', () => {
+      const view = comparisonView(locale);
+      view.fixed({
+        status: 'error',
+        snapshots: [],
+        error: { type: 'error', key: 'training.nonfinite', node: 'embedding' },
+      });
+      const html = view.render();
+      expect(html).toContain(view.text('failedNonfinite'));
+      expect(html).not.toContain('training.nonfinite');
+    });
+
     for (const model of ['fixed', 'recurrent'] as const) {
       it(`allows back and retries only the failed ${model} graph without fallback results`, () => {
         const view = comparisonView(locale);
@@ -315,9 +327,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
         });
         let html = view.render();
         expect(html).toContain('role="alert"');
-        expect(html).toContain(view.text('failed'));
-        expect(html).toContain('reshape_mismatch');
-        expect(html).toContain('player_flatten');
+        expect(html).not.toContain('reshape_mismatch');
         expect(html).toContain('[1495×2×8]');
         expect(html).toContain('[512×16]');
         expect(html).not.toMatch(

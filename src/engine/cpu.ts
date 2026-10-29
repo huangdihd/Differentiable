@@ -127,7 +127,8 @@ function execute(
     for (let i = 0; i < out.length; i++)
       out[i] =
         a[i] -
-        (learningRate * (b[i] / correction1)) / (Math.sqrt(xs[2][i] / correction2) + epsilon);
+        (learningRate * (b[i] / correction1)) /
+          ((xs[2][i] / correction2 > 1e-30 ? Math.sqrt(xs[2][i] / correction2) : 0) + epsilon);
   } else if (['add', 'mul', 'max', 'ge'].includes(op)) {
     const ai = mapOffsets(ys, shapes[0]),
       bi = mapOffsets(ys, shapes[1]);
