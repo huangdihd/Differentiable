@@ -20,6 +20,8 @@ export interface Backend {
   allocate(shape: Shape, data?: ArrayLike<number>): Handle;
   submit(commands: readonly Command[]): void;
   read(handle: Handle): Promise<Float32Array>;
+  /** Optional: submit queued work and resolve when the device finishes it (no readback). */
+  fence?(): Promise<void>;
   release(handle: Handle): void;
   dispose?(): void;
 }

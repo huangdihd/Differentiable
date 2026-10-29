@@ -22,6 +22,51 @@ export function useFixedWindowExperiment(
 ) {
   const worker = useRef<Worker | null>(null);
   const busy = useRef(false);
+  type ProgressMessage = Extract<FixedWindowResponse, { type: 'progress' }>;
+  const pendingProgress = useRef<ProgressMessage | undefined>(undefined);
+  const frame = useRef<number | undefined>(undefined);
+  const schedule = (callback: () => void) =>
+    typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(callback)
+      : (setTimeout(callback, 16) as unknown as number);
+  const unschedule = (id: number) =>
+    typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame(id) : clearTimeout(id);
+  const cancelProgress = () => {
+    if (frame.current !== undefined && frame.current !== -1) unschedule(frame.current);
+    frame.current = undefined;
+    pendingProgress.current = undefined;
+  };
+  // Workers post every step; merge into one state update per animation frame. Late loss
+  // reports never move the bar backwards: keep the furthest step and the newest known loss.
+  const queueProgress = (data: ProgressMessage) => {
+    const previous = pendingProgress.current;
+    pendingProgress.current = {
+      ...data,
+      step: Math.max(data.step, previous?.step ?? 0),
+      loss: data.loss ?? previous?.loss,
+    };
+    if (frame.current !== undefined) return;
+    frame.current = -1;
+    const id = schedule(() => {
+      frame.current = undefined;
+      const next = pendingProgress.current;
+      pendingProgress.current = undefined;
+      if (!next || !busy.current) return;
+      setState((state) => {
+        const before = state.progress;
+        const sameRun = before && before.totalSteps === next.totalSteps;
+        return {
+          ...state,
+          progress: {
+            ...next,
+            step: sameRun ? Math.max(before.step, next.step) : next.step,
+            loss: next.loss ?? (sameRun ? before.loss : undefined),
+          },
+        };
+      });
+    });
+    if (frame.current === -1) frame.current = id;
+  };
   const [state, setState] = useState<FixedWindowExperimentState>({
     status: 'idle',
     snapshots: [],
@@ -32,6 +77,7 @@ export function useFixedWindowExperiment(
       worker.current?.terminate();
       worker.current = null;
       busy.current = false;
+      cancelProgress();
     },
     [],
   );
@@ -55,6 +101,7 @@ export function useFixedWindowExperiment(
       worker.current?.terminate();
       worker.current = null;
       busy.current = false;
+      cancelProgress();
       setState((previous) => ({ ...previous, status: 'error', progress: undefined, error }));
     };
     try {
@@ -71,9 +118,10 @@ export function useFixedWindowExperiment(
             return;
           }
           if (data.type === 'progress') {
-            setState((previous) => ({ ...previous, progress: data }));
+            queueProgress(data);
             return;
           }
+          cancelProgress();
           busy.current = false;
           setState((previous) => ({
             status: 'ready',

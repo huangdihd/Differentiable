@@ -1,6 +1,10 @@
 import { debugCheck, trainingDebugEnabled } from './training-debug';
 /** devDebug samples one optimizer step in this many (each check reads tensors back). */
 const DEBUG_EVERY = 10;
+/** Loss readbacks allowed in flight before the step loop waits for the oldest. */
+const MAX_INFLIGHT_READS = 3;
+/** Device-side steps allowed in flight before the host waits for the oldest one. */
+const MAX_STEPS_AHEAD = 2;
 import * as T from './tensor';
 import type { Tensor } from './tensor';
 import { GraphError } from './graph';
@@ -497,6 +501,10 @@ export class TrainingSession {
     const reportEvery = options.reportEvery ?? this.sessionOptions.reportEvery ?? 10;
     if (!Number.isInteger(reportEvery) || reportEvery < 1) throw new Error('training.report_every');
     let evaluation: TrainingReport | undefined;
+    const inflight: Promise<void>[] = [];
+    let nonfinite = false;
+    let reportError: { error: unknown } | undefined;
+    const fences: Promise<void>[] = [];
     for (let i = 0; i < steps; i++) {
       if (options.signal?.aborted) break;
       const batch =
@@ -513,9 +521,36 @@ export class TrainingSession {
         loss = this.getLoss(outputs, batch);
         if (loss.shape.length !== 0) throw new Error('training.scalar_loss');
         if (report && !this.sessionOptions.evaluationReports) {
-          value = (await loss.read())[0];
-          if (!Number.isFinite(value)) throw new Error('training.nonfinite');
+          // Non-blocking: the copy is enqueued now, the map resolves later; the loop keeps
+          // submitting steps and the report arrives a few steps late. Bounded in flight.
+          const step = this.optimizer.step + 1;
+          inflight.push(
+            loss
+              .read()
+              .then((data) => {
+                const value = data[0];
+                if (!Number.isFinite(value)) nonfinite = true;
+                else options.onReport?.({ step, loss: value });
+              })
+              .catch((error: unknown) => {
+                // Read or callback failures (e.g. cancellation) surface at the next loop check.
+                reportError ??= { error };
+              }),
+          );
+          if (inflight.length > MAX_INFLIGHT_READS) await inflight.shift();
         }
+        // Pipelined backpressure: keep at most MAX_STEPS_AHEAD steps queued on the device so
+        // the host never runs far ahead and then stalls on a deep queue (smooth per-step pace).
+        const fence = loss.backend.fence?.();
+        if (fence) {
+          fences.push(fence);
+          if (fences.length > MAX_STEPS_AHEAD) await fences.shift();
+        }
+        // The only GPU wait in the loop besides backpressure: drain on the final step so a
+        // nonfinite loss is still diagnosed against this step's batch.
+        if (i === steps - 1) await Promise.all(inflight.splice(0));
+        if (reportError) throw reportError.error;
+        if (nonfinite) throw new Error('training.nonfinite');
         gradients = await T.backward(loss, parameters);
         await this.optimizer.update(this.model.parameters, gradients);
       } catch (error) {
@@ -532,10 +567,17 @@ export class TrainingSession {
         evaluation = await this.evaluate();
         options.onReport?.(evaluation);
       }
-      if (value !== undefined) options.onReport?.({ step: this.optimizer.step, loss: value });
       options.onStep?.(this.optimizer.step);
       if ((i + 1) % (options.yieldEvery ?? 10) === 0)
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    await Promise.all(inflight.splice(0));
+    if (reportError) throw reportError.error;
+    if (nonfinite) {
+      const error = new Error('training.nonfinite');
+      throw typeof this.batch === 'function'
+        ? error
+        : await this.diagnoseNonfinite(error, this.batch);
     }
     return evaluation?.step === this.optimizer.step ? evaluation : this.evaluate();
   }

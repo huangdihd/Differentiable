@@ -147,6 +147,11 @@ describe('isolated fixed-window worker', () => {
   it('guards duplicate runs, continues one session, restarts on error and ignores late results', () => {
     ExperimentWorker.instances = [];
     vi.stubGlobal('Worker', ExperimentWorker);
+    // Progress is batched per animation frame; flush frames synchronously here.
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
     const host = hookHost();
     const render = () => host.render(() => useFixedWindowExperiment());
     const snapshot: FixedWindowSnapshot = {

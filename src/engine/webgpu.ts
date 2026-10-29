@@ -224,6 +224,11 @@ export class WebGpuBackend implements Backend {
       staging.destroy();
     }
   }
+  fence(): Promise<void> {
+    this.check();
+    this.submitPending();
+    return this.pending;
+  }
   async flush(): Promise<void> {
     this.check();
     const staging = this.device.createBuffer({ size: 4, usage: COPY_DST | MAP_READ });

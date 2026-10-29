@@ -274,20 +274,15 @@ export class FixedWindowExperiment {
       onProgress?.({ type: 'progress', step: firstStep, totalSteps: firstStep + this.stepsPerRun });
       const session = await this.initialize();
       const totalSteps = session.optimizer.step + this.stepsPerRun;
-      let lastPost = 0;
       const report = await session.run(this.stepsPerRun, {
         signal: this.cancellation.signal,
         reportEvery: 10,
         onReport: ({ step, loss }) => {
           this.assertActive();
-          lastPost = performance.now();
           onProgress?.({ type: 'progress', step, totalSteps, loss });
         },
-        // Step-only updates keep the bar moving between loss reports (throttled, no GPU readback).
+        // Every step posts; the UI batches into animation frames. Loss reports arrive a few steps late.
         onStep: (step) => {
-          const now = performance.now();
-          if (now - lastPost < 80) return;
-          lastPost = now;
           onProgress?.({ type: 'progress', step, totalSteps });
         },
       });

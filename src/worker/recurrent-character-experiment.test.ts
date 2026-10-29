@@ -282,7 +282,8 @@ it('cancels after an optimizer update and releases parameters, tapes, moments an
       if (report.loss === undefined) return;
       const session = training.mock.contexts[0] as TrainingSession;
       backend = [...session.model.parameters.values()][0].backend as CpuBackend;
-      expect(session.optimizer.step).toBe(1);
+      // The final step's loss is drained before its update; dispose still cancels the run.
+      expect(report.step).toBe(1);
       experiment.dispose();
     }),
   ).rejects.toThrow('worker.rnn_disposed');
