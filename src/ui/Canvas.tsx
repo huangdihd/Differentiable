@@ -235,6 +235,37 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     return { x: (x - r.left - view.x) / view.zoom, y: (y - r.top - view.y) / view.zoom };
   };
 
+  // React registers wheel listeners as passive, so preventDefault there cannot stop the page from
+  // scrolling or the browser from zooming. Listen natively, non-passive, on the whole canvas
+  // (nodes and wires included). ctrlKey marks a trackpad pinch on macOS/Chrome.
+  const wheelZoom = useRef<(e: WheelEvent) => void>(() => {});
+  wheelZoom.current = (e) => {
+    const a = point(e.clientX, e.clientY);
+    const scale = e.ctrlKey ? 0.01 : 0.001;
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    const zoom = Math.max(0.25, Math.min(2, view.zoom * Math.exp(-e.deltaY * unit * scale)));
+    const r = root.current!.getBoundingClientRect();
+    setView({ zoom, x: e.clientX - r.left - a.x * zoom, y: e.clientY - r.top - a.y * zoom });
+  };
+  useEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      wheelZoom.current(e);
+    };
+    // Safari trackpad pinch arrives as gesture events rather than ctrl+wheel.
+    const stopGesture = (e: Event) => e.preventDefault();
+    element.addEventListener('wheel', onWheel, { passive: false });
+    element.addEventListener('gesturestart', stopGesture);
+    element.addEventListener('gesturechange', stopGesture);
+    return () => {
+      element.removeEventListener('wheel', onWheel);
+      element.removeEventListener('gesturestart', stopGesture);
+      element.removeEventListener('gesturechange', stopGesture);
+    };
+  }, []);
+
   useImperativeHandle(ref, () => ({
     toGraph(clientX, clientY) {
       const r = root.current?.getBoundingClientRect();
@@ -394,12 +425,6 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
         if (e.code === 'Space') space.current = false;
       }}
       onBlur={() => (space.current = false)}
-      onWheel={(e) => {
-        const a = point(e.clientX, e.clientY);
-        const zoom = Math.max(0.25, Math.min(2, view.zoom * Math.exp(-e.deltaY * 0.001)));
-        const r = root.current!.getBoundingClientRect();
-        setView({ zoom, x: e.clientX - r.left - a.x * zoom, y: e.clientY - r.top - a.y * zoom });
-      }}
       onPointerDown={(e) => {
         if (e.button !== 0 && e.button !== 1) return;
         const onWorld =

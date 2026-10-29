@@ -28,6 +28,8 @@
 .canvas {
   position: absolute;
   inset: 0;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 .canvas:focus {
   outline: none;
