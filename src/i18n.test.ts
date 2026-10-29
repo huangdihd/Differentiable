@@ -320,7 +320,9 @@ describe('i18n', () => {
         /拟合实验，不是泛化测试|fit on the training text, not generalization/i,
       );
       expect(text('resetNote')).toMatch(/同一组权重，不额外训练|Same weights, no extra training/i);
-      expect(text('conclusion')).toMatch(/不保证答对|guarantees a right answer/i);
+      expect(text('resetExpectation')).toMatch(
+        /同一组权重，不额外训练|Same weights, no extra training/i,
+      );
       expect(text('failed')).toMatch(/训练没能完成|Training did not finish/i);
       expect(text('failed')).not.toMatch(/预制|无效|修复|prebuilt|invalid|must be fixed/i);
       expect(text('continue')).toMatch(/下一关|Next level/);

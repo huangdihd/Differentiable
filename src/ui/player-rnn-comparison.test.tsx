@@ -201,7 +201,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       expect(view.onTrainRecurrent).not.toHaveBeenCalled();
       view.fixed({ status: 'ready', snapshots: [snapshot] });
       let html = view.render();
-      expect(html.match(/75.00%/g)).toHaveLength(2);
+      expect(html.match(/>75\.0%</g)).toHaveLength(2);
       expect(html).not.toContain(view.text('matchedSnapshot', { step: 320 }));
       expect(html).not.toContain(view.text('continue'));
       view.click(view.text('trainFixedMore'));
@@ -224,8 +224,8 @@ for (const locale of ['en', 'zh-CN'] as const) {
       html = view.render();
       expect(html).toContain(view.text('matchedSnapshot', { step: 320 }));
       expect(html).not.toContain(view.text('matchedSnapshot', { step: 640 }));
-      expect(html.match(/75.00%/g)).toHaveLength(2);
-      expect(html.match(/60.00%/g)).toHaveLength(2);
+      expect(html.match(/>75\.0%</g)).toHaveLength(2);
+      expect(html.match(/>60\.0%</g)).toHaveLength(2);
       expect(html.match(/experiment-token is-wrong/g)).toHaveLength(4);
       expect(html).not.toContain('is-correct');
       expect(html).toContain('0.812');
@@ -267,19 +267,53 @@ for (const locale of ['en', 'zh-CN'] as const) {
     it('switches between measured full-history and reset inference without retraining', () => {
       const view = comparisonView(locale);
       view.fixed(fixedComplete);
-      view.recurrent({ status: 'ready', snapshots: [recurrentSnapshot] });
-      view.render();
+      view.recurrent({
+        status: 'ready',
+        snapshots: [recurrentSnapshot, { ...recurrentSnapshot, step: 640 }],
+      });
+      let first = view.render();
+      // Every fixture guess is wrong, so the derived headline must not claim an RNN win.
+      expect(first).toContain(view.text('headlineNoGain'));
+      expect(first).not.toContain(view.text('headlineWin'));
+      expect(first).toContain(view.text('resetExpectation'));
       view.resetHistory(true);
       let html = view.render();
-      expect(html.match(/75.00%/g)).toHaveLength(4);
-      expect(html).not.toContain('60.00%');
-      expect(html).toContain(view.text('resetNote'));
+      expect(html.match(/>75\.0%</g)).toHaveLength(4);
+      expect(html).not.toContain('60.0%');
+      expect(html).not.toContain(view.text('resetExpectation'));
       view.resetHistory(false);
       html = view.render();
-      expect(html.match(/60.00%/g)).toHaveLength(2);
-      expect(html).toContain(view.text('fullHistory'));
+      expect(html.match(/>60\.0%</g)).toHaveLength(2);
+      expect(html).toContain(view.text('resetExpectation'));
+      first = html;
       expect(view.onTrainFixed).not.toHaveBeenCalled();
       expect(view.onTrainRecurrent).not.toHaveBeenCalled();
+    });
+
+    it('states the RNN win only when the measured guesses show it', () => {
+      const view = comparisonView(locale);
+      const guess = (prediction: string) => (p: FixedWindowSnapshot['predictions'][number]) => ({
+        ...p,
+        prediction: prediction === 'target' ? (p.history.endsWith('moth') ? ' ' : 'e') : prediction,
+        probabilities: vocabulary.map((c) =>
+          c === (prediction === 'target' ? (p.history.endsWith('moth') ? ' ' : 'e') : prediction)
+            ? 0.9
+            : 0.1 / (vocabulary.length - 1),
+        ),
+      });
+      const fixed = { ...snapshot, predictions: snapshot.predictions.map(guess('e')) };
+      view.fixed({ status: 'ready', snapshots: [fixed, { ...fixed, step: 640 }] });
+      const rnn = {
+        ...recurrentSnapshot,
+        predictions: recurrentSnapshot.predictions.map(guess('target')),
+      };
+      view.recurrent({ status: 'ready', snapshots: [rnn, { ...rnn, step: 640 }] });
+      const html = view.render();
+      expect(html).toContain(view.text('headlineWin'));
+      expect(html).toContain(view.text('verdictRecurrentAll'));
+      expect(html).toContain(view.text('verdictFixedSame', { guess: 'e', right: 1, total: 2 }));
+      expect(html).toContain('>90.0%<');
+      expect(html).not.toContain(view.text('headlineNoGain'));
     });
 
     it('does not fabricate a comparison for nonmatching steps or enable next early', () => {
@@ -293,8 +327,8 @@ for (const locale of ['en', 'zh-CN'] as const) {
         ],
       });
       const html = view.render();
-      expect(html).not.toContain('60.00%');
-      expect(html).not.toContain('75.00%');
+      expect(html).not.toContain('60.0%');
+      expect(html).not.toContain('75.0%');
       expect(html).not.toContain(view.text('continue'));
       expect(html).not.toContain(view.text('matchedSnapshot', { step: 160 }));
     });
@@ -333,7 +367,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
         expect(html).not.toMatch(
           /没有使用预制|无效的通关电路|No prebuilt model|invalid passed circuits/,
         );
-        expect(html).not.toContain('60.00%');
+        expect(html).not.toContain('60.0%');
         expect(html).not.toContain('is-correct');
         expect(html).not.toContain(view.text('continue'));
         view.click(view.text('back'));
@@ -349,7 +383,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
         view[model]({ status: 'training', snapshots: [] });
         html = view.render();
         expect(html).not.toContain(view.text('continue'));
-        expect(html).not.toContain('60.00%');
+        expect(html).not.toContain('60.0%');
       });
     }
   });

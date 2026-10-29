@@ -2,14 +2,13 @@ import { useState } from 'react';
 import type { Progress } from '../engine/levels';
 import { translateDiagnostic, type Locale } from '../i18n';
 import { vocabulary } from '../levels/corpus';
-import { fixedWindowExamples } from '../levels/fixed-window-evidence';
+import { fixedWindowContext, fixedWindowExamples } from '../levels/fixed-window-evidence';
 import type { FixedWindowPrediction } from '../worker/fixed-window-protocol';
 import {
   ExperimentSteps,
   RunPicker,
   TrainingProgress,
   characterLabeler,
-  percent,
 } from './TemporalExperimentParts';
 import {
   useFixedWindowExperiment,
@@ -88,7 +87,6 @@ export function PlayerRnnComparisonView({
   };
   const activeModelKey = fixedComplete ? 'recurrentModel' : 'fixedModel';
   let promptKey = fixedComplete ? 'comparePrompt' : 'fixedPrompt';
-  if (completed) promptKey = 'conclusion';
   let actionKey = fixedState.snapshots.length ? 'trainFixedMore' : 'runFixed';
   if (fixedComplete) {
     actionKey = recurrentState.snapshots.length ? 'trainRecurrentMore' : 'runRecurrent';
@@ -98,33 +96,93 @@ export function PlayerRnnComparisonView({
   const recurrentPredictions = resetHistory
     ? recurrentSnapshot?.resetPredictions
     : recurrentSnapshot?.predictions;
+  const pct1 = (value: number) => `${(value * 100).toFixed(1)}%`;
   const modelRow = (
     result: FixedWindowPrediction | undefined,
     target: string,
     model: string,
     kind: 'fixed' | 'recurrent',
+    seenKey: string,
   ) => {
     const correct = result?.prediction === target;
     const verdict = result ? (correct ? 'is-correct' : 'is-wrong') : '';
+    const probability = result ? result.probabilities[vocabulary.indexOf(result.prediction)] : 0;
     return (
-      <div className={`window-limit-comparison-result experiment-model is-${kind} ${verdict}`}>
-        <span className="experiment-model-name">{model}</span>
+      <div className={`comparison-guess is-${kind} ${verdict}`}>
+        <div className="comparison-guess-head">
+          <span className="experiment-model-name">
+            <i className={`comparison-swatch is-${kind}`} aria-hidden="true" />
+            {model}
+          </span>
+          <span className="experiment-meta">{text(seenKey)}</span>
+        </div>
         {result ? (
-          <>
+          <div className="comparison-guess-body">
             <span className={`experiment-token ${verdict}`}>
               {characterLabel(result.prediction)}
             </span>
-            <span className="experiment-bar-value">
-              {percent(result.probabilities[vocabulary.indexOf(result.prediction)])}
+            <span className="comparison-prob">
+              <span className="comparison-prob-track">
+                <span className="comparison-prob-fill" style={{ width: pct1(probability) }} />
+              </span>
+              <span className="experiment-bar-value">{pct1(probability)}</span>
             </span>
             <b className="experiment-verdict">{text(correct ? 'correct' : 'wrong')}</b>
-            <small className="experiment-meta">
-              {text('modelInput')} <code>{result.input}</code>
-            </small>
-          </>
+          </div>
         ) : (
           <span className="experiment-empty">{text('awaiting')}</span>
         )}
+      </div>
+    );
+  };
+  // Conclusion derived from the actual predictions (full history), never assumed.
+  const outcome = (predictions: readonly FixedWindowPrediction[] | undefined) =>
+    fixedWindowExamples.map((example) => {
+      const p = predictions?.find((x) => x.history === example.history);
+      return { example, p, correct: p?.prediction === example.target };
+    });
+  const fixedOutcome = outcome(fixedSnapshot?.predictions);
+  const recurrentOutcome = outcome(recurrentSnapshot?.predictions);
+  const fixedRight = fixedOutcome.filter((o) => o.correct).length;
+  const recurrentRight = recurrentOutcome.filter((o) => o.correct).length;
+  const fixedSame =
+    fixedOutcome.every((o) => o.p) && new Set(fixedOutcome.map((o) => o.p!.prediction)).size === 1;
+  const fixedGuess = fixedOutcome[0]?.p ? characterLabel(fixedOutcome[0].p.prediction) : '';
+  const total = fixedWindowExamples.length;
+  const verdictLines: string[] = [];
+  if (recurrentSnapshot) {
+    verdictLines.push(
+      fixedSame
+        ? text('verdictFixedSame', { guess: fixedGuess, right: fixedRight, total })
+        : text('verdictFixedCount', { right: fixedRight, total }),
+    );
+    verdictLines.push(
+      recurrentRight === total
+        ? text('verdictRecurrentAll')
+        : text('verdictRecurrentSome', { right: recurrentRight, total }),
+    );
+  }
+  const headlineKey = !recurrentSnapshot
+    ? undefined
+    : recurrentRight === total && fixedRight < total
+      ? 'headlineWin'
+      : recurrentRight > fixedRight
+        ? 'headlineBetter'
+        : 'headlineNoGain';
+  const resetOutcome = outcome(recurrentSnapshot?.resetPredictions);
+  const resetSame =
+    resetOutcome.every((o) => o.p) && new Set(resetOutcome.map((o) => o.p!.prediction)).size === 1;
+  const highlighted = (history: string, recurrentSeesAll: boolean) => {
+    const cut = history.length - fixedWindowContext.length;
+    return (
+      <div className="experiment-history comparison-sentence" aria-label={history}>
+        <span className={recurrentSeesAll ? 'seen-recurrent' : undefined}>
+          {history.slice(0, cut)}
+        </span>
+        <span className={`seen-fixed${recurrentSeesAll ? ' seen-recurrent' : ' seen-both'}`}>
+          {history.slice(cut)}
+        </span>
+        <span className="experiment-token">?</span>
       </div>
     );
   };
@@ -151,6 +209,43 @@ export function PlayerRnnComparisonView({
           current={stage}
         />
 
+        {completed && headlineKey && (
+          <section className="experiment-takeaway comparison-verdict" aria-live="polite">
+            <h2>{text(headlineKey)}</h2>
+            {verdictLines.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+            {recurrentSnapshot?.resetPredictions && (
+              <label className="experiment-toggle comparison-try">
+                <input
+                  type="checkbox"
+                  checked={resetHistory}
+                  disabled={training}
+                  onChange={(event) => setResetHistory(event.target.checked)}
+                />
+                <span>
+                  <strong>{text('resetHistory')}</strong>
+                  <span className="experiment-meta">
+                    {resetHistory
+                      ? resetSame
+                        ? text('resetResultSame', {
+                            guess: characterLabel(resetOutcome[0].p!.prediction),
+                          })
+                        : text('resetResultDiffers')
+                      : text('resetExpectation')}
+                  </span>
+                </span>
+              </label>
+            )}
+            <div className="experiment-prompt">
+              <p className="experiment-meta">{text('next')}</p>
+              <button type="button" className="btn btn-primary" onClick={onContinue}>
+                {text('continue')} →
+              </button>
+            </div>
+          </section>
+        )}
+
         <section className="experiment-panel" aria-label={text('samples')}>
           <div className="experiment-panel-head">
             <h2 className="label">{text('samples')}</h2>
@@ -171,43 +266,26 @@ export function PlayerRnnComparisonView({
                     {text('correctTarget')} <code>{characterLabel(example.target)}</code>
                   </span>
                 </div>
-                <div className="experiment-history" aria-label={example.history}>
-                  {example.history}
-                  <span className="experiment-token">?</span>
-                </div>
-                <div className="window-limit-comparison" aria-label={text('modelComparison')}>
+                {highlighted(example.history, !resetHistory)}
+                <div className="comparison-guesses" aria-label={text('modelComparison')}>
                   {modelRow(
                     fixedSnapshot?.predictions.find((p) => p.history === example.history),
                     example.target,
                     text('fixedModel'),
                     'fixed',
+                    'seenWindow',
                   )}
                   {modelRow(
                     recurrentPredictions?.find((p) => p.history === example.history),
                     example.target,
                     text('recurrentModel'),
                     'recurrent',
+                    resetHistory ? 'seenWindow' : 'seenWhole',
                   )}
                 </div>
               </article>
             ))}
           </div>
-          {recurrentSnapshot?.resetPredictions && (
-            <label className="experiment-toggle">
-              <input
-                type="checkbox"
-                checked={resetHistory}
-                disabled={false}
-                onChange={(event) => setResetHistory(event.target.checked)}
-              />
-              <span>
-                <strong>{text('resetHistory')}</strong>
-                <span className="experiment-meta">
-                  {text(resetHistory ? 'resetNote' : 'fullHistory')}
-                </span>
-              </span>
-            </label>
-          )}
         </section>
 
         <section className="experiment-console" aria-label={text('training')}>
@@ -255,19 +333,6 @@ export function PlayerRnnComparisonView({
             />
           )}
         </section>
-
-        {completed && (
-          <section className="experiment-takeaway" aria-live="polite">
-            <h2>{text('conclusionTitle')}</h2>
-            <p>{text(promptKey)}</p>
-            <div className="experiment-prompt">
-              <p className="experiment-meta">{text('next')}</p>
-              <button type="button" className="btn btn-primary" onClick={onContinue}>
-                {text('continue')} →
-              </button>
-            </div>
-          </section>
-        )}
 
         <details className="experiment-details">
           <summary>{text('comparisonMethod')}</summary>

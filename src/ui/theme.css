@@ -3904,3 +3904,92 @@ input[type='range'] {
     font-size: 10px;
   }
 }
+
+/* 5-2 comparison: what each model saw, compact side-by-side guesses */
+.comparison-sentence .seen-recurrent {
+  text-decoration: underline;
+  text-decoration-color: var(--cat-act);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.comparison-sentence .seen-fixed {
+  outline: 1.5px solid var(--cat-op);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--cat-op) 18%, transparent);
+  padding: 0 1px;
+}
+.comparison-guesses {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s2);
+}
+.comparison-guess {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.comparison-guess.is-fixed {
+  box-shadow: inset 2px 0 0 var(--cat-op);
+}
+.comparison-guess.is-recurrent {
+  box-shadow: inset 2px 0 0 var(--cat-act);
+}
+.comparison-guess-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.comparison-swatch {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.4em;
+  vertical-align: -0.05em;
+}
+.comparison-swatch.is-fixed {
+  outline: 1.5px solid var(--cat-op);
+  background: color-mix(in srgb, var(--cat-op) 18%, transparent);
+}
+.comparison-swatch.is-recurrent {
+  border-bottom: 2px solid var(--cat-act);
+}
+.comparison-guess-body {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s2);
+}
+.comparison-prob {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.comparison-prob-track {
+  flex: 1;
+  height: 3px;
+  background: var(--line);
+  min-width: 2em;
+}
+.comparison-prob-fill {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+}
+.comparison-guess.is-correct .comparison-prob-fill {
+  background: var(--good);
+}
+.comparison-guess.is-wrong .comparison-prob-fill {
+  background: var(--bad);
+}
+.comparison-verdict p {
+  margin: 0;
+}
+.comparison-try {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s3);
+}
