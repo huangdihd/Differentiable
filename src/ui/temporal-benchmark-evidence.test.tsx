@@ -17,7 +17,7 @@ describe('temporal benchmark evidence', () => {
       <TemporalBenchmarkEvidence levelId="time-rnn-delay" locale="en" t={t} />,
     );
     expect(html).toContain('benchmark.model.rnn');
-    expect(html).toMatch(/<tr class="is-focus"><th scope="row">benchmark\.model\.rnn<\/th>/);
+    expect(html).toMatch(/<tr class="is-focus"><th scope="row">benchmark\.model\.rnn<small>/);
     expect(html).not.toContain('benchmark.model.lstm');
     expect(html).not.toContain('benchmark.model.gru');
   });
@@ -30,10 +30,10 @@ describe('temporal benchmark evidence', () => {
       <TemporalBenchmarkEvidence levelId="time-forecast" locale="zh-CN" t={t} />,
     );
     expect(attention).toMatch(
-      /<tr class="is-focus"><th scope="row">benchmark\.model\.rnn-attention<\/th>/,
+      /<tr class="is-focus"><th scope="row">benchmark\.model\.rnn-attention<small>/,
     );
     expect(attention).toContain('class="attention-probe"');
-    expect(attention.match(/class="attention-weight"/g)).toHaveLength(4);
+    expect(attention.match(/class="attention-weight( is-match)?"/g)).toHaveLength(4);
     expect(forecast).not.toContain('class="attention-probe"');
   });
 });

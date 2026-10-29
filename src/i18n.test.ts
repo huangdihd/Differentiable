@@ -288,15 +288,14 @@ describe('i18n', () => {
       expect(t('levels.time-window-limit.description')).not.toContain('RNN');
       expect(t('levels.time-window-limit.afterTraining')).toContain('160');
       expect(t('levels.time-window-limit.afterMoreTraining')).toMatch(/160.*320/);
-      expect(note).toMatch(/隔离实验|Isolated experiment/i);
-      expect(note).toMatch(/不读取你的训练权重|not your saved weights/i);
-      expect(note).toMatch(/同一模型和优化器|same model and optimizer/i);
+      expect(note).toMatch(/独立实验|separate experiment/i);
+      expect(note).toMatch(/不读取你的权重|does not read your weights/i);
       expect(t('levels.time-window-limit.sameOutput')).toContain('th');
-      expect(explanation).toMatch(/最多答对一个|at most one answer/i);
-      expect(explanation).toMatch(/随机采样.*碰巧|Sampling may differ by chance/i);
-      expect(explanation).toMatch(/不是对整体准确率|not an overall accuracy/i);
+      expect(explanation).toMatch(/最多答对一句|at most one can be right/i);
+      expect(explanation).toMatch(/随机采样.*碰巧|random sampling only differs by chance/i);
+      expect(explanation).toMatch(/不代表整体准确率|not overall accuracy/i);
       expect(next).toContain('RNN');
-      expect(next).toMatch(/记忆并非无限|not unlimited memory/i);
+      expect(next).toMatch(/记忆也不是无限|memory has limits/i);
       expect(t('levels.time-window-limit.continue')).toMatch(/搭建 RNN|Build the RNN/);
     }
   });
@@ -305,33 +304,27 @@ describe('i18n', () => {
       const t = createTranslator(locale);
       const text = (key: string) => t(`levels.time-player-comparison.${key}`);
       const comparison = text('comparisonNote');
-      expect(text('freshWeights')).toMatch(
-        /使用你的电路重新训练，非沿用旧权重|Retrain using your circuits, not your old weights/i,
-      );
+      expect(text('freshWeights')).toMatch(/不沿用旧权重|not your old ones/i);
       expect(text('freshWeights')).not.toMatch(/预制|prebuilt/i);
       expect(text('freshWeights')).toMatch(
-        /8 维字符嵌入和 24→27 输出层|8-wide character embedding, a 24→27 output layer/i,
+        /8 维字符嵌入和 24→27 输出层|8-dim character embedding and a 24→27 output layer/i,
       );
       expect(comparison).toContain('1,495');
+      expect(comparison).toMatch(/每行第 2 个字起|from the 2nd letter of each line/i);
+      expect(comparison).toMatch(/含行末换行|including line-ending newlines/i);
       expect(comparison).toMatch(
-        /全语料行内每个目标位置 ≥ 2|every within-line target position ≥ 2 in the full corpus/i,
-      );
-      expect(comparison).toMatch(/含末尾换行|including the final newline/i);
-      expect(comparison).toMatch(
-        /更新数、Adam、学习率和种子相同|Same update count, Adam, learning rate and seed/i,
+        /更新步数、优化器、学习率和种子相同|Steps, optimizer, learning rate and seed match/i,
       );
       expect(comparison).toMatch(/参数量和算力不同|parameter counts and compute differ/i);
       expect(comparison).toMatch(
-        /训练语料内的拟合实验，不是泛化评测|training-corpus fitting, not a generalization test/i,
+        /拟合实验，不是泛化测试|fit on the training text, not generalization/i,
       );
-      expect(text('resetNote')).toMatch(
-        /同一组权重，只变输入，不额外训练|Same weights, only the input changes; no extra training/i,
-      );
-      expect(text('conclusion')).toMatch(/不保证答对|does not guarantee a correct answer/i);
-      expect(text('failed')).toMatch(/对照实验未能完成|comparison experiment could not finish/i);
+      expect(text('resetNote')).toMatch(/同一组权重，不额外训练|Same weights, no extra training/i);
+      expect(text('conclusion')).toMatch(/不保证答对|guarantees a right answer/i);
+      expect(text('failed')).toMatch(/训练没能完成|Training did not finish/i);
       expect(text('failed')).not.toMatch(/预制|无效|修复|prebuilt|invalid|must be fixed/i);
       expect(text('continue')).toMatch(/下一关|Next level/);
-      expect(text('back')).toMatch(/返回编辑|Back to editing/);
+      expect(text('back')).toMatch(/返回编辑|Back to editor/);
     }
   });
   it('keeps both experiment namespaces in parity and retires reference-RNN and manual controls', () => {
@@ -345,7 +338,7 @@ describe('i18n', () => {
         const t = createTranslator(locale);
         for (const key of keys(locales[locale]))
           expect(t(key)).not.toMatch(/两个连线|two wires|take_last_two|50\s*%/i);
-        expect(t(prefix + 'case', { n: 2 })).toBe(locale === 'en' ? 'Sample 2' : '样本 2');
+        expect(t(prefix + 'case', { n: 2 })).toBe(locale === 'en' ? 'Line 2' : '句子 2');
         expect(t(prefix + 'trainingProgress', { model: 'RNN', step: 170, total: 320 })).toContain(
           '170 / 320',
         );
@@ -623,8 +616,8 @@ describe('i18n', () => {
       ])
         expect(keys.has(key), `${locale}: ${key}`).toBe(true);
       expect(locales[locale]['benchmark.method']).toMatch(/CPU/);
-      expect(locales[locale]['benchmark.method']).toContain('[0.5,1.5)');
-      expect(locales[locale]['benchmark.method']).toContain('[−0.2,0.2)');
+      expect(locales[locale]['benchmark.method']).toContain('[0.5, 1.5)');
+      expect(locales[locale]['benchmark.method']).toContain('[−0.2, 0.2)');
     }
   });
   it('covers GPT weight ports in both languages', () => {

@@ -5,6 +5,13 @@ import {
   useFixedWindowExperiment,
   type FixedWindowExperimentState,
 } from './use-fixed-window-experiment';
+import {
+  ExperimentSteps,
+  ProbabilityBars,
+  RunPicker,
+  TrainingProgress,
+  characterLabeler,
+} from './TemporalExperimentParts';
 
 type Translator = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 interface LessonProps {
@@ -18,6 +25,10 @@ export function FixedWindowLimitLesson(props: LessonProps) {
   const experiment = useFixedWindowExperiment('fixed-window', undefined, props.backend);
   return <FixedWindowLimitView {...props} state={experiment.state} onTrain={experiment.train} />;
 }
+
+const STEP_KEYS = ['runStage', 'trainStage', 'inspectStage'] as const;
+const PROMPT_KEYS = ['beforeTraining', 'afterTraining', 'afterMoreTraining'] as const;
+const ACTION_KEYS = ['run', 'trainMore', 'inspect'] as const;
 
 export function FixedWindowLimitView({
   code,
@@ -37,68 +48,55 @@ export function FixedWindowLimitView({
   const training = state.status === 'training';
   const text = (key: string, params?: Readonly<Record<string, string | number>>) =>
     t(`levels.time-window-limit.${key}`, params);
-  const characterLabel = (character: string) => {
-    if (character === ' ') return text('space');
-    if (character === '\n') return text('newline');
-    return character;
-  };
+  const characterLabel = characterLabeler(text);
   const beginTraining = () => {
     setSelectedStep(undefined);
     setRevealed(false);
     onTrain();
   };
-  const stage = revealed ? 3 : state.snapshots.length;
-  const promptKeys = ['beforeTraining', 'afterTraining', 'afterMoreTraining', 'sameOutput'];
-  const actionKeys = ['run', 'trainMore', 'inspect'];
+  // 0: untrained, 1: one run, 2: both runs, 3: input revealed.
+  const stage = revealed ? 3 : Math.min(state.snapshots.length, 2);
 
   return (
-    <main className="window-limit blueprint-bg">
-      <div className="window-limit-inner">
-        <header className="window-limit-head">
+    <main className="experiment blueprint-bg">
+      <div className="experiment-inner">
+        <header className="experiment-head">
           <span className="level-id">
-            LEVEL {code} / {text('experiment')}
+            LEVEL {code} · {text('experiment')}
           </span>
-          <h1>{text('title')}</h1>
-          <p>{text('description')}</p>
+          <h1 className="level-title">{text('title')}</h1>
+          <p className="experiment-lede">{text('description')}</p>
         </header>
-        <ol className="window-limit-stages" aria-label={text('experiment')}>
-          {['runStage', 'trainStage', 'inspectStage', 'rememberStage'].map((key, index) => (
-            <li
-              key={key}
-              className={index <= stage ? 'is-active' : ''}
-              aria-current={index === stage ? 'step' : undefined}
-            >
-              <span>0{index + 1}</span> {text(key)}
-            </li>
-          ))}
-        </ol>
-        <section className="window-limit-bench" aria-label={text('samples')}>
-          <div className="window-limit-bench-head">
-            <span className="label">{text('samples')}</span>
-            {snapshot && <span>{text('snapshot', { step: snapshot.step })}</span>}
+
+        <ExperimentSteps
+          label={text('experiment')}
+          steps={STEP_KEYS.map((key) => text(key))}
+          current={stage}
+        />
+
+        <section className="experiment-panel" aria-label={text('samples')}>
+          <div className="experiment-panel-head">
+            <h2 className="label">{text('samples')}</h2>
+            {snapshot && (
+              <span className="experiment-meta">{text('snapshot', { step: snapshot.step })}</span>
+            )}
           </div>
-          <div className="window-limit-examples">
+          <div className="experiment-cases">
             {fixedWindowExamples.map((example, index) => {
               const result = snapshot?.predictions.find(
                 (prediction) => prediction.history === example.history,
               );
               const correct = result?.prediction === example.target;
-              const resultClass = result && (correct ? 'is-correct' : 'is-wrong');
-              const ranked = result?.probabilities
-                .map((value, token) => ({ character: vocabulary[token], value }))
-                .sort((left, right) => right.value - left.value)
-                .slice(0, 4);
+              const verdict = result && (correct ? 'is-correct' : 'is-wrong');
               return (
-                <article className="window-limit-example" key={example.history}>
-                  <div className="window-limit-case">
-                    <span>{text('case', { n: index + 1 })}</span>
-                    {revealed && (
-                      <span>
-                        {text('modelInput')} <code>{fixedWindowContext}</code>
-                      </span>
-                    )}
+                <article className="experiment-case" key={example.history}>
+                  <div className="experiment-case-head">
+                    <span className="label">{text('case', { n: index + 1 })}</span>
+                    <span className="experiment-meta">
+                      {text('correctTarget')} <code>{characterLabel(example.target)}</code>
+                    </span>
                   </div>
-                  <div className="window-limit-history" aria-label={example.history}>
+                  <div className="experiment-history" aria-label={example.history}>
                     {revealed ? (
                       <>
                         <span className="is-excluded">
@@ -109,34 +107,29 @@ export function FixedWindowLimitView({
                     ) : (
                       example.history
                     )}
-                    <span className={`window-limit-token ${resultClass ?? ''}`}>
+                    <span className={`experiment-token ${verdict ?? ''}`}>
                       {result ? characterLabel(result.prediction) : '?'}
                     </span>
                   </div>
-                  <div className={`window-limit-result ${resultClass ?? ''}`}>
-                    <span>
-                      {text('correctTarget')} <strong>{characterLabel(example.target)}</strong>
-                    </span>
-                    {result && <b>{text(correct ? 'correct' : 'wrong')}</b>}
-                  </div>
-                  {ranked ? (
-                    <div className="window-limit-probabilities">
-                      <div className="window-limit-probability-label">{text('topPrediction')}</div>
-                      <ul aria-label={text('probabilities')}>
-                        {ranked.map(({ character, value }) => (
-                          <li key={character}>
-                            <code>{characterLabel(character)}</code>
-                            <span className="window-limit-bar">
-                              <span style={{ width: `${value * 100}%` }} />
-                            </span>
-                            <span>{(value * 100).toFixed(2)}%</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                  {result ? (
+                    <>
+                      <div className={`window-limit-result ${verdict}`}>
+                        <span>{text('prediction')}</span>
+                        <b>{text(correct ? 'correct' : 'wrong')}</b>
+                      </div>
+                      <ProbabilityBars
+                        label={text('probabilities')}
+                        probabilities={result.probabilities}
+                        target={example.target}
+                        characterLabel={characterLabel}
+                      />
+                    </>
                   ) : (
-                    <p className="window-limit-awaiting">
-                      {text(training ? 'computing' : 'awaiting')}
+                    <p className="experiment-empty">{text(training ? 'computing' : 'awaiting')}</p>
+                  )}
+                  {revealed && (
+                    <p className="experiment-meta">
+                      {text('modelInput')} <code>{result?.input}</code>
                     </p>
                   )}
                 </article>
@@ -144,87 +137,76 @@ export function FixedWindowLimitView({
             })}
           </div>
         </section>
-        <section className="window-limit-console" aria-label={text('training')}>
-          <div className="window-limit-console-head">
-            <span className="label">{text('referenceModel')}</span>
-            {snapshot && (
-              <code>
-                Adam · {snapshot.learningRate} · seed {snapshot.seed}
-              </code>
-            )}
-          </div>
-          {state.snapshots.length > 0 && (
-            <div className="window-limit-runs" role="group" aria-label={text('compareRuns')}>
-              {state.snapshots.map((run) => (
-                <button
-                  key={run.step}
-                  type="button"
-                  className="window-limit-run"
-                  disabled={training}
-                  aria-pressed={snapshot === run}
-                  onClick={() => setSelectedStep(run.step)}
-                >
-                  <span>{text('steps', { step: run.step })}</span>
-                  <span>
-                    loss <strong>{run.loss.toFixed(3)}</strong>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+
+        <section className="experiment-console" aria-label={text('training')}>
           {state.status === 'error' ? (
-            <div className="window-limit-error" role="alert">
+            <div className="experiment-error" role="alert">
               <p>{text('failed')}</p>
               <button type="button" className="btn" onClick={beginTraining}>
                 {text('retry')}
               </button>
             </div>
           ) : training ? (
-            <div className="window-limit-training" role="status">
-              <p>
-                {text('trainingProgress', {
-                  step: state.progress?.step ?? state.snapshots.at(-1)?.step ?? 0,
-                  total: state.progress?.totalSteps ?? '…',
-                })}
-              </p>
-              <progress
-                aria-label={text('training')}
-                {...(state.progress
-                  ? { value: state.progress.step, max: state.progress.totalSteps }
-                  : {})}
-              />
-            </div>
+            <TrainingProgress
+              label={text('training')}
+              message={text('trainingProgress', {
+                step: state.progress?.step ?? snapshot?.step ?? 0,
+                total: state.progress?.totalSteps ?? '…',
+              })}
+              progress={state.progress}
+            />
           ) : (
-            <div className="window-limit-prompt" aria-live="polite">
-              <p>{text(promptKeys[stage])}</p>
-              {!revealed && (
+            !revealed && (
+              <div className="experiment-prompt" aria-live="polite">
+                <p>{text(PROMPT_KEYS[stage])}</p>
                 <button
                   type="button"
                   className="btn btn-primary"
                   onClick={compared ? () => setRevealed(true) : beginTraining}
                 >
-                  {text(actionKeys[stage])} →
+                  {text(ACTION_KEYS[stage])} →
                 </button>
-              )}
-            </div>
+              </div>
+            )
           )}
-          <p className="window-limit-note">{text('demonstrationNote')}</p>
+          {state.snapshots.length > 0 && (
+            <RunPicker
+              label={text('compareRuns')}
+              runs={state.snapshots.map((run) => ({
+                step: run.step,
+                title: text('steps', { step: run.step }),
+                detail: `loss ${run.loss.toFixed(3)}`,
+              }))}
+              selected={snapshot?.step}
+              disabled={training}
+              onSelect={setSelectedStep}
+            />
+          )}
         </section>
+
         {revealed && (
-          <section className="window-limit-conclusion" aria-live="polite">
+          <section className="experiment-takeaway window-limit-conclusion" aria-live="polite">
             <h2>{text('conclusion')}</h2>
-            <details className="window-limit-details">
-              <summary>{text('why')}</summary>
-              <p>{text('explanation')}</p>
-            </details>
-            <footer className="window-limit-actions">
-              <p>{text('next')}</p>
+            <p>{text('sameOutput')}</p>
+            <div className="experiment-prompt">
+              <p className="experiment-meta">{text('next')}</p>
               <button type="button" className="btn btn-primary" onClick={onContinue}>
                 {text('continue')} →
               </button>
-            </footer>
+            </div>
           </section>
         )}
+
+        <details className="experiment-details">
+          <summary>{text(revealed ? 'why' : 'aboutExperiment')}</summary>
+          {revealed && <p>{text('explanation')}</p>}
+          <p>{text('demonstrationNote')}</p>
+          {snapshot && (
+            <p className="experiment-meta">
+              {text('referenceModel')} · Adam · lr {snapshot.learningRate} · seed {snapshot.seed}
+            </p>
+          )}
+        </details>
       </div>
     </main>
   );

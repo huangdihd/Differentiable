@@ -38,51 +38,61 @@ export function TemporalBenchmarkEvidence({
   if (!focus) return null;
   const showAttentionProbe = levelId === 'time-attention';
 
+  const focusResult = benchmarkArtifact.results.find((result) => result.model === focus);
+  const best = Math.min(
+    ...benchmarkArtifact.results.flatMap((result) => result.delays.map((d) => d.meanMse)),
+  );
+
   return (
     <section className="benchmark-evidence" aria-label={t('benchmark.title')}>
-      <div className="section-head">
-        <h2 className="label">{t('benchmark.title')}</h2>
-        <span className="benchmark-seed">
-          {t('benchmark.seed', { seed: benchmarkArtifact.seeds[0] })}
-        </span>
-      </div>
-      <div className="table-scroll">
-        <table className="table benchmark-table">
-          <thead>
-            <tr>
-              <th>{t('benchmark.model')}</th>
-              <th>{t('benchmark.parameters')}</th>
-              {benchmarkArtifact.delays.map((delay) => (
-                <th key={delay}>{t('benchmark.delay', { delay })}</th>
+      <h2 className="label">{t('benchmark.title')}</h2>
+      {focusResult && (
+        <p className="benchmark-lede">
+          {t('benchmark.lede', { model: t(`benchmark.model.${focus}`) })}
+        </p>
+      )}
+      <table className="table benchmark-table">
+        <thead>
+          <tr>
+            <th>{t('benchmark.model')}</th>
+            {benchmarkArtifact.delays.map((delay) => (
+              <th key={delay}>{t('benchmark.delay', { delay })}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {benchmarkArtifact.results.map((result) => (
+            <tr className={result.model === focus ? 'is-focus' : ''} key={result.model}>
+              <th scope="row">
+                {t(`benchmark.model.${result.model}`)}
+                <small>
+                  {t('benchmark.parameterCount', {
+                    n: new Intl.NumberFormat(locale).format(result.parameterCount),
+                  })}
+                </small>
+              </th>
+              {result.delays.map((measurement) => (
+                <td
+                  key={measurement.delay}
+                  className={measurement.meanMse === best ? 'is-best' : undefined}
+                >
+                  {formatMse(locale, measurement.meanMse)}
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {benchmarkArtifact.results.map((result) => (
-              <tr className={result.model === focus ? 'is-focus' : ''} key={result.model}>
-                <th scope="row">{t(`benchmark.model.${result.model}`)}</th>
-                <td>{new Intl.NumberFormat(locale).format(result.parameterCount)}</td>
-                {result.delays.map((measurement) => (
-                  <td key={measurement.delay}>{formatMse(locale, measurement.meanMse)}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="benchmark-note">
-        {t('benchmark.method', {
-          steps: benchmarkArtifact.training.steps,
-          batch: benchmarkArtifact.training.batchSize,
-          evaluation: benchmarkArtifact.training.evaluationBatchSize,
-        })}
-      </p>
+          ))}
+        </tbody>
+      </table>
+      <p className="benchmark-note">{t('benchmark.reading')}</p>
       {showAttentionProbe && (
         <div className="attention-probe">
           <h3 className="label">{t('benchmark.attentionProbe')}</h3>
           <div className="attention-weights">
             {benchmarkArtifact.attentionProbe.weights.map((weight, index) => (
-              <div className="attention-weight" key={index}>
+              <div
+                className={index === 1 ? 'attention-weight is-match' : 'attention-weight'}
+                key={index}
+              >
                 <span>{t('benchmark.position', { position: index + 1 })}</span>
                 <span className="attention-weight-track" aria-hidden="true">
                   <span style={{ width: `${weight * 100}%` }} />
@@ -99,6 +109,17 @@ export function TemporalBenchmarkEvidence({
           </p>
         </div>
       )}
+      <details className="experiment-details">
+        <summary>{t('benchmark.methodTitle')}</summary>
+        <p>
+          {t('benchmark.method', {
+            steps: benchmarkArtifact.training.steps,
+            batch: benchmarkArtifact.training.batchSize,
+            evaluation: benchmarkArtifact.training.evaluationBatchSize,
+          })}{' '}
+          {t('benchmark.seed', { seed: benchmarkArtifact.seeds[0] })}
+        </p>
+      </details>
     </section>
   );
 }

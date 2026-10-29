@@ -59,6 +59,9 @@ function findElement(
   if (Array.isArray(node)) return node.map((child) => findElement(child, predicate)).find(Boolean);
   if (!isValidElement<ElementProperties>(node)) return undefined;
   if (predicate(node.type, node.props)) return node.props;
+  // Expand presentational function components (they hold no hooks).
+  if (typeof node.type === 'function')
+    return findElement((node.type as (props: unknown) => ReactNode)(node.props), predicate);
   return findElement(node.props.children, predicate);
 }
 
@@ -223,25 +226,14 @@ for (const locale of ['en', 'zh-CN'] as const) {
       expect(html).not.toContain(view.text('matchedSnapshot', { step: 640 }));
       expect(html.match(/75.00%/g)).toHaveLength(2);
       expect(html.match(/60.00%/g)).toHaveLength(2);
-      expect(html.match(/class="is-wrong"/g)).toHaveLength(4);
+      expect(html.match(/experiment-token is-wrong/g)).toHaveLength(4);
       expect(html).not.toContain('is-correct');
       expect(html).toContain('0.812');
       expect(html).toContain('0.650');
       expect(html).not.toContain('0.711');
-      expect(html).toContain(
-        view.text('modelMetrics', {
-          model: view.text('fixedModel'),
-          parameters: 1234,
-          samples: 1495,
-        }),
-      );
-      expect(html).toContain(
-        view.text('modelMetrics', {
-          model: view.text('recurrentModel'),
-          parameters: 4321,
-          samples: 1495,
-        }),
-      );
+      expect(html).toContain('1,234');
+      expect(html).toContain('4,321');
+      expect(html).toContain('1,495');
       expect(html).not.toContain(view.text('continue'));
       view.click(view.text('trainRecurrentMore'));
       expect(view.onTrainRecurrent).toHaveBeenCalledTimes(2);

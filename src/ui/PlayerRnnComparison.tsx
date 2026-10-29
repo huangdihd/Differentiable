@@ -5,6 +5,13 @@ import { vocabulary } from '../levels/corpus';
 import { fixedWindowExamples } from '../levels/fixed-window-evidence';
 import type { FixedWindowPrediction } from '../worker/fixed-window-protocol';
 import {
+  ExperimentSteps,
+  RunPicker,
+  TrainingProgress,
+  characterLabeler,
+  percent,
+} from './TemporalExperimentParts';
+import {
   useFixedWindowExperiment,
   type FixedWindowExperimentState,
 } from './use-fixed-window-experiment';
@@ -86,216 +93,227 @@ export function PlayerRnnComparisonView({
   if (fixedComplete) {
     actionKey = recurrentState.snapshots.length ? 'trainRecurrentMore' : 'runRecurrent';
   }
-  const characterLabel = (character: string) => {
-    if (character === ' ') return text('space');
-    if (character === '\n') return text('newline');
-    return character;
-  };
-  const comparisonResult = (
+  const characterLabel = characterLabeler(text);
+  const stage = completed ? 2 : fixedComplete ? 1 : 0;
+  const recurrentPredictions = resetHistory
+    ? recurrentSnapshot?.resetPredictions
+    : recurrentSnapshot?.predictions;
+  const modelRow = (
     result: FixedWindowPrediction | undefined,
     target: string,
     model: string,
-    step?: number,
-  ) => (
-    <div className="window-limit-comparison-result">
-      <span>{step === undefined ? model : text('modelAtStep', { model, step })}</span>
-      {result ? (
-        <>
-          <strong className={result.prediction === target ? 'is-correct' : 'is-wrong'}>
-            <code>{characterLabel(result.prediction)}</code>{' '}
-            {(result.probabilities[vocabulary.indexOf(result.prediction)] * 100).toFixed(2)}%
-            <small>{text(result.prediction === target ? 'correct' : 'wrong')}</small>
-          </strong>
-          <small>
-            {text('modelInput')} <code>{result.input}</code>
-          </small>
-        </>
-      ) : (
-        <span>{text('awaiting')}</span>
-      )}
-    </div>
-  );
+    kind: 'fixed' | 'recurrent',
+  ) => {
+    const correct = result?.prediction === target;
+    const verdict = result ? (correct ? 'is-correct' : 'is-wrong') : '';
+    return (
+      <div className={`window-limit-comparison-result experiment-model is-${kind} ${verdict}`}>
+        <span className="experiment-model-name">{model}</span>
+        {result ? (
+          <>
+            <span className={`experiment-token ${verdict}`}>
+              {characterLabel(result.prediction)}
+            </span>
+            <span className="experiment-bar-value">
+              {percent(result.probabilities[vocabulary.indexOf(result.prediction)])}
+            </span>
+            <b className="experiment-verdict">{text(correct ? 'correct' : 'wrong')}</b>
+            <small className="experiment-meta">
+              {text('modelInput')} <code>{result.input}</code>
+            </small>
+          </>
+        ) : (
+          <span className="experiment-empty">{text('awaiting')}</span>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <main className="window-limit blueprint-bg is-comparing">
-      <div className="window-limit-inner">
-        <header className="window-limit-head">
-          <div className="window-limit-actions">
+    <main className="experiment blueprint-bg is-comparing">
+      <div className="experiment-inner">
+        <header className="experiment-head">
+          <div className="experiment-head-row">
             <span className="level-id">
-              LEVEL {code} / {text('experiment')}
+              LEVEL {code} · {text('experiment')}
             </span>
             <button type="button" className="btn" onClick={onBack}>
               ← {text('back')}
             </button>
           </div>
-          <h1>{text('title')}</h1>
-          <p>{text('description')}</p>
-          <p className="window-limit-note">{text('freshWeights')}</p>
+          <h1 className="level-title">{text('title')}</h1>
+          <p className="experiment-lede">{text('description')}</p>
         </header>
-        <section className="window-limit-bench" aria-label={text('samples')}>
-          <div className="window-limit-bench-head">
-            <span className="label">{text('samples')}</span>
+
+        <ExperimentSteps
+          label={text('experiment')}
+          steps={[text('fixedStage'), text('recurrentStage'), text('compareStage')]}
+          current={stage}
+        />
+
+        <section className="experiment-panel" aria-label={text('samples')}>
+          <div className="experiment-panel-head">
+            <h2 className="label">{text('samples')}</h2>
             {fixedSnapshot && (
-              <span>
+              <span className="experiment-meta">
                 {text(recurrentSnapshot ? 'matchedSnapshot' : 'fixedSnapshot', {
                   step: fixedSnapshot.step,
                 })}
               </span>
             )}
           </div>
-          <div className="window-limit-input-mode">
-            <label>
+          <div className="experiment-cases">
+            {fixedWindowExamples.map((example, index) => (
+              <article className="experiment-case" key={example.history}>
+                <div className="experiment-case-head">
+                  <span className="label">{text('case', { n: index + 1 })}</span>
+                  <span className="experiment-meta">
+                    {text('correctTarget')} <code>{characterLabel(example.target)}</code>
+                  </span>
+                </div>
+                <div className="experiment-history" aria-label={example.history}>
+                  {example.history}
+                  <span className="experiment-token">?</span>
+                </div>
+                <div className="window-limit-comparison" aria-label={text('modelComparison')}>
+                  {modelRow(
+                    fixedSnapshot?.predictions.find((p) => p.history === example.history),
+                    example.target,
+                    text('fixedModel'),
+                    'fixed',
+                  )}
+                  {modelRow(
+                    recurrentPredictions?.find((p) => p.history === example.history),
+                    example.target,
+                    text('recurrentModel'),
+                    'recurrent',
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+          {recurrentSnapshot?.resetPredictions && (
+            <label className="experiment-toggle">
               <input
                 type="checkbox"
                 checked={resetHistory}
-                disabled={!recurrentSnapshot?.resetPredictions}
+                disabled={false}
                 onChange={(event) => setResetHistory(event.target.checked)}
               />
-              {text('resetHistory')}
+              <span>
+                <strong>{text('resetHistory')}</strong>
+                <span className="experiment-meta">
+                  {text(resetHistory ? 'resetNote' : 'fullHistory')}
+                </span>
+              </span>
             </label>
-            <span>{text(resetHistory ? 'resetNote' : 'fullHistory')}</span>
-          </div>
-          <div className="window-limit-examples">
-            {fixedWindowExamples.map((example, index) => {
-              const fixedResult = fixedSnapshot?.predictions.find(
-                (prediction) => prediction.history === example.history,
-              );
-              const recurrentPredictions = resetHistory
-                ? recurrentSnapshot?.resetPredictions
-                : recurrentSnapshot?.predictions;
-              const recurrentResult = recurrentPredictions?.find(
-                (prediction) => prediction.history === example.history,
-              );
-              return (
-                <article className="window-limit-example" key={example.history}>
-                  <div className="window-limit-case">
-                    <span>{text('case', { n: index + 1 })}</span>
-                    <span>
-                      {text('correctTarget')} <strong>{characterLabel(example.target)}</strong>
-                    </span>
-                  </div>
-                  <div className="window-limit-history" aria-label={example.history}>
-                    {example.history}
-                  </div>
-                  <div className="window-limit-comparison" aria-label={text('modelComparison')}>
-                    {comparisonResult(
-                      fixedResult,
-                      example.target,
-                      text('fixedModel'),
-                      fixedSnapshot?.step,
-                    )}
-                    {comparisonResult(
-                      recurrentResult,
-                      example.target,
-                      text('recurrentModel'),
-                      recurrentSnapshot?.step,
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-        <section className="window-limit-console" aria-label={text('training')}>
-          <div className="window-limit-console-head">
-            <span className="label">{text(completed ? 'modelComparison' : activeModelKey)}</span>
-            <span>{text('trainingPlan')}</span>
-          </div>
-          {runs.length > 0 && (
-            <div className="window-limit-runs" role="group" aria-label={text('compareRuns')}>
-              {runs.map((run) => (
-                <button
-                  key={run.step}
-                  type="button"
-                  className="window-limit-run"
-                  disabled={training}
-                  aria-pressed={fixedSnapshot === run}
-                  onClick={() => setSelectedStep(run.step)}
-                >
-                  {text('steps', { step: run.step })}
-                </button>
-              ))}
-            </div>
           )}
-          <div className="window-limit-metrics">
-            {[fixedSnapshot, recurrentSnapshot].map(
-              (snapshot) =>
-                snapshot && (
-                  <span key={snapshot.model}>
-                    {text('modelMetrics', {
-                      model: text(snapshot.model === 'rnn' ? 'recurrentModel' : 'fixedModel'),
-                      parameters: snapshot.parameterCount,
-                      samples: snapshot.sampleCount,
-                    })}
-                    {' · '}loss <strong>{snapshot.loss.toFixed(3)}</strong>
-                    {' · '}Adam · {snapshot.learningRate} · seed {snapshot.seed}
-                  </span>
-                ),
-            )}
-          </div>
+        </section>
+
+        <section className="experiment-console" aria-label={text('training')}>
           {activeState.status === 'error' ? (
-            <div className="window-limit-error" role="alert">
-              <p>{text('failed')}</p>
-              {activeState.error && (
-                <p>
-                  {text(activeModelKey)}：{translateDiagnostic(locale, activeState.error)}{' '}
-                  <code>{activeState.error.key}</code>
-                  {activeState.error.node && (
-                    <>
-                      {' '}
-                      ·{' '}
-                      <code>
-                        {activeState.error.node}
-                        {activeState.error.port && `:${activeState.error.port}`}
-                      </code>
-                    </>
-                  )}
-                </p>
-              )}
+            <div className="experiment-error" role="alert">
+              <div>
+                <p>{text('failed')}</p>
+                {activeState.error && (
+                  <p className="experiment-meta">
+                    {text(activeModelKey)}: {translateDiagnostic(locale, activeState.error)}{' '}
+                    <code>
+                      {activeState.error.key}
+                      {activeState.error.node && ` · ${activeState.error.node}`}
+                      {activeState.error.port && `:${activeState.error.port}`}
+                    </code>
+                  </p>
+                )}
+              </div>
               <button type="button" className="btn" onClick={beginTraining}>
                 {text('retry')}
               </button>
             </div>
           ) : training ? (
-            <div className="window-limit-training" role="status">
-              <p>
-                {text('trainingProgress', {
-                  model: text(activeModelKey),
-                  step: activeState.progress?.step ?? activeState.snapshots.at(-1)?.step ?? 0,
-                  total: activeState.progress?.totalSteps ?? '…',
-                })}
-              </p>
-              <progress
-                aria-label={text('training')}
-                {...(activeState.progress
-                  ? { value: activeState.progress.step, max: activeState.progress.totalSteps }
-                  : {})}
-              />
-            </div>
-          ) : (
-            <div className="window-limit-prompt" aria-live="polite">
+            <TrainingProgress
+              label={text('training')}
+              message={text('trainingProgress', {
+                model: text(activeModelKey),
+                step: activeState.progress?.step ?? activeState.snapshots.at(-1)?.step ?? 0,
+                total: activeState.progress?.totalSteps ?? '…',
+              })}
+              progress={activeState.progress}
+            />
+          ) : completed ? null : (
+            <div className="experiment-prompt" aria-live="polite">
               <p>{text(promptKey)}</p>
-              {!completed && (
-                <button type="button" className="btn btn-primary" onClick={beginTraining}>
-                  {text(actionKey)} →
-                </button>
-              )}
+              <button type="button" className="btn btn-primary" onClick={beginTraining}>
+                {text(actionKey)} →
+              </button>
             </div>
           )}
-          <p className="window-limit-note">{text('temporaryResults')}</p>
+          {runs.length > 0 && (
+            <RunPicker
+              label={text('compareRuns')}
+              runs={runs.map((run) => ({
+                step: run.step,
+                title: text('steps', { step: run.step }),
+              }))}
+              selected={fixedSnapshot?.step}
+              disabled={training}
+              onSelect={setSelectedStep}
+            />
+          )}
         </section>
-        <details className="window-limit-details">
-          <summary>{text('comparisonMethod')}</summary>
-          <p>{text('comparisonNote')}</p>
-        </details>
+
         {completed && (
-          <footer className="window-limit-actions">
-            <p>{text('next')}</p>
-            <button type="button" className="btn btn-primary" onClick={onContinue}>
-              {text('continue')} →
-            </button>
-          </footer>
+          <section className="experiment-takeaway" aria-live="polite">
+            <h2>{text('conclusionTitle')}</h2>
+            <p>{text(promptKey)}</p>
+            <div className="experiment-prompt">
+              <p className="experiment-meta">{text('next')}</p>
+              <button type="button" className="btn btn-primary" onClick={onContinue}>
+                {text('continue')} →
+              </button>
+            </div>
+          </section>
         )}
+
+        <details className="experiment-details">
+          <summary>{text('comparisonMethod')}</summary>
+          <p>{text('freshWeights')}</p>
+          <p>{text('comparisonNote')}</p>
+          {(fixedSnapshot || recurrentSnapshot) && (
+            <table className="table experiment-metrics">
+              <thead>
+                <tr>
+                  <th>{text('metricModel')}</th>
+                  <th>{text('metricParameters')}</th>
+                  <th>{text('metricSamples')}</th>
+                  <th>loss</th>
+                  <th>{text('metricOptimizer')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[fixedSnapshot, recurrentSnapshot].map(
+                  (snapshot) =>
+                    snapshot && (
+                      <tr key={snapshot.model}>
+                        <th scope="row">
+                          {text(snapshot.model === 'rnn' ? 'recurrentModel' : 'fixedModel')}
+                        </th>
+                        <td>{snapshot.parameterCount.toLocaleString(locale)}</td>
+                        <td>{snapshot.sampleCount.toLocaleString(locale)}</td>
+                        <td>
+                          <strong>{snapshot.loss.toFixed(3)}</strong>
+                        </td>
+                        <td>
+                          Adam · {snapshot.learningRate} · seed {snapshot.seed}
+                        </td>
+                      </tr>
+                    ),
+                )}
+              </tbody>
+            </table>
+          )}
+          <p className="experiment-meta">{text('temporaryResults')}</p>
+        </details>
       </div>
     </main>
   );
