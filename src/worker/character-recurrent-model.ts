@@ -98,6 +98,8 @@ export function recurrentCharacterPredictionBatch(
 
 export interface CharacterRecurrentModelOptions {
   progress: Progress;
+  /** Initialization seed; defaults to recurrentCharacterSeed. */
+  seed?: number;
 }
 
 interface RecurrentExecution {
@@ -111,7 +113,7 @@ export class CharacterRecurrentModel implements TrainingModel {
   private readonly constants = new Map<number, T.Tensor>();
   private readonly cellPlans = new Map<number, GraphPlan>();
   private readonly cellParameters = new Map<string, T.Tensor>();
-  private readonly random = new Random(recurrentCharacterSeed);
+  private readonly random: Random;
   private readonly executions = new WeakMap<Record<string, T.Tensor>, RecurrentExecution>();
   private readonly cellGraph: GraphJSON;
   private readonly registry: ComponentRegistry;
@@ -119,8 +121,9 @@ export class CharacterRecurrentModel implements TrainingModel {
 
   constructor(
     private readonly backend: Backend,
-    { progress }: CharacterRecurrentModelOptions,
+    { progress, seed = recurrentCharacterSeed }: CharacterRecurrentModelOptions,
   ) {
+    this.random = new Random(seed);
     if (
       !progress.passed.includes('time-rnn') ||
       !progress.unlockedComponents.includes('rnn_cell') ||

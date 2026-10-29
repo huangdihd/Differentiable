@@ -1032,7 +1032,7 @@
   "levels.time-player-comparison.resetHistory": "Give the RNN only the last two letters",
   "levels.time-player-comparison.resetNote": "Same weights, no extra training; the RNN now also receives only th.",
   "levels.time-player-comparison.modelMetrics": "{model}: {parameters} parameters · {samples} target positions",
-  "levels.time-player-comparison.trainingPlan": "Both 320 → 640 steps · Adam · 0.01",
+  "levels.time-player-comparison.trainingPlan": "Both 320 → 640 steps · Adam · 0.02",
   "levels.time-player-comparison.trainingProgress": "Training {model} · {step} / {total} steps",
   "levels.time-player-comparison.runFixed": "Train fixed window 320 steps",
   "levels.time-player-comparison.trainFixedMore": "Train fixed window to 640",

@@ -36,6 +36,8 @@ export interface OptimizerOptions {
   beta1?: number;
   beta2?: number;
   epsilon?: number;
+  /** Optional global gradient-norm clip, applied before the update (reads one scalar per step). */
+  clipNorm?: number;
 }
 /** Serializable, bounded node snapshot; size records the full element count. */
 export interface TrainingTraceValue {
@@ -115,6 +117,27 @@ export class Optimizer {
       )
         throw new Error('training.gradient_shape');
     }
+    const clipped: Tensor[] = [];
+    const { clipNorm } = this.options;
+    if (clipNorm !== undefined && clipNorm > 0) {
+      let total = 0;
+      for (const g of gradients) {
+        const sq = T.sum(T.mul(g, g), g.shape.map((_, i) => i));
+        const [value] = await sq.read();
+        disposeExecution([sq], [g]);
+        total += value;
+      }
+      const norm = Math.sqrt(total);
+      if (Number.isFinite(norm) && norm > clipNorm) {
+        const scale = clipNorm / norm;
+        gradients = gradients.map((g) => {
+          const factor = T.tensor([scale], [], g.backend);
+          const out = T.mul(g, factor);
+          clipped.push(out, factor);
+          return out;
+        });
+      }
+    }
     this.step++;
     index = 0;
     // Bias corrections change every step; passing them as data keeps the update kernel's code
@@ -180,6 +203,7 @@ export class Optimizer {
       }
     } finally {
       corrections.forEach((t) => t.dispose());
+      clipped.forEach((t) => t.dispose());
     }
   }
 }

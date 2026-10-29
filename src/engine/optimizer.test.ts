@@ -57,3 +57,19 @@ it('reads training loss only at reporting intervals and final update', async () 
   parameters.forEach((t) => t.dispose());
   expect(backend.liveBuffers).toBe(0);
 });
+
+it('clips gradients to a global norm and releases temporaries', async () => {
+  const backend = new CpuBackend();
+  const parameters = new Map([
+    ['a', tensor([0], [1], backend)],
+    ['b', tensor([0], [1], backend)],
+  ]);
+  const optimizer = new Optimizer({ kind: 'sgd', learningRate: 1, clipNorm: 1 });
+  const gradients = [tensor([3], [1], backend), tensor([4], [1], backend)];
+  await optimizer.update(parameters, gradients);
+  expect((await parameters.get('a')!.read())[0]).toBeCloseTo(-0.6, 6);
+  expect((await parameters.get('b')!.read())[0]).toBeCloseTo(-0.8, 6);
+  gradients.forEach((g) => g.dispose());
+  parameters.forEach((t) => t.dispose());
+  expect(backend.liveBuffers).toBe(0);
+});

@@ -97,7 +97,7 @@ export class FixedWindowExperiment {
 
   constructor(playerProgress?: Progress, backend: Backend = new CpuBackend()) {
     this.backend = backend;
-    this.learningRate = playerProgress ? 0.01 : 0.03;
+    this.learningRate = playerProgress ? 0.02 : 0.03;
     this.stepsPerRun = playerProgress ? 320 : 160;
     if (!playerProgress) return;
     const player = playerExperimentGraph(playerProgress, this.level.id);

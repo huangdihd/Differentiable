@@ -1029,7 +1029,7 @@
   "levels.time-player-comparison.resetHistory": "只给 RNN 最后两个字",
   "levels.time-player-comparison.resetNote": "同一组权重，不额外训练，只是 RNN 现在也只收到 th。",
   "levels.time-player-comparison.modelMetrics": "{model}：{parameters} 个参数 · {samples} 个目标位置",
-  "levels.time-player-comparison.trainingPlan": "双方均为 320 → 640 步 · Adam · 0.01",
+  "levels.time-player-comparison.trainingPlan": "双方均为 320 → 640 步 · Adam · 0.02",
   "levels.time-player-comparison.trainingProgress": "{model} 训练中 · {step} / {total} 步",
   "levels.time-player-comparison.runFixed": "训练固定窗口 320 步",
   "levels.time-player-comparison.trainFixedMore": "固定窗口再训练到 640 步",

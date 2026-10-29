@@ -192,13 +192,13 @@ it('trains the expanded player graph reproducibly and continues its optimizer on
       step: 10,
       stepsPerRun: 320,
       sampleCount: 1495,
-      learningRate: 0.01,
+      learningRate: 0.02,
     });
     expect(second).toMatchObject({
       step: 20,
       stepsPerRun: 320,
       sampleCount: 1495,
-      learningRate: 0.01,
+      learningRate: 0.02,
     });
     expect(training.mock.contexts).toEqual([session, session]);
     expect(second.loss).toBeLessThan(first.loss);
@@ -336,7 +336,7 @@ it('compiles the saved fixed-window circuit rather than replacing it with the re
     expect(await experiment.run()).toMatchObject({
       step: 320,
       sampleCount: 1495,
-      learningRate: 0.01,
+      learningRate: 0.02,
     });
     expect(JSON.stringify(progress)).toBe(before);
   } finally {

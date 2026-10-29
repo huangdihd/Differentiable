@@ -25,6 +25,8 @@ type RecurrentCharacterProgress = Extract<FixedWindowResponse, { type: 'progress
 export interface RecurrentCharacterExperimentOptions {
   learningRate?: number;
   stepsPerRun?: number;
+  clipNorm?: number;
+  seed?: number;
 }
 
 /** Ephemeral training of the passed player cell, with fixture-owned embedding/head weights. */
@@ -33,6 +35,8 @@ export class RecurrentCharacterExperiment {
   private readonly cancellation = new AbortController();
   private readonly learningRate: number;
   private readonly stepsPerRun: number;
+  private readonly clipNorm: number;
+  private readonly seed: number;
   private model?: CharacterRecurrentModel;
   private session?: TrainingSession;
   private batch?: TrainingBatch;
@@ -47,8 +51,10 @@ export class RecurrentCharacterExperiment {
     backend: Backend = new CpuBackend(),
   ) {
     this.backend = backend;
-    this.learningRate = options.learningRate ?? 0.01;
+    this.learningRate = options.learningRate ?? 0.02;
     this.stepsPerRun = options.stepsPerRun ?? 320;
+    this.clipNorm = options.clipNorm ?? 1;
+    this.seed = options.seed ?? recurrentCharacterSeed;
     if (!(this.learningRate > 0 && Number.isFinite(this.learningRate)))
       throw new Error('training.learning_rate');
     if (!(Number.isInteger(this.stepsPerRun) && this.stepsPerRun > 0))
@@ -58,12 +64,12 @@ export class RecurrentCharacterExperiment {
   private async initialize(): Promise<TrainingSession> {
     if (this.session) return this.session;
     this.batch = recurrentCharacterBatch(this.backend);
-    this.model = new CharacterRecurrentModel(this.backend, { progress: this.progress });
+    this.model = new CharacterRecurrentModel(this.backend, { progress: this.progress, seed: this.seed });
     this.session = new TrainingSession(
       this.model,
       this.batch,
       undefined,
-      { kind: 'adam', learningRate: this.learningRate },
+      { kind: 'adam', learningRate: this.learningRate, clipNorm: this.clipNorm },
       'probabilities',
       { accuracy: false, lossOutput: 'loss' },
     );
@@ -157,7 +163,7 @@ export class RecurrentCharacterExperiment {
         step: report.step,
         loss: report.loss,
         stepsPerRun: this.stepsPerRun,
-        seed: recurrentCharacterSeed,
+        seed: this.seed,
         learningRate: this.learningRate,
         predictions,
         resetPredictions,
