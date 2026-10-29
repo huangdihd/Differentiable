@@ -119,14 +119,26 @@ export class RecurrentCharacterExperiment {
     if (this.completedRuns >= 2) throw new Error('worker.rnn_complete');
     this.running = true;
     try {
+      // Report immediately: the first run also pays for backend setup and kernel compilation.
+      const firstStep = this.completedRuns * this.stepsPerRun;
+      onProgress?.({ type: 'progress', step: firstStep, totalSteps: firstStep + this.stepsPerRun });
       const session = await this.initialize();
       const totalSteps = session.optimizer.step + this.stepsPerRun;
+      let lastPost = 0;
       const report = await session.run(this.stepsPerRun, {
         signal: this.cancellation.signal,
         reportEvery: 10,
         onReport: ({ step, loss }) => {
           this.assertActive();
+          lastPost = performance.now();
           onProgress?.({ type: 'progress', step, totalSteps, loss });
+        },
+        // Step-only updates keep the bar moving between loss reports (throttled, no GPU readback).
+        onStep: (step) => {
+          const now = performance.now();
+          if (now - lastPost < 80) return;
+          lastPost = now;
+          onProgress?.({ type: 'progress', step, totalSteps });
         },
       });
       this.assertActive();

@@ -83,10 +83,28 @@ export function TrainingProgress({
   return (
     <div className="experiment-training" role="status">
       <p>{message}</p>
-      <progress
+      <div
+        className={progress ? 'experiment-bar' : 'experiment-bar is-indeterminate'}
+        role="progressbar"
         aria-label={label}
-        {...(progress ? { value: progress.step, max: progress.totalSteps } : {})}
-      />
+        {...(progress
+          ? {
+              'aria-valuemin': 0,
+              'aria-valuemax': progress.totalSteps,
+              'aria-valuenow': progress.step,
+            }
+          : {})}
+      >
+        <span
+          style={
+            progress
+              ? {
+                  width: `${Math.min(100, (100 * progress.step) / Math.max(1, progress.totalSteps))}%`,
+                }
+              : undefined
+          }
+        />
+      </div>
     </div>
   );
 }

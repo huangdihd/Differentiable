@@ -139,7 +139,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
         progress: { type: 'progress', step: 180, totalSteps: 320, loss: 0.78 },
       });
       expect(html).toContain(t('levels.time-window-limit.snapshot', { step: 160 }));
-      expect(html).toContain('value="180" max="320"');
+      expect(html).toContain('aria-valuemax="320" aria-valuenow="180"');
       expect(html).toContain('disabled=""');
       expect(html).not.toContain(text('trainMore'));
       expect(html).not.toContain(text('inspect'));

@@ -428,6 +428,8 @@ export class TrainingSession {
       yieldEvery?: number;
       reportEvery?: number;
       onReport?: (report: TrainingReport) => void;
+      /** Called after every completed step without forcing a loss readback. */
+      onStep?: (step: number) => void;
       signal?: AbortSignal;
     } = {},
   ): Promise<TrainingReport> {
@@ -471,6 +473,7 @@ export class TrainingSession {
         options.onReport?.(evaluation);
       }
       if (value !== undefined) options.onReport?.({ step: this.optimizer.step, loss: value });
+      options.onStep?.(this.optimizer.step);
       if ((i + 1) % (options.yieldEvery ?? 10) === 0)
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }

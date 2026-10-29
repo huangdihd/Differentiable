@@ -33,6 +33,6 @@ export type FixedWindowRequest = {
 };
 
 export type FixedWindowResponse =
-  | { type: 'progress'; step: number; totalSteps: number; loss: number }
+  | { type: 'progress'; step: number; totalSteps: number; loss?: number }
   | { type: 'result'; snapshot: FixedWindowSnapshot }
   | ({ type: 'error'; key: string } & Partial<Omit<WorkerError, 'key'>>);

@@ -216,7 +216,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
         progress: { type: 'progress', step: 40, totalSteps: 320, loss: 1 },
       });
       html = view.render();
-      expect(html).toContain('value="40" max="320"');
+      expect(html).toContain('aria-valuemax="320" aria-valuenow="40"');
       expect(html).not.toContain(view.text('continue'));
       view.click(view.text('back'));
       expect(view.onBack).toHaveBeenCalledOnce();

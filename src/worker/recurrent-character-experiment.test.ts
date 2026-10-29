@@ -36,9 +36,14 @@ it('really trains 320 then 640 steps once, updates every parameter and performs 
   const training = vi.spyOn(TrainingSession.prototype, 'run');
   const evaluation = vi.spyOn(TrainingSession.prototype, 'evaluate');
   const progress: Extract<FixedWindowResponse, { type: 'progress' }>[] = [];
+  // Immediate start and throttled step-only updates (no loss readback).
+  const stepOnly: number[] = [];
   let backend: CpuBackend | undefined;
   try {
-    const pending = experiment.run((report) => progress.push(report));
+    const pending = experiment.run((report) => {
+      if (report.loss !== undefined) progress.push(report);
+      else stepOnly.push(report.step);
+    });
     await expect(experiment.run()).rejects.toThrow('worker.training_busy');
     const first = await pending;
     const session = training.mock.contexts[0] as TrainingSession;
@@ -63,7 +68,10 @@ it('really trains 320 then 640 steps once, updates every parameter and performs 
     expect(first.loss).toBeGreaterThan(0);
     expect(first.loss).toBeLessThan(initial.loss);
     const serializedFirst = JSON.stringify(first);
-    const second = await experiment.run((report) => progress.push(report));
+    const second = await experiment.run((report) => {
+      if (report.loss !== undefined) progress.push(report);
+      else stepOnly.push(report.step);
+    });
     expect(JSON.stringify(first)).toBe(serializedFirst);
     expect(second).toMatchObject({ step: 640, stepsPerRun: 320, learningRate: 0.01 });
     expect(second.loss).toBeGreaterThan(0);
@@ -270,7 +278,8 @@ it('cancels after an optimizer update and releases parameters, tapes, moments an
   });
   let backend: CpuBackend | undefined;
   await expect(
-    experiment.run(() => {
+    experiment.run((report) => {
+      if (report.loss === undefined) return;
       const session = training.mock.contexts[0] as TrainingSession;
       backend = [...session.model.parameters.values()][0].backend as CpuBackend;
       expect(session.optimizer.step).toBe(1);
@@ -297,7 +306,8 @@ it('propagates training and progress failures without retrying partly trained st
   });
   const allocation = vi.spyOn(CpuBackend.prototype, 'allocate');
   await expect(
-    experiment.run(() => {
+    experiment.run((report) => {
+      if (report.loss === undefined) return;
       throw new Error('progress callback failure');
     }),
   ).rejects.toThrow('progress callback failure');
