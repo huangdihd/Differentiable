@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
-  computationGraph,
+  computationIdentity,
   expandComponentSubgraph,
   type GraphJSON,
   type GraphNode,
@@ -671,7 +671,7 @@ function Editor({
     phase: 'forward' | 'backward' | 'update';
   }>();
   const stepToken = useRef(0);
-  const stepGraph = useRef<GraphJSON | undefined>(undefined);
+  const stepGraph = useRef<string | undefined>(undefined);
   const tunable = level.kind === 'train' ? level.tunable?.learningRate : undefined;
   const learningRate = tunable
     ? (progress.trainingSettings?.[level.id]?.learningRate ?? tunable.default)
@@ -946,7 +946,8 @@ function Editor({
     });
   }, [level, client]);
   const lastGraph = useRef(state.graph);
-  const computationKey = JSON.stringify(computationGraph(state.graph));
+  // Dragging only writes `ui`. That must not recompile or probe the graph.
+  const computationKey = JSON.stringify(computationIdentity(state.graph));
   useEffect(() => {
     latest.current.onProgress({
       ...latest.current.progress,
@@ -1155,9 +1156,9 @@ function Editor({
     try {
       const trace = await c.trainStep(level.id, state.graph, learningRate, optimizer);
       if (token !== stepToken.current) return;
-      // The worker restarts the session when the graph changed; so does the chart.
-      const fresh = stepGraph.current !== state.graph || trace.step === 1;
-      stepGraph.current = state.graph;
+      // The worker restarts the session when the computation changes; so does the chart.
+      const fresh = stepGraph.current !== computationKey || trace.step === 1;
+      stepGraph.current = computationKey;
       setLosses((a) => (fresh ? [trace.loss] : [...a, trace.loss]));
       setReport({ step: trace.step, loss: trace.loss, accuracy: trace.accuracy });
       for (const phase of ['forward', 'backward', 'update'] as const) {
@@ -1323,6 +1324,8 @@ function Editor({
     [selected, state.graph, registry],
   );
   const [selectedProbes, setSelectedProbes] = useState<Record<string, SelectedPortProbe>>({});
+  // Port identity ignores canvas coordinates, so a position commit must not probe again.
+  const selectedProbeKey = `${selected?.id ?? ''}:${JSON.stringify(selectedPorts)}`;
   useEffect(() => {
     const endpoints = selectedPorts.filter((port) => port.endpoint);
     if (!selected || !endpoints.length) {
@@ -1384,7 +1387,7 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [selected, selectedPorts, computationKey, parsedInputs, shapeGroup, busy, locale]);
+  }, [selectedProbeKey, computationKey, parsedInputs, shapeGroup, busy, locale]);
   const display = inside.at(-1)?.graph ?? state.graph;
   // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
   const SOFT = new Set(['missing_port', 'missing_input']);

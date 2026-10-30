@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createEditorState, editorReducer } from './editor/state';
-import { compileGraph, computationGraph, type GraphJSON, type GraphNode } from './engine/graph';
+import {
+  compileGraph,
+  computationGraph,
+  computationIdentity,
+  type GraphJSON,
+  type GraphNode,
+} from './engine/graph';
 import { graphMetrics } from './engine/levels';
 import { sigmoidLevel } from './levels/examples';
 import { createInitialProgress, loadProgress, saveProgress } from './storage';
@@ -179,6 +185,35 @@ describe('parameter labels', () => {
       changed.nodes[0].attrs = { ...attrs, label: 'W_1' };
       expect(key(changed)).not.toBe(key(graph('W_1')));
     }
+  });
+
+  it('computationIdentity ignores layout and labels, and still changes for real edits', () => {
+    const key = (g: GraphJSON) => JSON.stringify(computationIdentity(g));
+    const placed = graph('W_1');
+    placed.nodes[0].ui = { x: 10, y: 20, collapsed: false };
+    placed.nodes[1].ui = { x: 400, y: 80 };
+    const moved = structuredClone(placed);
+    moved.nodes[0].ui = { x: 999, y: -4, collapsed: true };
+    delete moved.nodes[1].ui;
+    const before = structuredClone(placed);
+    expect(key(moved)).toBe(key(placed));
+    expect(key(moved)).toBe(key(graph()));
+    expect(key(moved)).toBe(key(graph('其他名字')));
+    expect(computationIdentity(placed).nodes.every((node) => !('ui' in node))).toBe(true);
+    expect(placed).toEqual(before);
+
+    const rewired = structuredClone(placed);
+    rewired.edges = [];
+    expect(key(rewired)).not.toBe(key(placed));
+
+    const retuned = structuredClone(placed);
+    retuned.nodes[0].attrs = { ...retuned.nodes[0].attrs, init: 'zeros' };
+    expect(key(retuned)).not.toBe(key(placed));
+
+    const grown = structuredClone(placed);
+    grown.nodes.push({ id: 'extra', component: 'relu', ui: { x: 0, y: 0 } });
+    expect(key(grown)).not.toBe(key(placed));
+    expect(computationGraph(placed).nodes[0].ui).toEqual(placed.nodes[0].ui);
   });
 
   it('computationGraph removes only param attrs.label and never mutates the saved graph', () => {
