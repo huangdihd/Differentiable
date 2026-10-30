@@ -504,7 +504,10 @@ describe('i18n', () => {
       expect(hints['4-5']).toMatch(/Embedding|嵌入/);
       expect(hints['4-5']).toMatch(/Linear|线性层/);
       expect(hints['5-5']).toMatch(/Token \+ position embedding|词元 \+ 位置嵌入/);
-      expect(hints['5-5']).toMatch(/27.*8.*12.*12→12.*12→27/s);
+      expect(hints['5-5']).toMatch(/27.*8.*12/s);
+      expect(hints['5-5']).toMatch(
+        /Input features.*12.*Output features.*12.*Input features.*12.*Output features.*27|输入特征数」12、「输出特征数」12.*输入特征数」12、「输出特征数」27/s,
+      );
       expect(hints['6-4']).toMatch(/Token \+ position embedding|词元 \+ 位置嵌入/);
       expect(hints['6-4']).toMatch(
         /two separate Transformer block|两个相互独立的「Transformer 块」/,

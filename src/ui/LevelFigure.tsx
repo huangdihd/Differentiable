@@ -77,7 +77,7 @@ function CausalMaskFigure({ t }: { t: T }) {
             x={left - 8}
             y={top + i * cell + cell / 2 + 3}
             className="mask-axis"
-            textAnchor="end"
+            style={{ textAnchor: 'end' }}
           >
             {tok}
           </text>
@@ -93,8 +93,63 @@ function CausalMaskFigure({ t }: { t: T }) {
   );
 }
 
+/** Position embedding: character row + position row → a distinct vector per (char, position). */
+function PositionFigure({ t }: { t: T }) {
+  const chars = t('figures.position.chars').split('');
+  const cell = 44;
+  const left = 64;
+  const top = 10;
+  const rowH = 40;
+  const width = left + chars.length * cell + 8;
+  const height = top + rowH * 3 + 4;
+  const rows: [string, (c: string, i: number) => string, string][] = [
+    [t('figures.position.char'), (c) => c, 'mask-cell'],
+    [t('figures.position.pos'), (_, i) => `p${i}`, 'mask-cell is-pos'],
+    [t('figures.position.sum'), (c, i) => `${c}+p${i}`, 'mask-cell is-sum'],
+  ];
+  return (
+    <figure className="level-figure">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t('figures.position.alt')}>
+        {rows.map(([label, text, cls], r) => (
+          <g key={label}>
+            <text
+              x={left - 8}
+              y={top + r * rowH + 20}
+              className="mask-axis"
+              style={{ textAnchor: 'end' }}
+            >
+              {label}
+            </text>
+            {chars.map((c, i) => (
+              <g key={i}>
+                <rect
+                  x={left + i * cell}
+                  y={top + r * rowH}
+                  width={cell - 4}
+                  height={28}
+                  rx={3}
+                  className={cls}
+                />
+                <text
+                  x={left + i * cell + (cell - 4) / 2}
+                  y={top + r * rowH + 18}
+                  className="mask-text"
+                >
+                  {text(c, i)}
+                </text>
+              </g>
+            ))}
+          </g>
+        ))}
+      </svg>
+      <figcaption>{t('figures.position.caption')}</figcaption>
+    </figure>
+  );
+}
+
 const figures: Record<string, (props: { t: T }) => ReactNode> = {
   '5-2': CausalMaskFigure,
+  '5-4': PositionFigure,
 };
 
 /** Optional diagram shown under a level's description. */

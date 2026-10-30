@@ -243,3 +243,9 @@
   fill: var(--muted);
   font-size: 10px;
 }
+.level-figure .mask-cell.is-pos {
+  fill: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+.level-figure .mask-cell.is-sum {
+  stroke: var(--accent);
+}

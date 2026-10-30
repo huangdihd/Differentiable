@@ -970,6 +970,8 @@ function Editor({
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      // Let the browser copy selected text (descriptions, hints); only copy nodes otherwise.
+      if (mod && e.key.toLowerCase() === 'c' && window.getSelection()?.toString()) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         command({ type: 'removeNodes' });
