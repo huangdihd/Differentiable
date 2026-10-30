@@ -90,12 +90,14 @@ describe('formal chapter catalog', () => {
       ['time-rnn', '5-2'],
       ['time-rnn-window', '5-3'],
       ['time-rnn-delay', '5-4'],
-      ['time-attention', '5-5'],
-      ['time-forecast', '5-6'],
     ]);
     expect(
       catalog.filter((entry) => entry.chapter === 6).map(({ level, code }) => [level.id, code]),
-    ).toEqual(Array.from({ length: 5 }, (_, i) => [`5-${i + 1}`, `6-${i + 1}`]));
+    ).toEqual([
+      ['time-attention', '6-1'],
+      ['time-forecast', '6-2'],
+      ...Array.from({ length: 5 }, (_, i) => [`5-${i + 1}`, `6-${i + 3}`]),
+    ]);
     expect(
       catalog.filter((entry) => entry.chapter === 7).map(({ level, code }) => [level.id, code]),
     ).toEqual(Array.from({ length: 4 }, (_, i) => [`6-${i + 1}`, `7-${i + 1}`]));

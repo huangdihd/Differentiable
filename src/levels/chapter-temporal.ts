@@ -453,7 +453,7 @@ const attentionInputs: ShapePorts = { history: [3, 5, 4], query: [3, 4] };
 const attentionLevel = withPar<ForwardLevel>(
   {
     id: levelIds[4],
-    chapter: '5',
+    chapter: '6',
     kind: 'forward',
     titleKey: `levels.${levelIds[4]}.title`,
     descriptionKey: `levels.${levelIds[4]}.description`,
@@ -499,7 +499,7 @@ export function waveBatch(random: Random) {
 export const temporalTrainLevel = withPar<TrainLevel>(
   {
     id: levelIds[5],
-    chapter: '5',
+    chapter: '6',
     kind: 'train',
     titleKey: `levels.${levelIds[5]}.title`,
     descriptionKey: `levels.${levelIds[5]}.description`,
@@ -535,10 +535,12 @@ export const temporalTrainLevel = withPar<TrainLevel>(
   [...preceding, ...temporalForwardLevels],
 );
 
+/** RNN memory chapter (display chapter 5). */
 export const temporalLevels = [
   windowLimitLevel,
   ...temporalForwardLevels.slice(0, 2),
   temporalRnnDelayLevel,
-  ...temporalForwardLevels.slice(2),
-  temporalTrainLevel,
 ];
+
+/** Attention chapter openers: single-query lookback, then forecast (display 6-1, 6-2). */
+export const attentionIntroLevels = [...temporalForwardLevels.slice(2), temporalTrainLevel];

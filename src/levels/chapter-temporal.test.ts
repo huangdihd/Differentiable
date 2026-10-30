@@ -11,6 +11,7 @@ import { chapter3ForwardLevels } from './chapter3';
 import { chapter4ForwardLevels } from './chapter4';
 import {
   rnnWindowAnswer,
+  attentionIntroLevels,
   temporalForwardLevels,
   temporalLevels,
   temporalRnnDelayLevel,
@@ -56,24 +57,26 @@ for (const level of temporalForwardLevels) {
   });
 }
 
-it('keeps the six-level RNN causal order and exact unlock chain', () => {
+it('keeps the four-level RNN causal order and exact unlock chain', () => {
   expect(temporalLevels.map((level) => level.id)).toEqual([
     'time-window-limit',
     'time-rnn',
     'time-rnn-window',
     'time-rnn-delay',
-    'time-attention',
-    'time-forecast',
   ]);
-  expect(temporalLevels.map((level) => level.chapter)).toEqual(Array(6).fill('5'));
+  expect(temporalLevels.map((level) => level.chapter)).toEqual(Array(4).fill('5'));
   expect(temporalLevels.map((level) => level.unlock)).toEqual([
     ['time-rnn'],
     ['time-rnn-window'],
     ['time-rnn-delay'],
     ['time-attention'],
-    ['time-forecast'],
-    ['5-1'],
   ]);
+  expect(attentionIntroLevels.map((level) => level.id)).toEqual([
+    'time-attention',
+    'time-forecast',
+  ]);
+  expect(attentionIntroLevels.map((level) => level.chapter)).toEqual(['6', '6']);
+  expect(attentionIntroLevels.map((level) => level.unlock)).toEqual([['time-forecast'], ['5-1']]);
   expect(temporalForwardLevels.flatMap((level) => level.unlockComponents ?? [])).toEqual([
     'rnn_cell',
     'rnn_window',

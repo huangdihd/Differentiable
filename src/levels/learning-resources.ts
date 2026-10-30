@@ -112,8 +112,6 @@ export const levelLearningResources: Readonly<Record<string, readonly LearningRe
         'https://en.d2l.ai/chapter_attention-mechanisms-and-transformers/attention-scoring-functions.html',
       ),
     },
-  ],
-  '5-1': [
     {
       titleKey: 'learning.attention.title',
       descriptionKey: 'learning.attention.description',

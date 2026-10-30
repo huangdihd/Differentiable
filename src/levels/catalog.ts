@@ -5,7 +5,7 @@ import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
 import { chapter3Levels, chapter3ForwardLevels } from './chapter3';
 import { chapter4Levels } from './chapter4';
-import { temporalLevels } from './chapter-temporal';
+import { attentionIntroLevels, temporalLevels } from './chapter-temporal';
 import { chapter5Levels } from './chapter5';
 import { chapter6Levels } from './chapter6';
 import { xorLevel, xorSolution } from './examples';
@@ -58,6 +58,7 @@ export const gameLevels: Level[] = [
   },
   ...chapter4Levels,
   ...temporalLevels,
+  ...attentionIntroLevels,
   ...chapter5Levels,
   ...chapter6Levels,
 ];
