@@ -589,8 +589,10 @@ describe('i18n', () => {
     }
   });
   it('uses the requested Transformer lesson title in both languages', () => {
-    expect(locales.en['levels.6-3.title']).toBe('Attention Is All You Need');
-    expect(locales['zh-CN']['levels.6-3.title']).toBe('注意力是你需要的一切');
+    expect(locales.en['levels.5-5.title']).toBe('Attention Is All You Need');
+    expect(locales['zh-CN']['levels.5-5.title']).toBe('注意力是你需要的一切');
+    expect(locales.en['levels.6-3.title']).toBe('Assemble the Transformer block');
+    expect(locales['zh-CN']['levels.6-3.title']).toBe('搭一个 Transformer 块');
   });
   it('covers recurrent settings and component-specific bias ports in both languages', () => {
     for (const locale of ['en', 'zh-CN'] as const) {

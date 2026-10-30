@@ -124,6 +124,7 @@ export const levelPapers: Readonly<Record<string, readonly Paper[]>> = {
   '5-2': [P.transformer],
   '5-3': [P.transformer],
   '5-4': [P.transformer],
+  '5-5': [P.transformer],
   '6-1': [P.transformer],
   '6-2': [P.transformer],
   '6-3': [P.transformer, P.resnet],

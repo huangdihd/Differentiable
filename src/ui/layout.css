@@ -201,3 +201,45 @@
     gap: var(--s3);
   }
 }
+
+.level-figure {
+  margin: 10px 0 4px;
+}
+.level-figure svg {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+}
+.level-figure figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.level-figure .mask-cell {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.level-figure .mask-cell.is-blocked {
+  fill: var(--panel);
+  stroke: var(--line);
+  stroke-dasharray: 2 2;
+}
+.level-figure .mask-text,
+.level-figure .mask-axis,
+.level-figure .mask-arrow {
+  fill: var(--text);
+  font-size: 10px;
+  text-anchor: middle;
+}
+.level-figure .mask-axis {
+  fill: var(--muted);
+}
+.level-figure .mask-arrow {
+  font-size: 16px;
+}
+.level-figure .mask-title {
+  fill: var(--muted);
+  font-size: 10px;
+}

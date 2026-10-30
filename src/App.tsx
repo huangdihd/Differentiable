@@ -104,6 +104,7 @@ import { SfxToggle } from './ui/SfxToggle';
 import { sfx, type SfxName } from './audio/sfx';
 import { MathText } from './ui/MathText';
 import { TemporalBenchmarkEvidence } from './ui/TemporalBenchmarkEvidence';
+import { LevelFigure } from './ui/LevelFigure';
 import { levelPapers } from './levels/papers';
 import { levelLearningResources } from './levels/learning-resources';
 import { testCaseLocation } from './ui/test-case-location';
@@ -1638,6 +1639,7 @@ function Editor({
           <div className="level-desc">
             <MathText text={t(level.descriptionKey)} />
           </div>
+          <LevelFigure levelId={level.id} t={t} />
           <TemporalBenchmarkEvidence levelId={level.id} locale={locale} t={t} />
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
           {lossLandscape && (
