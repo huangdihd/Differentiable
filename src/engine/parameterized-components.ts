@@ -19,6 +19,7 @@ type ModuleSpec = {
   attributes: readonly ComponentAttributeDefinition[];
   defaults: Attributes;
   parameters: readonly ParameterSpec[];
+  optionalInputs?: readonly string[];
   adapt?: (graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts) => void;
 };
 
@@ -73,14 +74,22 @@ function adaptRecurrentWindow(graph: GraphJSON, attrs: Attributes): void {
 }
 
 /** A start state without the batch axis would surface as a confusing matmul error deep inside. */
-function requireBatchedState(_graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
+function requireBatchedState(graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
   const h = inputs?.h;
   const x = inputs?.x;
+  const width = inputs?.wh?.[0] ?? number(attrs, 'hidden_features');
+  if (x && !h) {
+    // An unconnected h starts the sequence from zeros, one state per sentence: [B, H].
+    const shape = [...x.slice(0, -1), width];
+    graph.nodes = graph.nodes.map((node) =>
+      node.component === 'input' && node.attrs?.name === 'h'
+        ? { id: node.id, component: 'const', attrs: { value: 0, shape } }
+        : node,
+    );
+    return;
+  }
   if (!h || !x || h.length >= Math.max(2, x.length)) return;
-  throw new GraphError('rnn_state_batch', undefined, 'h', {
-    h,
-    hidden: number(attrs, 'hidden_features'),
-  });
+  throw new GraphError('rnn_state_batch', undefined, 'h', { h, hidden: width });
 }
 
 /** Treat rank-one x as a batch of scalars when Linear declares one input feature. */
@@ -162,6 +171,7 @@ const MODULES: Readonly<Record<string, ModuleSpec>> = {
       normal('wh', (a) => [number(a, 'hidden_features'), number(a, 'hidden_features')]),
       zeros('b', (a) => [number(a, 'hidden_features')]),
     ],
+    optionalInputs: ['h'],
     adapt: requireBatchedState,
   },
   rnn_window: {
@@ -252,7 +262,11 @@ export function configurableModule(definition: ComponentDefinition): ComponentDe
   return {
     ...definition,
     optionalInputs: [
-      ...new Set([...(definition.optionalInputs ?? []), ...spec.parameters.map((p) => p.input)]),
+      ...new Set([
+        ...(definition.optionalInputs ?? []),
+        ...(spec.optionalInputs ?? []),
+        ...spec.parameters.map((p) => p.input),
+      ]),
     ],
     generatedInputs: [
       ...new Set([

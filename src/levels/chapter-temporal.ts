@@ -16,7 +16,9 @@ const preceding = [
   ...chapter3ForwardLevels,
   ...chapter4ForwardLevels,
 ];
-const available = chapter4TrainLevels[0].available;
+/** Slice/Stack/Concat/Split arrive with chapter 5, so sequence plumbing is one node each. */
+export const tensorOps = ['slice', 'stack', 'concat', 'split'];
+const available = [...chapter4TrainLevels[0].available, ...tensorOps];
 const levelIds = [
   'time-window-limit',
   'time-rnn',
@@ -91,62 +93,28 @@ export function rnnWindowAnswer(): GraphJSON {
   const wx = builder.input('wx');
   const wh = builder.input('wh');
   const bias = builder.input('b');
-  let hidden = mul(
-    builder,
-    'initial_hidden',
-    builder.node(
-      'initial_value',
-      'unsqueeze',
-      {
-        x: builder.node(
-          'initial_sum',
-          'sum',
-          {
-            x: mul(
-              builder,
-              'initial_masked',
-              x,
-              builder.constant('initial_mask', oneHot(windowLength, 0), [windowLength]),
-            ),
-          },
-          { axes: [-1] },
-        ),
-      },
-      { axis: -1 },
-    ),
-    builder.constant('initial_width', 0, [hiddenFeatures]),
-  );
-  let history: GraphEndpoint | undefined;
+  // Slice character k as [B,1]; the first cell's h is left empty, so it starts from zeros.
+  let hidden: GraphEndpoint | undefined;
+  const states: Record<string, GraphEndpoint> = {};
   for (let step = 0; step < windowLength; step++) {
-    const mask = builder.constant(`step_${step}_mask`, oneHot(windowLength, step), [windowLength]);
-    const value = builder.node(
-      `step_${step}_value`,
-      'unsqueeze',
-      {
-        x: builder.node(
-          `step_${step}_sum`,
-          'sum',
-          { x: mul(builder, `step_${step}_masked`, x, mask) },
-          { axes: [-1] },
-        ),
-      },
-      { axis: -1 },
+    const character = builder.node(
+      `char_${step}`,
+      'slice',
+      { x },
+      { axis: 1, index: step, length: 1, keepdims: true },
     );
     hidden = builder.node(
       `step_${step}_hidden`,
       'rnn_cell',
-      { x: value, h: hidden, wx, wh, b: bias },
+      { x: character, ...(hidden ? { h: hidden } : {}), wx, wh, b: bias },
       { automatic_parameters: false, input_features: 1, hidden_features: hiddenFeatures },
     );
-    const row = builder.node(`step_${step}_row`, 'unsqueeze', { x: hidden }, { axis: 1 });
-    const rowMask = builder.constant(`step_${step}_row_mask`, oneHot(windowLength, step), [
-      windowLength,
-      1,
-    ]);
-    const placed = mul(builder, `step_${step}_placed`, row, rowMask);
-    history = history ? add(builder, `history_${step}`, history, placed) : placed;
+    states[String.fromCharCode(97 + step)] = hidden;
   }
-  builder.output('hiddenStates', history!);
+  builder.output(
+    'hiddenStates',
+    builder.node('history', 'stack', states, { count: windowLength, axis: 1 }),
+  );
   return builder.graph;
 }
 
@@ -189,7 +157,12 @@ export function rnnDelayAnswer(): GraphJSON {
     { x },
     { automatic_parameters: true, input_features: 1, hidden_features: hiddenFeatures },
   );
-  const finalState = selectFinalState(builder, 'final_state', history);
+  const finalState = builder.node(
+    'final_state',
+    'slice',
+    { x: history },
+    { axis: 1, index: -1, length: 1, keepdims: false },
+  );
   const projected = builder.node(
     'prediction_column',
     'linear',

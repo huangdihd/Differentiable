@@ -1,3 +1,4 @@
+import { tensorOpPorts } from '../engine/tensor-op-ports';
 import {
   createDefaultRegistry,
   type Attributes,
@@ -379,10 +380,18 @@ export function editorReducer(
         attrs.automatic_parameters === true
           ? new Set(registry.get(node.component)?.generatedInputs ?? [])
           : new Set<string>();
+      // Slice/Stack/Concat/Split show as many ports as their count/parts settings ask for.
+      const liveInputs = tensorOpPorts(node.component, attrs, 'inputs');
+      const liveOutputs = tensorOpPorts(node.component, attrs, 'outputs');
       return commit(state, {
         ...state.graph,
         nodes: state.graph.nodes.map((n) => (n.id === command.id ? { ...n, attrs } : n)),
-        edges: state.graph.edges.filter((e) => e.to.node !== command.id || !hidden.has(e.to.port)),
+        edges: state.graph.edges.filter(
+          (e) =>
+            (e.to.node !== command.id ||
+              (!hidden.has(e.to.port) && (!liveInputs || liveInputs.includes(e.to.port)))) &&
+            (e.from.node !== command.id || !liveOutputs || liveOutputs.includes(e.from.port)),
+        ),
       });
     }
     case 'paste':

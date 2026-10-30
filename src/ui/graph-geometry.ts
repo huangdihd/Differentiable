@@ -1,3 +1,4 @@
+import { tensorOpPorts } from '../engine/tensor-op-ports';
 import type { ComponentRegistry, GraphJSON, GraphNode } from '../engine/graph';
 
 /** Short glyph drawn in the palette and in the node body. Falls back to the localized name. */
@@ -18,6 +19,10 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   size: '|x|ₖ',
   unsqueeze: '…×1',
   transpose: 'ᵀ',
+  slice: '[i]',
+  stack: '⧉',
+  concat: '⊕',
+  split: '⫼',
   gather: '[ ]',
   scatter_add: 'Σ[ ]',
   arange: '0‥n',
@@ -86,6 +91,10 @@ const FAMILIES: Record<Category, readonly string[]> = {
     'size',
     'unsqueeze',
     'transpose',
+    'slice',
+    'stack',
+    'concat',
+    'split',
     'gather',
     'scatter_add',
     'arange',
@@ -137,6 +146,8 @@ export function nodePorts(
   if (node.component === 'input') return side === 'outputs' ? ['out'] : [];
   if (node.component === 'output') return side === 'inputs' ? ['x'] : [];
   const definition = registry.get(node.component);
+  const tensorPorts = tensorOpPorts(node.component, node.attrs, side);
+  if (tensorPorts) return tensorPorts;
   const ports = definition?.[side] ?? [];
   if (side === 'inputs' && node.attrs?.automatic_parameters === true) {
     const generated = new Set(definition?.generatedInputs ?? []);

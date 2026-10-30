@@ -288,16 +288,12 @@ it('time-rnn-window places RNN cells with wx/wh/b ports and the palette-default 
 it('explains a missing batch axis when a bare Constant [8] feeds the first RNN cell h', async () => {
   const level = temporalForwardLevels.find((l) => l.id === 'time-rnn-window')!;
   const graph = structuredClone(rnnWindowAnswer());
-  const cells = graph.nodes.filter((node) => node.component === 'rnn_cell');
-  const first = cells.find((cell) =>
-    graph.edges.some(
-      (e) => e.to.node === cell.id && e.to.port === 'h' && e.from.node === 'initial_hidden',
-    ),
-  )!;
-  graph.edges.find((e) => e.to.node === first.id && e.to.port === 'h')!.from = {
-    node: 'initial_width',
-    port: 'out',
-  };
+  // The reference leaves the first h empty; wiring a bare Constant 0 [8] there drops the batch axis.
+  graph.nodes.push({ id: 'zero_state', component: 'const', attrs: { value: 0, shape: [8] } });
+  graph.edges.push({
+    from: { node: 'zero_state', port: 'out' },
+    to: { node: 'step_0_hidden', port: 'h' },
+  });
   const result = await evaluateLevel(playable(level), graph, { registry });
   expect(result.passed).toBe(false);
   expect(result.errorKey, JSON.stringify(result)).toBe('rnn_state_batch');
@@ -307,4 +303,13 @@ it('explains a missing batch axis when a bare Constant [8] feeds the first RNN c
     expect(message).toContain('[8]');
     expect(message).not.toMatch(/倒数第二维|second-to-last/);
   }
+});
+
+it('time-rnn-window reference is six Slices, six RNN cells (first h empty) and one Stack', () => {
+  const graph = rnnWindowAnswer();
+  const count = (component: string) => graph.nodes.filter((n) => n.component === component).length;
+  expect([count('slice'), count('rnn_cell'), count('stack')]).toEqual([6, 6, 1]);
+  expect(graph.nodes.filter((n) => !['input', 'output'].includes(n.component))).toHaveLength(13);
+  expect(graph.edges.some((e) => e.to.node === 'step_0_hidden' && e.to.port === 'h')).toBe(false);
+  expect(['const', 'mul', 'sum', 'unsqueeze', 'add'].map(count)).toEqual([0, 0, 0, 0, 0]);
 });

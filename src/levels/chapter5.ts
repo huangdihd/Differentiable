@@ -21,7 +21,14 @@ const preceding = [
   ...chapter4ForwardLevels,
   ...temporalForwardLevels,
 ];
-const available = [...chapter4TrainLevels[0].available, 'arange'];
+const available = [
+  ...chapter4TrainLevels[0].available,
+  'arange',
+  'slice',
+  'stack',
+  'concat',
+  'split',
+];
 export const attentionConfig = { N: 128, T: 8, D: 12 };
 const { N, T: context, D } = attentionConfig;
 const outputNames = [

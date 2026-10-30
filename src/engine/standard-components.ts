@@ -7,6 +7,7 @@ import {
 } from './graph';
 import { infer } from './backend';
 import * as T from './tensor';
+import { tensorOpComponents } from './tensor-ops';
 
 /** Canonical primitive-only answers with shape-independent topology and attributes. */
 function answer(name: string, attrs: Attributes, inputs?: ShapePorts): GraphJSON {
@@ -282,4 +283,8 @@ const rnnWindowComponent: ComponentDefinition = {
   subgraph: (attrs, inputs) => rnnWindow(inputs, attrs),
 };
 
-export const standardComponents: ComponentDefinition[] = [...algebraComponents, rnnWindowComponent];
+export const standardComponents: ComponentDefinition[] = [
+  ...algebraComponents,
+  rnnWindowComponent,
+  ...tensorOpComponents,
+];

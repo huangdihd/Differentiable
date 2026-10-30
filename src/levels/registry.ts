@@ -23,6 +23,7 @@ export function buildPlayerRegistry(
       .filter(
         (definition) =>
           !definition.subgraph ||
+          definition.builtin ||
           presets.has(definition.name) ||
           progress.unlockedComponents.includes(definition.name),
       )

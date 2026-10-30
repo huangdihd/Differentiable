@@ -124,7 +124,13 @@ describe('formal chapter catalog', () => {
       }
       expect(level.referenceGraph).toBeDefined();
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
-      for (const name of level.available) expect(registry.get(name)?.primitive).toBeDefined();
+      // Palette parts are primitives, plus the built-in tensor plumbing ops (Slice/Stack/
+      // Concat/Split), which run as fixed copy subgraphs and count as one operation each.
+      for (const name of level.available)
+        expect(
+          registry.get(name)?.primitive ??
+            (registry.get(name)?.builtin ? registry.get(name)?.subgraph : undefined),
+        ).toBeDefined();
       for (const key of [
         ...(level.revealGraph?.introKey ? [level.revealGraph.introKey] : []),
         ...(level.revealGraph?.playerBackwardLabelKey

@@ -185,7 +185,8 @@ export interface LevelResult {
   errorKey?: string;
   error?: { key: string; node?: string; port?: string; params: Record<string, unknown> };
 }
-const ATOMIC_COMPONENTS = new Set(['sub', 'div']);
+// Tensor plumbing ops are one basic operation each, whatever copy kernels implement them.
+const ATOMIC_COMPONENTS = new Set(['sub', 'div', 'slice', 'stack', 'concat', 'split']);
 export function graphMetrics(
   graph: GraphJSON,
   registry: ComponentRegistry = createDefaultRegistry(),
@@ -202,6 +203,7 @@ export function graphMetrics(
         const definition = registry.get(node.component);
         // Subtraction and division are single arithmetic operations, like add/mul: once built,
         // a sub/div node counts as one basic operation instead of its add+neg / mul+recip body.
+        // Slice/Stack/Concat/Split likewise count once.
         if (definition?.subgraph && ATOMIC_COMPONENTS.has(node.component)) {
           expandedPrimitives++;
           continue;

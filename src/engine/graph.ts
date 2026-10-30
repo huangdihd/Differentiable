@@ -72,6 +72,8 @@ export interface ComponentDefinition {
   defaultAttributes?: Attributes;
   /** Optional input ports backed by generated, instance-scoped parameters. */
   generatedInputs?: readonly string[];
+  /** Built-in plumbing implemented as a fixed subgraph; always present for players. */
+  builtin?: boolean;
   primitive?: ComponentImplementation;
   native?: ComponentImplementation;
   subgraph?: GraphJSON | ((attrs: Attributes, inputs?: ShapePorts) => GraphJSON);
