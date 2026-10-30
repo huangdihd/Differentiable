@@ -85,6 +85,10 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+.char-more {
+  color: var(--muted);
+  padding: 0 2px;
+}
 .char-arrow {
   color: var(--muted);
   padding: 0 4px;

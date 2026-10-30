@@ -194,6 +194,9 @@ function TextSamples({ t, context }: { t: T; context: number }) {
       </span>
     ));
   const windows = context > 2;
+  // Long windows show their end with a leading ellipsis so the strip fits without scrolling.
+  const shown = Math.min(context, 10);
+  const clipped = shown < context;
   return (
     <>
       <p className="dataset-note">
@@ -204,11 +207,13 @@ function TextSamples({ t, context }: { t: T; context: number }) {
           <>
             <div className="char-row">
               <span className="char-label">x</span>
-              {cells(corpus.slice(0, context))}
+              {clipped && <span className="char-more">…</span>}
+              {cells(corpus.slice(context - shown, context))}
             </div>
             <div className="char-row">
               <span className="char-label">{t('datasets.answer')}</span>
-              {cells(corpus.slice(1, context + 1), context - 1)}
+              {clipped && <span className="char-more">…</span>}
+              {cells(corpus.slice(context - shown + 1, context + 1), shown - 1)}
             </div>
           </>
         ) : (

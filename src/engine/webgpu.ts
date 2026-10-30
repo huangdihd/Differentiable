@@ -218,11 +218,17 @@ export class WebGpuBackend implements Backend {
       this.check();
       await staging.mapAsync(MAP_READ);
       const mapped = staging.getMappedRange();
-      if (new Uint32Array(mapped, buffer.size, 1)[0]) throw new BackendError('engine.gather.index');
+      if (new Uint32Array(mapped, buffer.size, 1)[0]) throw this.gatherFault();
       return new Float32Array(mapped.slice(0, length * 4));
     } finally {
       staging.destroy();
     }
+  }
+  /** Report an out-of-range gather once, then clear the flag: it is sticky on the device, so
+   * without the reset one bad graph poisoned every later read, even of a corrected graph. */
+  private gatherFault(): BackendError {
+    this.device.queue.writeBuffer(this.errorBuffer, 0, new Uint32Array(1));
+    return new BackendError('engine.gather.index');
   }
   fence(): Promise<void> {
     this.check();
@@ -238,8 +244,7 @@ export class WebGpuBackend implements Backend {
       await this.pending;
       this.check();
       await staging.mapAsync(MAP_READ);
-      if (new Uint32Array(staging.getMappedRange())[0])
-        throw new BackendError('engine.gather.index');
+      if (new Uint32Array(staging.getMappedRange())[0]) throw this.gatherFault();
     } finally {
       staging.destroy();
     }

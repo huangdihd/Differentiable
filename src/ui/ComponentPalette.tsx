@@ -203,7 +203,9 @@ function PaletteItem({
 }) {
   const content = (
     <>
-      <span className="sym">{SYMBOLS[entry.name] ?? '?'}</span>
+      <span className={`sym ${(SYMBOLS[entry.name] ?? '').length > 6 ? 'is-long' : ''}`}>
+        {SYMBOLS[entry.name] ?? '?'}
+      </span>
       <span className="name">
         {t(`components.${entry.name}`)}
         {entry.locked ? ` · ${t('ui.producedHere')}` : ''}

@@ -55,7 +55,7 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
   embed_pos: 'E+P',
   multi_head: 'attn×2',
   feed_forward: 'FFN',
-  transformer_block: 'block',
+  transformer_block: 'Transformer',
   rnn_cell: 'RNN',
   rnn_window: 'RNN×T',
   temporal_attention: 'attnₜ',

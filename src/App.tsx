@@ -17,7 +17,7 @@ import {
 import { componentOperators, parseExpression } from './engine/expression';
 import { levelTracker } from './analytics';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
-import { CHAPTERS, catalog, entryFor, gameLevels } from './levels/catalog';
+import { CHAPTERS, catalog, entryFor, gameLevels, resumeEntry } from './levels/catalog';
 import {
   connectionError,
   createEditorState,
@@ -407,11 +407,8 @@ function Home({
 }) {
   const fresh = progress.passed.length === 0;
   // Where the player left off: the first unlocked, unpassed level in road order.
-  const next =
-    catalog.find(
-      (e) => progress.unlocked.includes(e.level.id) && !progress.passed.includes(e.level.id),
-    ) ?? catalog[0];
-  const [chapter, setChapter] = useState<number>(next.chapter);
+  const next = resumeEntry(catalog, progress);
+  const [chapter, setChapter] = useState<number>(next?.chapter ?? catalog.at(-1)!.chapter);
   const entries = catalog.filter((e) => e.chapter === chapter);
   return (
     <main className="home blueprint-bg">
@@ -425,13 +422,19 @@ function Home({
             {t('home.titleC')}
           </h1>
           {fresh && <p className="muted">{t('home.lead')}</p>}
-          <button className="continue" disabled={!ready} onClick={() => onOpen(next.level)}>
-            <span className="continue-label">{t(fresh ? 'home.start' : 'home.continue')}</span>
-            <span className="continue-level">
-              <span className="level-id">{next.code}</span> {t(next.level.titleKey)}
+          {next ? (
+            <button className="continue" disabled={!ready} onClick={() => onOpen(next.level)}>
+              <span className="continue-label">{t(fresh ? 'home.start' : 'home.continue')}</span>
+              <span className="continue-level">
+                <span className="level-id">{next.code}</span> {t(next.level.titleKey)}
+              </span>
+              <span aria-hidden="true">→</span>
+            </button>
+          ) : (
+            <span className="home-done-badge" role="status">
+              {t('home.allDone')}
             </span>
-            <span aria-hidden="true">→</span>
-          </button>
+          )}
         </section>
         {revoked.length > 0 && (
           <section className="revoked" role="status">
@@ -685,27 +688,47 @@ function Editor({
     prompt: string;
     temperature: number;
     text?: string;
-    /** Leading characters of `text` that echo the prompt. */
-    shown?: number;
+    /** Leading characters of `text` that echo the prompt (always shown in the prompt colour). */
+    kept?: number;
+    /** How many characters of `text` are visible; grows for a typewriter reveal. */
+    visible?: number;
     seed: number;
   }>({ prompt: 'the ', temperature: 1, seed: 1 });
   const [writing, setWriting] = useState(false);
+  const typewriter = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (typewriter.current) clearInterval(typewriter.current);
+    },
+    [],
+  );
   const write = async () => {
     const c = client.current;
     if (!c || level.kind !== 'train') return;
+    if (typewriter.current) clearInterval(typewriter.current);
     setError(undefined);
     setWriting(true);
     try {
       const r = await c.generate(level.id, state.graph, gen.prompt, 200, gen.seed, gen.temperature);
       // A fresh seed each time: the same prompt can continue differently.
       // The reply starts with the prompt minus characters outside the vocabulary.
-      const kept = [...gen.prompt].filter((ch) => VOCAB.includes(ch)).join('');
-      setGen((g) => ({
-        ...g,
-        text: r.text,
-        shown: r.text.startsWith(kept) ? kept.length : 0,
-        seed: g.seed + 1,
-      }));
+      const keptText = [...gen.prompt].filter((ch) => VOCAB.includes(ch)).join('');
+      const kept = r.text.startsWith(keptText) ? keptText.length : 0;
+      setGen((g) => ({ ...g, text: r.text, kept, visible: kept, seed: g.seed + 1 }));
+      // Reveal the continuation one character at a time; a new click cancels via the ref above.
+      if (kept < r.text.length) {
+        typewriter.current = setInterval(() => {
+          setGen((g) => {
+            const next = (g.visible ?? 0) + 1;
+            if (next >= (g.text?.length ?? 0)) {
+              if (typewriter.current) clearInterval(typewriter.current);
+              typewriter.current = undefined;
+              return { ...g, visible: g.text?.length };
+            }
+            return { ...g, visible: next };
+          });
+        }, 40);
+      }
     } catch (e) {
       fail(e);
     } finally {
@@ -2366,9 +2389,11 @@ function Editor({
                   </button>
                   {gen.text !== undefined && (
                     <pre className="gen-out" aria-live="polite">
-                      {/* The reply repeats the (filtered) prompt; colour that part. */}
-                      <span className="gen-out-prompt">{gen.text.slice(0, gen.shown)}</span>
-                      {gen.text.slice(gen.shown)}
+                      {/* Prompt echo stays tinted; the rest types out character by character. */}
+                      <span className="gen-out-prompt">
+                        {gen.text.slice(0, Math.min(gen.kept ?? 0, gen.visible ?? 0))}
+                      </span>
+                      {gen.text.slice(gen.kept ?? 0, gen.visible ?? 0)}
                     </pre>
                   )}
                   <p className="hint">{t('ui.generateHelp')}</p>

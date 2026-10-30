@@ -573,6 +573,10 @@ input[type='range'] {
   font-size: var(--fs-sm);
   color: var(--muted);
 }
+.palette-item .sym.is-long {
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
 .palette-item.is-player .sym {
   color: var(--accent);
 }
@@ -1468,6 +1472,16 @@ input[type='range'] {
   font-family: var(--mono);
   color: inherit;
   opacity: 0.75;
+}
+.home-done-badge {
+  align-self: center;
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 /* chapter rail: the line is each chapter's progress */

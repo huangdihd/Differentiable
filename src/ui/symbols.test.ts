@@ -63,6 +63,7 @@ it('size is available wherever reshape is available', () => {
 
 it('classifies the RNN window with the learning components', () => {
   expect(SYMBOLS.rnn_window).toBe('RNN×T');
+  expect(SYMBOLS.transformer_block).toBe('Transformer');
   expect(categoryOf('rnn_cell')).toBe('learn');
   expect(categoryOf('rnn_window')).toBe('learn');
   expect(categoryOf('temporal_attention')).toBe('attn');

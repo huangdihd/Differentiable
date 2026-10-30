@@ -92,6 +92,20 @@ function requireBatchedState(graph: GraphJSON, attrs: Attributes, inputs?: Shape
   throw new GraphError('rnn_state_batch', undefined, 'h', { h, hidden: width });
 }
 
+/**
+ * Position vectors are looked up by position 0…T−1, so the table needs at least T rows. Catch a
+ * too-small 「最大序列长度」 while shapes are inferred, on the node the player placed, instead of
+ * as an out-of-range lookup deep inside it at run time.
+ */
+function requireSequenceFits(_graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
+  const length = inputs?.idx?.at(-1);
+  const rows =
+    inputs?.positions?.[0] ??
+    (attrs.automatic_parameters === true ? number(attrs, 'max_length') : undefined);
+  if (length === undefined || rows === undefined || length <= rows) return;
+  throw new GraphError('embed_pos_length', undefined, 'idx', { length, max_length: rows });
+}
+
 /** Treat rank-one x as a batch of scalars when Linear declares one input feature. */
 function adaptScalarBatchLinear(graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
   if (attrs.automatic_parameters !== true || attrs.in_features !== 1 || inputs?.x?.length !== 1)
@@ -162,6 +176,7 @@ const MODULES: Readonly<Record<string, ModuleSpec>> = {
       normal('tokens', (a) => [number(a, 'num_embeddings'), number(a, 'embedding_dim')]),
       normal('positions', (a) => [number(a, 'max_length'), number(a, 'embedding_dim')]),
     ],
+    adapt: requireSequenceFits,
   },
   rnn_cell: {
     attributes: [automatic, integer('input_features', 1), integer('hidden_features', 8)],

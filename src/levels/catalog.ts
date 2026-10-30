@@ -74,3 +74,17 @@ export const catalog: CatalogEntry[] = gameLevels.map((level) => {
 export function entryFor(level: Level): CatalogEntry {
   return catalog.find((e) => e.level.id === level.id) ?? { level, chapter: 0, code: level.id };
 }
+
+/**
+ * Where the player left off: the first unlocked, unpassed level in road order. Undefined once
+ * every reachable level is passed — callers show a completion state rather than wrapping to 0-1.
+ */
+export function resumeEntry(
+  entries: readonly CatalogEntry[],
+  progress: { unlocked: readonly string[]; passed: readonly string[] },
+): CatalogEntry | undefined {
+  if (!progress.passed.length) return entries[0];
+  return entries.find(
+    (e) => progress.unlocked.includes(e.level.id) && !progress.passed.includes(e.level.id),
+  );
+}

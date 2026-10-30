@@ -385,7 +385,7 @@ export class WorkerRuntime {
               key: 'levels.train_diverged',
               params: { ...workerError(error).params, loss: Infinity, nonfinite: true },
             }
-          : workerError(error);
+          : workerError(run.plan.diagnose(error, run.request.graph));
       run.result.errorKey = run.result.error.key;
       this.emit({
         type: 'result',
@@ -639,8 +639,9 @@ export class WorkerRuntime {
           await this.retainParameters(level, request.graph, this.stepRun.plan);
           this.reply(request, trace);
         } catch (error) {
+          const diagnosed = this.stepRun.plan.diagnose(error, request.graph);
           this.releaseStep();
-          throw error;
+          throw diagnosed;
         }
         return;
       }
@@ -806,6 +807,8 @@ export class WorkerRuntime {
               );
           }
         }
+      } catch (error) {
+        throw plan.diagnose(error, graph);
       } finally {
         if (!retained) plan.dispose();
       }

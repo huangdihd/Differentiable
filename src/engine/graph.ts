@@ -174,6 +174,7 @@ interface Step {
   outputs: Record<string, string>;
   attrs: Attributes;
   implementation: ComponentImplementation;
+  component?: string;
 }
 interface StorageSpec {
   shape: Shape;
@@ -191,12 +192,15 @@ function requiredName(attrs: Attributes): string {
   if (typeof attrs.name !== 'string' || !attrs.name) throw new GraphError('missing_name');
   return attrs.name;
 }
+const GATHER_INDEX = 'engine.gather.index';
 function contextual(error: unknown, node: string): GraphError {
   return error instanceof GraphError
     ? new GraphError(error.key, error.node ?? node, error.port, error.params)
-    : new GraphError('component_error', node, undefined, {
-        message: error instanceof Error ? error.message : String(error),
-      });
+    : error instanceof Error && error.message === GATHER_INDEX
+      ? new GraphError(GATHER_INDEX, node)
+      : new GraphError('component_error', node, undefined, {
+          message: error instanceof Error ? error.message : String(error),
+        });
 }
 
 /** Compiled, allocation-free shape analysis with lazy persistent parameter storage.
@@ -221,6 +225,33 @@ export class GraphPlan {
   ) {
     this.options = { ...options, backend: options.backend ?? T.defaultBackend };
     this.parameters = options.parameters ?? new Map();
+  }
+  /**
+   * Put an out-of-range lookup on the canvas node the player placed. The CPU names the failing
+   * step (possibly deep inside a component); WebGPU only reports it at the next read, so fall back
+   * to the one top-level node that owns every lookup. Embeddings get advice in their own terms.
+   */
+  diagnose(error: unknown, graph: GraphJSON): unknown {
+    const key =
+      (error as { key?: string; message?: string } | null)?.key ?? (error as Error)?.message;
+    if (key !== GATHER_INDEX) return error;
+    const top = (path: string) => decodeURIComponent(path.split('/')[0]!);
+    const stated = error instanceof GraphError && error.node ? top(error.node) : undefined;
+    const owners = new Set(
+      this.steps.filter((s) => s.component === 'gather').map((s) => top(s.id)),
+    );
+    const owner = stated ?? (owners.size === 1 ? [...owners][0] : undefined);
+    if (!owner) return error;
+    const node = graph.nodes.find((n) => n.id === owner);
+    const rows = node?.attrs?.num_embeddings;
+    if (
+      node &&
+      ['embed_pos', 'embedding'].includes(node.component) &&
+      node.attrs?.automatic_parameters === true &&
+      typeof rows === 'number'
+    )
+      return new GraphError('embed_token_range', owner, 'idx', { rows, last: rows - 1 });
+    return new GraphError(GATHER_INDEX, owner);
   }
   execute(inputs: TensorPorts, trace?: Map<string, Tensor>): TensorPorts {
     trace?.clear();
@@ -595,7 +626,15 @@ export function compileGraph(graph: GraphJSON, options: CompileOptions = {}): Gr
             if (scalar !== undefined && inferred.out?.length === 0) {
               scalars.set(out.out, scalar);
               storage.set(out.out, { shape: [], attrs: { value: scalar }, parameter: false });
-            } else steps.push({ id, inputs: args, outputs: out, attrs, implementation: impl });
+            } else
+              steps.push({
+                id,
+                inputs: args,
+                outputs: out,
+                attrs,
+                implementation: impl,
+                component: node.component,
+              });
           } else if (def.subgraph) {
             if (active.has(def.name)) throw new GraphError('recursive_component', id);
             active.add(def.name);
