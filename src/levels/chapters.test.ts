@@ -67,7 +67,6 @@ describe('formal chapter catalog', () => {
       'time-rnn',
       'time-rnn-window',
       'time-rnn-delay',
-      'time-recall-bottleneck',
       'time-attention',
       'time-forecast',
       ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),
@@ -91,9 +90,8 @@ describe('formal chapter catalog', () => {
       ['time-rnn', '5-2'],
       ['time-rnn-window', '5-3'],
       ['time-rnn-delay', '5-4'],
-      ['time-recall-bottleneck', '5-5'],
-      ['time-attention', '5-6'],
-      ['time-forecast', '5-7'],
+      ['time-attention', '5-5'],
+      ['time-forecast', '5-6'],
     ]);
     expect(
       catalog.filter((entry) => entry.chapter === 6).map(({ level, code }) => [level.id, code]),

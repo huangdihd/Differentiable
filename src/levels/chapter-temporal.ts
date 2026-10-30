@@ -25,7 +25,6 @@ const levelIds = [
   'time-rnn',
   'time-rnn-window',
   'time-rnn-delay',
-  'time-recall-bottleneck',
   'time-attention',
   'time-forecast',
 ] as const;
@@ -180,12 +179,6 @@ export function rnnDelayAnswer(): GraphJSON {
   return builder.graph;
 }
 
-export function recallBottleneckAnswer(): GraphJSON {
-  const builder = new GraphBuilder();
-  builder.output('query', selectFinalState(builder, 'final_state', builder.input('history')));
-  return builder.graph;
-}
-
 export function temporalAttentionAnswer(): GraphJSON {
   const builder = new GraphBuilder();
   const history = builder.input('history');
@@ -261,12 +254,6 @@ function tanhTensor(x: T.Tensor): T.Tensor {
   );
 }
 
-function finalStateReference(history: T.Tensor): T.Tensor {
-  const [batch, length, width] = history.shape;
-  const selector = T.tensor(oneHot(length, length - 1), [length, 1], history.backend);
-  return T.reshape(T.matmul(T.transpose(history, [0, 2, 1]), selector), [batch, width]);
-}
-
 function attentionReference(history: T.Tensor, query: T.Tensor): T.Tensor {
   const [batch, , width] = history.shape;
   const scores = T.mul(
@@ -308,25 +295,6 @@ function recurrentInputs(batch = 4, inputFeatures = 2, hidden = 3): ShapePorts {
     wh: [hidden, hidden],
     b: [hidden],
   };
-}
-
-function recallFixtures(inputs: ShapePorts, seed: number) {
-  const cases = fixtures(seed, inputs);
-  const [batch, length, width] = inputs.history;
-  const sharedFinal = Array.from({ length: width }, (_, index) => (index + 1) / width);
-  cases.fixed[0] = {
-    id: 'same-final-different-history',
-    inputs: {
-      history: Array.from({ length: batch * length * width }, (_, index) => {
-        const row = Math.floor(index / (length * width));
-        const step = Math.floor(index / width) % length;
-        const feature = index % width;
-        if (step === length - 1 && row < 2) return sharedFinal[feature];
-        return (row % 2 === 0 ? 1 : -1) * (step + 1) * (feature + 1) * 0.1;
-      }),
-    },
-  };
-  return cases;
 }
 
 export const windowLimitLevel: ObservationLevel = {
@@ -480,8 +448,8 @@ export const temporalRnnDelayLevel = withPar<TrainLevel>(
   [...preceding, ...temporalForwardLevels],
 );
 
-const recallInputs: ShapePorts = { history: [3, 5, 4] };
-const recallBottleneckLevel = withPar<ForwardLevel>(
+const attentionInputs: ShapePorts = { history: [3, 5, 4], query: [3, 4] };
+const attentionLevel = withPar<ForwardLevel>(
   {
     id: levelIds[4],
     chapter: '5',
@@ -491,30 +459,6 @@ const recallBottleneckLevel = withPar<ForwardLevel>(
     hintsKeys: [`levels.${levelIds[4]}.hint1`, `levels.${levelIds[4]}.hint2`],
     available,
     unlock: [levelIds[5]],
-    referenceGraph: recallBottleneckAnswer(),
-    interface: { inputs: recallInputs, output: 'query', outputShape: [3, 4] },
-    ...recallFixtures(recallInputs, 6),
-    shapeVariants: [{ history: [2, 7, 6] }].map((inputs) => ({
-      inputs,
-      ...recallFixtures(inputs, 16),
-    })),
-    reference: ({ history }) => finalStateReference(history),
-  },
-  [...preceding, ...temporalForwardLevels],
-);
-temporalForwardLevels.push(recallBottleneckLevel);
-
-const attentionInputs: ShapePorts = { history: [3, 5, 4], query: [3, 4] };
-const attentionLevel = withPar<ForwardLevel>(
-  {
-    id: levelIds[5],
-    chapter: '5',
-    kind: 'forward',
-    titleKey: `levels.${levelIds[5]}.title`,
-    descriptionKey: `levels.${levelIds[5]}.description`,
-    hintsKeys: [`levels.${levelIds[5]}.hint1`, `levels.${levelIds[5]}.hint2`],
-    available,
-    unlock: [levelIds[6]],
     unlockComponents: ['temporal_attention'],
     forbidden: ['temporal_attention'],
     revalidateOnLoad: true,
@@ -553,12 +497,12 @@ export function waveBatch(random: Random) {
 
 export const temporalTrainLevel = withPar<TrainLevel>(
   {
-    id: levelIds[6],
+    id: levelIds[5],
     chapter: '5',
     kind: 'train',
-    titleKey: `levels.${levelIds[6]}.title`,
-    descriptionKey: `levels.${levelIds[6]}.description`,
-    hintsKeys: [`levels.${levelIds[6]}.hint1`, `levels.${levelIds[6]}.hint2`],
+    titleKey: `levels.${levelIds[5]}.title`,
+    descriptionKey: `levels.${levelIds[5]}.description`,
+    hintsKeys: [`levels.${levelIds[5]}.hint1`, `levels.${levelIds[5]}.hint2`],
     available: [...available, 'param'],
     componentDefaults: {
       rnn_window: {

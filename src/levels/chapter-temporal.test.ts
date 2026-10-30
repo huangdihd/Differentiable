@@ -55,22 +55,20 @@ for (const level of temporalForwardLevels) {
   });
 }
 
-it('keeps the seven-level RNN causal order and exact unlock chain', () => {
+it('keeps the six-level RNN causal order and exact unlock chain', () => {
   expect(temporalLevels.map((level) => level.id)).toEqual([
     'time-window-limit',
     'time-rnn',
     'time-rnn-window',
     'time-rnn-delay',
-    'time-recall-bottleneck',
     'time-attention',
     'time-forecast',
   ]);
-  expect(temporalLevels.map((level) => level.chapter)).toEqual(Array(7).fill('5'));
+  expect(temporalLevels.map((level) => level.chapter)).toEqual(Array(6).fill('5'));
   expect(temporalLevels.map((level) => level.unlock)).toEqual([
     ['time-rnn'],
     ['time-rnn-window'],
     ['time-rnn-delay'],
-    ['time-recall-bottleneck'],
     ['time-attention'],
     ['time-forecast'],
     ['5-1'],
@@ -142,21 +140,6 @@ it('trains the short RNN delayed-copy task and grades a true held-out batch', as
   expect(result.passed, JSON.stringify(result.training)).toBe(true);
   expect(result.training!.loss).toBeLessThan(temporalRnnDelayLevel.threshold.loss);
 }, 60000);
-
-it('the recall bottleneck fixture pairs different histories with one final state', () => {
-  const level = temporalForwardLevels.find(
-    (candidate) => candidate.id === 'time-recall-bottleneck',
-  )!;
-  const fixture = level.fixed.find((candidate) => candidate.id === 'same-final-different-history')!;
-  const [batch, length, width] = level.interface.inputs.history;
-  expect(batch).toBeGreaterThanOrEqual(2);
-  const history = fixture.inputs.history;
-  const row = (index: number) =>
-    history.slice(index * length * width, (index + 1) * length * width);
-  const final = (index: number) => row(index).slice((length - 1) * width);
-  expect(row(0).slice(0, (length - 1) * width)).not.toEqual(row(1).slice(0, (length - 1) * width));
-  expect(final(0)).toEqual(final(1));
-});
 
 it('attention takes an explicit query and forecast uses the final RNN state to look back', () => {
   const attention = temporalForwardLevels.find((level) => level.id === 'time-attention')!;

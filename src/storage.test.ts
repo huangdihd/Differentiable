@@ -9,6 +9,7 @@ import {
   loadLanguage,
   loadProgress,
   loadProgressWithMigration,
+  removeRetiredLevels,
   saveLanguage,
   saveProgress,
   saveSave,
@@ -2093,4 +2094,27 @@ it('the gradient view unlocks with the autodiff level, not with chapter 2', asyn
   expect(isAutodiffUnlocked(progress, gameLevels)).toBe(false);
   progress.passed.push('1-11');
   expect(isAutodiffUnlocked(progress, gameLevels)).toBe(true);
+});
+
+it('drops the retired recall-bottleneck level but keeps attention open', () => {
+  const graph: GraphJSON = { version: 1, nodes: [], edges: [] };
+  const progress = {
+    ...createInitialProgress(),
+    unlocked: ['0-1', 'time-recall-bottleneck'],
+    passed: ['time-recall-bottleneck'],
+    savedGraphs: { 'time-recall-bottleneck': graph },
+    passedSolutions: { 'time-recall-bottleneck': graph },
+    bestScores: {
+      'time-recall-bottleneck': { topNodes: 1, expandedPrimitives: 1, parameterCount: 0 },
+    },
+  };
+  const next = removeRetiredLevels(progress);
+  expect(next.unlocked).toEqual(['0-1', 'time-attention']);
+  expect(next.passed).toEqual([]);
+  expect(next.savedGraphs).toEqual({});
+  expect(next.passedSolutions).toEqual({});
+  expect(next.bestScores).toEqual({});
+  expect(isProgress(next)).toBe(true);
+  const clean = createInitialProgress();
+  expect(removeRetiredLevels(clean)).toBe(clean);
 });

@@ -188,6 +188,41 @@ function remapProgressIds(progress: Progress, ids: Readonly<Record<string, strin
   };
 }
 
+/** Levels taken out of the catalog, and the level a player who reached them goes on to. */
+const retiredLevels: Readonly<Record<string, string>> = {
+  // The final-state bottleneck lesson now opens the attention level's description.
+  'time-recall-bottleneck': 'time-attention',
+};
+
+/** Forget retired levels without losing the way forward from them. */
+export function removeRetiredLevels(progress: Progress): Progress {
+  const retired = (id: string) => Object.hasOwn(retiredLevels, id);
+  const touched = [...progress.unlocked, ...progress.passed].filter(retired);
+  if (
+    !touched.length &&
+    ![progress.savedGraphs, progress.passedSolutions, progress.bestScores].some((v) =>
+      Object.keys(v).some(retired),
+    )
+  )
+    return progress;
+  const keep = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).filter(([id]) => !retired(id)));
+  return {
+    ...progress,
+    unlocked: [
+      ...new Set([
+        ...progress.unlocked.filter((id) => !retired(id)),
+        ...touched.map((id) => retiredLevels[id]),
+      ]),
+    ],
+    passed: progress.passed.filter((id) => !retired(id)),
+    savedGraphs: keep(progress.savedGraphs),
+    passedSolutions: keep(progress.passedSolutions),
+    bestScores: keep(progress.bestScores),
+    ...(progress.trainingSettings ? { trainingSettings: keep(progress.trainingSettings) } : {}),
+  };
+}
+
 function migrateChapter2(progress: Progress): Progress {
   const ids: Record<string, string> = {
     '2-2': '2-3',
@@ -624,6 +659,7 @@ export async function loadProgressWithMigration(
       progress = migrateRegressionLinearDefaults(progress, levels);
       // Repair current envelopes too: 5-1 became an observation without a version bump.
       progress = removeObservationCircuits(progress, levels);
+      progress = removeRetiredLevels(progress);
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
       const restored = {

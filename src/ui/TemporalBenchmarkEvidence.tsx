@@ -12,7 +12,6 @@ const focusByLevel: Readonly<Record<string, BenchmarkModel>> = {
   'time-rnn': 'rnn',
   'time-rnn-window': 'rnn',
   'time-rnn-delay': 'rnn',
-  'time-recall-bottleneck': 'rnn',
   'time-attention': 'rnn-attention',
   'time-forecast': 'rnn-attention',
 };

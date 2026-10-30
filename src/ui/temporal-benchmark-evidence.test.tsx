@@ -38,13 +38,7 @@ describe('temporal benchmark evidence', () => {
   });
 
   it('hides attention evidence before attention is taught', () => {
-    for (const levelId of [
-      'time-window-limit',
-      'time-rnn',
-      'time-rnn-window',
-      'time-rnn-delay',
-      'time-recall-bottleneck',
-    ]) {
+    for (const levelId of ['time-window-limit', 'time-rnn', 'time-rnn-window', 'time-rnn-delay']) {
       const html = renderToStaticMarkup(
         <TemporalBenchmarkEvidence levelId={levelId} locale="en" t={t} />,
       );
