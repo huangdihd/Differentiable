@@ -30,6 +30,10 @@ import type {
 } from './fixed-window-protocol';
 
 type FixedWindowProgress = Extract<FixedWindowResponse, { type: 'progress' }>;
+type Peek = Extract<FixedWindowResponse, { type: 'peek' }>;
+
+/** Mid-training predictions: one non-blocking forward + readback at most every this many steps. */
+export const PEEK_EVERY = 40;
 
 function releaseBatch(batch: TrainingBatch): void {
   new Set([...Object.values(batch.inputs), batch.targets]).forEach((value) => value?.dispose());
@@ -90,6 +94,7 @@ export class FixedWindowExperiment {
   private disposed = false;
   private completedRuns = 0;
   private backendDisposed = false;
+  private peeking = false;
 
   private readonly learningRate: number;
   private readonly stepsPerRun: number;
@@ -195,15 +200,41 @@ export class FixedWindowExperiment {
     if (this.disposed) throw new Error('worker.fixed_window_disposed');
   }
 
-  private async predict(): Promise<FixedWindowPrediction[]> {
-    if (!this.trainingPlan?.parameters.size) throw new Error('worker.fixed_window_uninitialized');
+  private predict(): Promise<FixedWindowPrediction[]> {
+    return this.startPredictions(true);
+  }
+
+  /**
+   * Enqueues every forward pass and readback synchronously (no await before the reads start),
+   * so a mid-training peek never interleaves with a training step. Only the mapped results
+   * resolve later. Non-strict peeks never throw for odd outputs; they just resolve to [].
+   */
+  private startPredictions(strict: boolean): Promise<FixedWindowPrediction[]> {
+    if (!this.trainingPlan?.parameters.size)
+      return Promise.reject(new Error('worker.fixed_window_uninitialized'));
     // Predict with the exact plan that was trained. A separately compiled batch-1 plan can
     // silently re-initialise any parameter it does not find under the same id (or whose
     // shape depends on the batch), which made trained models look untrained (≈1/27 each).
     const plan = this.trainingPlan;
     const rows = this.batches[0].inputs.x.shape[0];
+    const launched: {
+      history: string;
+      input: string;
+      x: Tensor;
+      outputs?: TensorPorts;
+      read?: Promise<Float32Array>;
+    }[] = [];
+    const releaseAll = () => {
+      for (const item of launched) {
+        try {
+          if (item.outputs) plan.releaseExecution(item.outputs);
+          item.x.dispose();
+        } catch {
+          // A disposed experiment already released everything.
+        }
+      }
+    };
     try {
-      const predictions: FixedWindowPrediction[] = [];
       for (const { history } of fixedWindowExamples) {
         this.assertActive();
         const input = [...history].slice(-2).join('');
@@ -213,20 +244,33 @@ export class FixedWindowExperiment {
           [rows, 2],
           this.backend,
         );
-        let outputs: TensorPorts | undefined;
-        try {
-          outputs = plan.execute({ x });
-          const output = outputs[this.level.interface.output];
-          if (
-            output.shape.length !== 2 ||
-            output.shape[0] !== rows ||
-            output.shape[1] !== VOCAB.length
-          )
-            throw new Error('levels.output_shape');
-          const weights = Array.from(await output.read()).slice(0, VOCAB.length);
+        const item: (typeof launched)[number] = { history, input, x };
+        launched.push(item);
+        item.outputs = plan.execute({ x });
+        const output = item.outputs[this.level.interface.output];
+        if (
+          output.shape.length !== 2 ||
+          output.shape[0] !== rows ||
+          output.shape[1] !== VOCAB.length
+        )
+          throw new Error('levels.output_shape');
+        item.read = output.read();
+        item.read.catch(() => undefined);
+      }
+    } catch (error) {
+      releaseAll();
+      return strict ? Promise.reject(error) : Promise.resolve([]);
+    }
+    return (async () => {
+      try {
+        const predictions: FixedWindowPrediction[] = [];
+        for (const { history, input, read } of launched) {
+          const weights = Array.from(await read!).slice(0, VOCAB.length);
+          this.assertActive();
           const outputSum = weights.reduce((sum, value) => sum + value, 0);
           const invalidIndex = weights.findIndex((value) => !Number.isFinite(value) || value < 0);
           if (invalidIndex !== -1 || !(outputSum > 0) || !Number.isFinite(outputSum)) {
+            if (!strict) return [];
             const outputNode = this.playerCircuit?.graph.nodes.find(
               (node) =>
                 node.component === 'output' && node.attrs?.name === this.level.interface.output,
@@ -252,18 +296,21 @@ export class FixedWindowExperiment {
               )
             ];
           predictions.push({ history, input, probabilities, prediction });
-        } finally {
-          if (outputs) plan.releaseExecution(outputs);
-          x.dispose();
         }
+        return predictions;
+      } catch (error) {
+        if (strict) throw error;
+        return [];
+      } finally {
+        releaseAll();
       }
-      return predictions;
-    } finally {
-      // The training plan stays owned by the session.
-    }
+    })();
   }
 
-  async run(onProgress?: (progress: FixedWindowProgress) => void): Promise<FixedWindowSnapshot> {
+  async run(
+    onProgress?: (progress: FixedWindowProgress) => void,
+    onPeek?: (peek: Peek) => void,
+  ): Promise<FixedWindowSnapshot> {
     this.assertActive();
     if (this.running) throw new Error('worker.training_busy');
     if (this.completedRuns >= 2) throw new Error('worker.fixed_window_complete');
@@ -284,6 +331,17 @@ export class FixedWindowExperiment {
         // Every step posts; the UI batches into animation frames. Loss reports arrive a few steps late.
         onStep: (step) => {
           onProgress?.({ type: 'progress', step, totalSteps });
+          if (onPeek && step % PEEK_EVERY === 0 && step < totalSteps && !this.peeking) {
+            this.peeking = true;
+            void this.startPredictions(false)
+              .then((predictions) => {
+                if (predictions.length && !this.disposed)
+                  onPeek?.({ type: 'peek', step, predictions });
+              })
+              .finally(() => {
+                this.peeking = false;
+              });
+          }
         },
       });
       this.assertActive();
@@ -393,7 +451,10 @@ export class FixedWindowWorkerHandler {
           this.initializing = undefined;
         }
       }
-      const snapshot = await this.experiment!.run((progress) => this.output(progress));
+      const snapshot = await this.experiment!.run(
+        (progress) => this.output(progress),
+        (peek) => this.output(peek),
+      );
       this.output({ type: 'result', snapshot });
     } catch (error) {
       this.output({ type: 'error', ...workerError(error) });

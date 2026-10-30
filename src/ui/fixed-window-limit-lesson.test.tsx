@@ -91,10 +91,12 @@ for (const locale of ['en', 'zh-CN'] as const) {
       const html = renderToStaticMarkup(
         <FixedWindowLimitLesson code="5-1" t={t} onContinue={() => {}} />,
       );
+      // 5-1 trains the player's own circuit (progress) and caches the result for 5-2.
       expect(useFixedWindowExperiment).toHaveBeenCalledExactlyOnceWith(
         'fixed-window',
         undefined,
         undefined,
+        expect.objectContaining({ onSnapshots: expect.any(Function) }),
       );
       expect(html).toContain(text('title'));
       for (const example of fixedWindowExamples)
@@ -153,7 +155,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       expect(html).not.toContain(text('continue'));
     });
 
-    it('runs 160 → 320 → reveal th → directly build RNN, without an RNN experiment', () => {
+    it('runs 320 → 640 → reveal th → directly build RNN, without an RNN experiment', () => {
       const host = hookHost();
       const train = vi.fn();
       const onContinue = vi.fn();
@@ -193,7 +195,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
           .mocked(useFixedWindowExperiment)
           .mock.calls.every(
             (arguments_) =>
-              arguments_.length === 3 &&
+              arguments_.length === 4 &&
               arguments_[0] === 'fixed-window' &&
               arguments_[1] === undefined &&
               arguments_[2] === undefined,

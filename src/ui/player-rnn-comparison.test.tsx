@@ -182,7 +182,14 @@ for (const locale of ['en', 'zh-CN'] as const) {
           onBack={() => {}}
         />,
       );
-      expect(useFixedWindowExperiment).toHaveBeenNthCalledWith(1, 'fixed-window', progress, 'cpu');
+      // 5-2 reuses 5-1's cached fixed-window result (none here) and caches its own.
+      expect(useFixedWindowExperiment).toHaveBeenNthCalledWith(
+        1,
+        'fixed-window',
+        progress,
+        'cpu',
+        expect.objectContaining({ initialSnapshots: undefined }),
+      );
       expect(useFixedWindowExperiment).toHaveBeenNthCalledWith(2, 'rnn', progress, 'cpu');
       expect(html).toContain(t('levels.time-player-comparison.title'));
       expect(html).toContain(t('levels.time-player-comparison.freshWeights'));
@@ -191,6 +198,53 @@ for (const locale of ['en', 'zh-CN'] as const) {
         /window-limit-stages|is-correct|is-wrong|levels\.time-player-comparison\./,
       );
       expect(html).not.toContain(t('levels.time-player-comparison.continue'));
+    });
+
+    it('offers a skip after 320 RNN steps only when both guesses are right', () => {
+      const view = comparisonView(locale);
+      view.fixed(fixedComplete);
+      view.recurrent({ status: 'ready', snapshots: [recurrentSnapshot] });
+      expect(view.render()).not.toContain(view.text('skipToResults'));
+      const right: FixedWindowSnapshot = {
+        ...recurrentSnapshot,
+        predictions: fixedWindowExamples.map(({ history, target }) => ({
+          history,
+          input: history,
+          prediction: target,
+          probabilities: vocabulary.map((c) =>
+            c === target ? 0.9 : 0.1 / (vocabulary.length - 1),
+          ),
+        })),
+      };
+      view.recurrent({ status: 'ready', snapshots: [right] });
+      let html = view.render();
+      expect(html).toContain(view.text('skipPrompt'));
+      expect(html).not.toContain(view.text('continue'));
+      view.click(view.text('skipToResults'));
+      html = view.render();
+      expect(html).toContain(view.text('continue'));
+      expect(html).toContain(view.text('matchedSnapshot', { step: 320 }));
+      expect(html).not.toContain(view.text('steps', { step: 640 }));
+      expect(view.onTrainRecurrent).not.toHaveBeenCalled();
+    });
+
+    it('shows live guesses and a loss curve while training', () => {
+      const view = comparisonView(locale);
+      view.fixed(fixedComplete);
+      view.recurrent({
+        status: 'training',
+        snapshots: [],
+        progress: { type: 'progress', step: 90, totalSteps: 320, loss: 1.2 },
+        lossHistory: [
+          { step: 10, loss: 3 },
+          { step: 80, loss: 1.2 },
+        ],
+        peek: { step: 80, predictions: recurrentSnapshot.predictions },
+      });
+      const html = view.render();
+      expect(html).toContain(view.text('liveStep', { step: 80 }));
+      expect(html).toContain('experiment-loss-line');
+      expect(html.match(/>60\.0%</g)).toHaveLength(2);
     });
 
     it('requires both real 320/640 runs, matches budgets, and shows wrong answers honestly', () => {

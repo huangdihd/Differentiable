@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type { Progress } from '../engine/levels';
+import { saveFixedWindowResult } from './fixed-window-cache';
 import { vocabulary } from '../levels/corpus';
 import { fixedWindowContext, fixedWindowExamples } from '../levels/fixed-window-evidence';
 import {
@@ -7,6 +9,7 @@ import {
 } from './use-fixed-window-experiment';
 import {
   ExperimentSteps,
+  LiveGuess,
   ProbabilityBars,
   RunPicker,
   TrainingProgress,
@@ -18,11 +21,18 @@ interface LessonProps {
   code: string;
   t: Translator;
   backend?: 'cpu' | 'webgpu';
+  /** The player's saved circuits: 5-1 trains their own 4-6 fixed window, same as 5-2. */
+  progress?: Progress;
   onContinue: () => void;
 }
 
 export function FixedWindowLimitLesson(props: LessonProps) {
-  const experiment = useFixedWindowExperiment('fixed-window', undefined, props.backend);
+  const experiment = useFixedWindowExperiment('fixed-window', props.progress, props.backend, {
+    // 5-2 reuses this measured result when the circuit and settings are unchanged.
+    onSnapshots: (snapshots) => {
+      if (snapshots.length === 2) saveFixedWindowResult(props.progress, snapshots);
+    },
+  });
   return <FixedWindowLimitView {...props} state={experiment.state} onTrain={experiment.train} />;
 }
 
@@ -45,6 +55,7 @@ export function FixedWindowLimitView({
   const snapshot =
     state.snapshots.find((run) => run.step === selectedStep) ?? state.snapshots.at(-1);
   const compared = state.snapshots.length === 2;
+  const livePredictions = state.status === 'training' ? state.peek?.predictions : undefined;
   const training = state.status === 'training';
   const text = (key: string, params?: Readonly<Record<string, string | number>>) =>
     t(`levels.time-window-limit.${key}`, params);
@@ -83,9 +94,12 @@ export function FixedWindowLimitView({
           </div>
           <div className="experiment-cases">
             {fixedWindowExamples.map((example, index) => {
-              const result = snapshot?.predictions.find(
-                (prediction) => prediction.history === example.history,
-              );
+              // While training, the latest live guess replaces the previous run's result.
+              const result = livePredictions?.length
+                ? undefined
+                : snapshot?.predictions.find(
+                    (prediction) => prediction.history === example.history,
+                  );
               const correct = result?.prediction === example.target;
               const verdict = result && (correct ? 'is-correct' : 'is-wrong');
               return (
@@ -124,6 +138,13 @@ export function FixedWindowLimitView({
                         characterLabel={characterLabel}
                       />
                     </>
+                  ) : training && livePredictions?.find((p) => p.history === example.history) ? (
+                    <LiveGuess
+                      label={text('liveGuess', { step: state.peek!.step })}
+                      prediction={livePredictions.find((p) => p.history === example.history)!}
+                      target={example.target}
+                      characterLabel={characterLabel}
+                    />
                   ) : (
                     <p className="experiment-empty">{text(training ? 'computing' : 'awaiting')}</p>
                   )}
@@ -142,7 +163,9 @@ export function FixedWindowLimitView({
           {state.status === 'error' ? (
             <div className="experiment-error" role="alert">
               <p>
-                {state.error?.key === 'training.nonfinite' ? text('failedNonfinite') : text('failed')}
+                {state.error?.key === 'training.nonfinite'
+                  ? text('failedNonfinite')
+                  : text('failed')}
               </p>
               <button type="button" className="btn" onClick={beginTraining}>
                 {text('retry')}
@@ -156,6 +179,8 @@ export function FixedWindowLimitView({
                 total: state.progress?.totalSteps ?? '…',
               })}
               progress={state.progress}
+              lossLabel={text('lossCurve')}
+              lossHistory={state.lossHistory}
             />
           ) : (
             !revealed && (

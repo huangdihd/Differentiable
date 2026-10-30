@@ -3993,3 +3993,62 @@ input[type='range'] {
   border-top: 1px solid var(--line);
   padding-top: var(--s3);
 }
+
+/* Live training view (5-1 / 5-2): loss curve + current guesses, calm and small. */
+.experiment-loss {
+  margin: var(--s2) 0 0;
+  display: grid;
+  gap: var(--s1);
+  max-width: 420px;
+}
+.experiment-loss figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.experiment-loss svg {
+  width: 100%;
+  height: 56px;
+  display: block;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+.experiment-loss-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.experiment-loss-line {
+  fill: none;
+  stroke: var(--grad);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.experiment-loss-dot {
+  fill: var(--grad);
+}
+.experiment-live {
+  display: grid;
+  grid-template-columns: auto auto minmax(6em, 1fr);
+  align-items: center;
+  gap: var(--s2);
+}
+.experiment-live .comparison-prob-fill {
+  transition: width 0.35s ease;
+}
+.experiment-live.is-correct .comparison-prob-fill {
+  background: var(--good);
+}
+.experiment-live.is-wrong .comparison-prob-fill {
+  background: var(--bad);
+}
+.experiment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.properties-help {
+  margin: 0 0 var(--s1);
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}

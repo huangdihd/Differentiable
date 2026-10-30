@@ -268,6 +268,9 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
               {t(key === 'label' ? 'ui.name' : `ui.${key}`)}
               {wired.map((port) => ` ← ${translatePort(t, node.component, port)}`).join(', ')}
             </label>
+            {key === 'automatic_parameters' && (
+              <p className="properties-help">{t('ui.automatic_parameters_help')}</p>
+            )}
             {key === 'keepdims' || attribute?.kind === 'boolean' ? (
               <input
                 {...accessibility}

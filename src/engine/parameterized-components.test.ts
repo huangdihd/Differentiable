@@ -18,6 +18,8 @@ import { TrainingSession } from './training';
 import { gameLevels } from '../levels/catalog';
 import { referenceRegistry } from '../levels/level-helpers';
 import { translateDiagnostic } from '../i18n';
+import { createEditorState, editorReducer } from '../editor/state';
+import { sigmoidLevel } from '../levels/examples';
 
 const graph = (
   inputs: readonly string[],
@@ -757,5 +759,60 @@ describe('configurable parameterized components', () => {
         { registry, inputShapes: { x: [2, 4, 7] }, random: new Random(9) },
       ),
     ).toThrow('invalid_attribute at block');
+  });
+});
+
+describe('automatic parameters toggle', () => {
+  it('is a visible boolean on every parameterized module, missing still meaning off', () => {
+    const registry = referenceRegistry(
+      gameLevels.filter(
+        (level): level is ForwardLevel => level.kind === 'forward' || level.kind === 'derivative',
+      ),
+    );
+    const defs = registry
+      .list()
+      .filter((def) => def.attributes?.some((a) => a.name === 'automatic_parameters'));
+    expect(defs.length).toBeGreaterThanOrEqual(4);
+    for (const def of defs) {
+      const attribute = def.attributes!.find((a) => a.name === 'automatic_parameters')!;
+      expect(attribute.hidden).not.toBe(true);
+      expect(attribute.default).toBe(false);
+    }
+  });
+  it('drops wires into weight ports that disappear when turned on, and keeps them when off', () => {
+    const graph: GraphJSON = {
+      version: 1,
+      nodes: [
+        { id: 'x', component: 'input', attrs: { name: 'x' } },
+        { id: 'weight', component: 'param', attrs: { shape: [2, 2] } },
+        {
+          id: 'projection',
+          component: 'linear',
+          attrs: { automatic_parameters: false, in_features: 2, out_features: 2, bias: false },
+        },
+        { id: 'out', component: 'output', attrs: { name: 'y' } },
+      ],
+      edges: [
+        { from: { node: 'x', port: 'out' }, to: { node: 'projection', port: 'x' } },
+        { from: { node: 'weight', port: 'out' }, to: { node: 'projection', port: 'w' } },
+        { from: { node: 'projection', port: 'out' }, to: { node: 'out', port: 'x' } },
+      ],
+    };
+    const registry = registryWith(linearDefinition());
+    const state = createEditorState(sigmoidLevel, graph);
+    const on = editorReducer(
+      state,
+      { type: 'setAttrs', id: 'projection', attrs: { automatic_parameters: true } },
+      registry,
+    );
+    expect(on.error).toBeFalsy();
+    expect(on.graph.edges.some((e) => e.to.port === 'w')).toBe(false);
+    expect(on.graph.edges.some((e) => e.to.port === 'x' && e.to.node === 'projection')).toBe(true);
+    const off = editorReducer(
+      on,
+      { type: 'setAttrs', id: 'projection', attrs: { automatic_parameters: false } },
+      registry,
+    );
+    expect(off.graph.edges).toHaveLength(2);
   });
 });

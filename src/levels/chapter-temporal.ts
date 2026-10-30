@@ -427,6 +427,10 @@ const rnnWindowLevel = withPar<ForwardLevel>(
     unlock: [levelIds[3]],
     unlockComponents: ['rnn_window'],
     forbidden: ['rnn_window'],
+    // The lesson wires one shared wx/wh/b into every step, so fresh cells expose those ports.
+    componentDefaults: {
+      rnn_cell: { automatic_parameters: false, input_features: 1, hidden_features: hiddenFeatures },
+    },
     referenceGraph: rnnWindowAnswer(),
     interface: { inputs: windowInputs, output: 'hiddenStates', outputShape: [4, windowLength, 8] },
     ...fixtures(3, windowInputs),

@@ -286,10 +286,11 @@ describe('i18n', () => {
       const next = t('levels.time-window-limit.next');
       expect(t('levels.time-window-limit.description')).toContain('4-6');
       expect(t('levels.time-window-limit.description')).not.toContain('RNN');
-      expect(t('levels.time-window-limit.afterTraining')).toContain('160');
-      expect(t('levels.time-window-limit.afterMoreTraining')).toMatch(/160.*320/);
+      expect(t('levels.time-window-limit.afterTraining')).toContain('320');
+      // 5-1 now trains the player's own circuit with 5-2's budget: 320 → 640.
+      expect(t('levels.time-window-limit.afterMoreTraining')).toMatch(/320.*640/);
       expect(note).toMatch(/独立实验|separate experiment/i);
-      expect(note).toMatch(/不读取你的权重|does not read your weights/i);
+      expect(note).toMatch(/不读取你的权重|never reads your weights/i);
       expect(t('levels.time-window-limit.sameOutput')).toContain('th');
       expect(explanation).toMatch(/最多答对一句|at most one can be right/i);
       expect(explanation).toMatch(/随机采样.*碰巧|random sampling only differs by chance/i);

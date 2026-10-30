@@ -17,6 +17,9 @@ import {
   windowLimitLevel,
 } from './chapter-temporal';
 import { referenceRegistry } from './level-helpers';
+import { defaults } from '../ui/Properties';
+import { nodePorts } from '../ui/graph-geometry';
+import { translateDiagnostic } from '../i18n';
 
 const preceding = [
   ...chapter0Levels,
@@ -264,3 +267,44 @@ it('the RNN-attention forecast reaches its held-out threshold with 89 parameters
   expect(result.passed, JSON.stringify(result.training)).toBe(true);
   expect(result.training!.loss).toBeLessThan(level.threshold.loss);
 }, 60000);
+
+it('time-rnn-window places RNN cells with wx/wh/b ports and the palette-default wiring passes', async () => {
+  const level = temporalForwardLevels.find((l) => l.id === 'time-rnn-window')!;
+  const attrs = defaults('rnn_cell', registry.get('rnn_cell'), level.componentDefaults?.rnn_cell);
+  expect(attrs).toMatchObject({
+    automatic_parameters: false,
+    input_features: 1,
+    hidden_features: 8,
+  });
+  expect(nodePorts({ id: 'c', component: 'rnn_cell', attrs }, registry, 'inputs')).toEqual(
+    expect.arrayContaining(['x', 'h', 'wx', 'wh', 'b']),
+  );
+  const graph = structuredClone(rnnWindowAnswer());
+  for (const node of graph.nodes) if (node.component === 'rnn_cell') node.attrs = { ...attrs };
+  const result = await evaluateLevel(playable(level), graph, { registry });
+  expect(result.passed, JSON.stringify(result)).toBe(true);
+});
+
+it('explains a missing batch axis when a bare Constant [8] feeds the first RNN cell h', async () => {
+  const level = temporalForwardLevels.find((l) => l.id === 'time-rnn-window')!;
+  const graph = structuredClone(rnnWindowAnswer());
+  const cells = graph.nodes.filter((node) => node.component === 'rnn_cell');
+  const first = cells.find((cell) =>
+    graph.edges.some(
+      (e) => e.to.node === cell.id && e.to.port === 'h' && e.from.node === 'initial_hidden',
+    ),
+  )!;
+  graph.edges.find((e) => e.to.node === first.id && e.to.port === 'h')!.from = {
+    node: 'initial_width',
+    port: 'out',
+  };
+  const result = await evaluateLevel(playable(level), graph, { registry });
+  expect(result.passed).toBe(false);
+  expect(result.errorKey, JSON.stringify(result)).toBe('rnn_state_batch');
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const message = translateDiagnostic(locale, result.error!);
+    expect(message).toContain('[B,8]');
+    expect(message).toContain('[8]');
+    expect(message).not.toMatch(/倒数第二维|second-to-last/);
+  }
+});

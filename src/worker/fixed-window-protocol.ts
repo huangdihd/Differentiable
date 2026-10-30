@@ -36,5 +36,7 @@ export type FixedWindowRequest = {
 
 export type FixedWindowResponse =
   | { type: 'progress'; step: number; totalSteps: number; loss?: number }
+  /** Mid-training look at the two sentences; never blocks the training loop. */
+  | { type: 'peek'; step: number; predictions: FixedWindowPrediction[] }
   | { type: 'result'; snapshot: FixedWindowSnapshot }
   | ({ type: 'error'; key: string } & Partial<Omit<WorkerError, 'key'>>);

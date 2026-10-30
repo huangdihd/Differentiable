@@ -371,18 +371,18 @@ export function editorReducer(
       const node = state.graph.nodes.find((n) => n.id === command.id);
       if (!node) return reject('missing_node');
       if (protectedNode(node)) return reject('protected_node');
+      const attrs = command.replace
+        ? clone(command.attrs)
+        : { ...node.attrs, ...clone(command.attrs) };
+      // Automatic parameters hide the weight ports; wires into ports that disappear are dropped.
+      const hidden =
+        attrs.automatic_parameters === true
+          ? new Set(registry.get(node.component)?.generatedInputs ?? [])
+          : new Set<string>();
       return commit(state, {
         ...state.graph,
-        nodes: state.graph.nodes.map((n) =>
-          n.id === command.id
-            ? {
-                ...n,
-                attrs: command.replace
-                  ? clone(command.attrs)
-                  : { ...n.attrs, ...clone(command.attrs) },
-              }
-            : n,
-        ),
+        nodes: state.graph.nodes.map((n) => (n.id === command.id ? { ...n, attrs } : n)),
+        edges: state.graph.edges.filter((e) => e.to.node !== command.id || !hidden.has(e.to.port)),
       });
     }
     case 'paste':

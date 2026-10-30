@@ -20,6 +20,10 @@ import type {
 } from './fixed-window-protocol';
 
 type RecurrentCharacterProgress = Extract<FixedWindowResponse, { type: 'progress' }>;
+type Peek = Extract<FixedWindowResponse, { type: 'peek' }>;
+
+/** Same cadence as the fixed window: a non-blocking look at both sentences every 40 steps. */
+const PEEK_EVERY = 40;
 
 /** Local calibration knobs, not a second general-purpose training configuration system. */
 export interface RecurrentCharacterExperimentOptions {
@@ -44,6 +48,7 @@ export class RecurrentCharacterExperiment {
   private disposed = false;
   private completedRuns = 0;
   private backendDisposed = false;
+  private peeking = false;
 
   constructor(
     private readonly progress: Progress,
@@ -85,43 +90,89 @@ export class RecurrentCharacterExperiment {
     if (this.disposed) throw new Error('worker.rnn_disposed');
   }
 
-  private async predict(reset: boolean): Promise<FixedWindowPrediction[]> {
-    if (!this.model) throw new Error('worker.rnn_uninitialized');
-    const predictions: FixedWindowPrediction[] = [];
-    for (const { history } of fixedWindowExamples) {
-      this.assertActive();
-      const input = reset ? [...history].slice(-2).join('') : history;
-      const batch = recurrentCharacterPredictionBatch(input, this.backend);
-      let outputs: Record<string, Tensor> | undefined;
-      try {
-        outputs = this.model.execute(batch.inputs);
-        const output = outputs.probabilities;
+  private predict(reset: boolean): Promise<FixedWindowPrediction[]> {
+    return this.startPredictions(reset, true);
+  }
+
+  /** Forward passes and readbacks are enqueued synchronously; only the results resolve later. */
+  private startPredictions(reset: boolean, strict: boolean): Promise<FixedWindowPrediction[]> {
+    const model = this.model;
+    if (!model) return Promise.reject(new Error('worker.rnn_uninitialized'));
+    const launched: {
+      history: string;
+      input: string;
+      batch: ReturnType<typeof recurrentCharacterPredictionBatch>;
+      outputs?: Record<string, Tensor>;
+      read?: Promise<Float32Array>;
+    }[] = [];
+    const releaseAll = () => {
+      for (const { outputs, batch } of launched) {
+        try {
+          if (outputs) model.releaseExecution(outputs, Object.values(batch.inputs));
+          releaseRecurrentBatch(batch);
+        } catch {
+          // A disposed experiment already released everything.
+        }
+      }
+    };
+    try {
+      for (const { history } of fixedWindowExamples) {
+        this.assertActive();
+        const input = reset ? [...history].slice(-2).join('') : history;
+        const item: (typeof launched)[number] = {
+          history,
+          input,
+          batch: recurrentCharacterPredictionBatch(input, this.backend),
+        };
+        launched.push(item);
+        item.outputs = model.execute(item.batch.inputs);
+        const output = item.outputs.probabilities;
         if (output.shape.length !== 2 || output.shape[0] !== 1 || output.shape[1] !== VOCAB.length)
           throw new Error('levels.output_shape');
-        const probabilities = Array.from(await output.read());
-        this.assertActive();
-        if (probabilities.some((value) => !Number.isFinite(value) || value < 0))
-          throw new Error('training.nonfinite');
-        const total = probabilities.reduce((sum, value) => sum + value, 0);
-        if (Math.abs(total - 1) > 1e-5) throw new Error('worker.rnn_probabilities');
-        const prediction =
-          VOCAB[
-            probabilities.reduce(
-              (best, value, index) => (value > probabilities[best] ? index : best),
-              0,
-            )
-          ];
-        predictions.push({ history, input, probabilities, prediction });
-      } finally {
-        if (outputs) this.model.releaseExecution(outputs, Object.values(batch.inputs));
-        releaseRecurrentBatch(batch);
+        item.read = output.read();
+        item.read.catch(() => undefined);
       }
+    } catch (error) {
+      releaseAll();
+      return strict ? Promise.reject(error) : Promise.resolve([]);
     }
-    return predictions;
+    return (async () => {
+      try {
+        const predictions: FixedWindowPrediction[] = [];
+        for (const { history, input, read } of launched) {
+          const probabilities = Array.from(await read!);
+          this.assertActive();
+          if (probabilities.some((value) => !Number.isFinite(value) || value < 0)) {
+            if (!strict) return [];
+            throw new Error('training.nonfinite');
+          }
+          const total = probabilities.reduce((sum, value) => sum + value, 0);
+          if (Math.abs(total - 1) > 1e-5) {
+            if (!strict) return [];
+            throw new Error('worker.rnn_probabilities');
+          }
+          const prediction =
+            VOCAB[
+              probabilities.reduce(
+                (best, value, index) => (value > probabilities[best] ? index : best),
+                0,
+              )
+            ];
+          predictions.push({ history, input, probabilities, prediction });
+        }
+        return predictions;
+      } catch (error) {
+        if (strict) throw error;
+        return [];
+      } finally {
+        releaseAll();
+      }
+    })();
   }
 
   async run(
     onProgress?: (progress: RecurrentCharacterProgress) => void,
+    onPeek?: (peek: Peek) => void,
   ): Promise<FixedWindowSnapshot> {
     this.assertActive();
     if (this.running) throw new Error('worker.training_busy');
@@ -143,6 +194,17 @@ export class RecurrentCharacterExperiment {
         // Every step posts; the UI batches into animation frames. Loss reports arrive a few steps late.
         onStep: (step) => {
           onProgress?.({ type: 'progress', step, totalSteps });
+          if (onPeek && step % PEEK_EVERY === 0 && step < totalSteps && !this.peeking) {
+            this.peeking = true;
+            void this.startPredictions(false, false)
+              .then((predictions) => {
+                if (predictions.length && !this.disposed)
+                  onPeek?.({ type: 'peek', step, predictions });
+              })
+              .finally(() => {
+                this.peeking = false;
+              });
+          }
         },
       });
       this.assertActive();

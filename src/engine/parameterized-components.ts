@@ -1,5 +1,6 @@
 import {
   COMPONENT_INPUT_ATTRIBUTE,
+  GraphError,
   type Attributes,
   type ComponentAttributeDefinition,
   type ComponentDefinition,
@@ -38,7 +39,6 @@ const automatic: ComponentAttributeDefinition = {
   kind: 'boolean',
   // Missing means a legacy component whose explicit parameter wires remain authoritative.
   default: false,
-  hidden: true,
 };
 const normal = (input: string, shape: ParameterSpec['shape']): ParameterSpec => ({
   input,
@@ -70,6 +70,17 @@ function adaptRecurrentWindow(graph: GraphJSON, attrs: Attributes): void {
       ? [...shape.slice(0, -1), number(attrs, 'hidden_features')]
       : [number(attrs, 'hidden_features')],
   };
+}
+
+/** A start state without the batch axis would surface as a confusing matmul error deep inside. */
+function requireBatchedState(_graph: GraphJSON, attrs: Attributes, inputs?: ShapePorts): void {
+  const h = inputs?.h;
+  const x = inputs?.x;
+  if (!h || !x || h.length >= Math.max(2, x.length)) return;
+  throw new GraphError('rnn_state_batch', undefined, 'h', {
+    h,
+    hidden: number(attrs, 'hidden_features'),
+  });
 }
 
 /** Treat rank-one x as a batch of scalars when Linear declares one input feature. */
@@ -151,6 +162,7 @@ const MODULES: Readonly<Record<string, ModuleSpec>> = {
       normal('wh', (a) => [number(a, 'hidden_features'), number(a, 'hidden_features')]),
       zeros('b', (a) => [number(a, 'hidden_features')]),
     ],
+    adapt: requireBatchedState,
   },
   rnn_window: {
     attributes: [

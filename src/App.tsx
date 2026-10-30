@@ -325,6 +325,7 @@ export default function App() {
             const next = nextOf(level);
             if (next) openLevel(next);
           }}
+          progress={save.progress}
         />
       ) : level ? (
         <Editor

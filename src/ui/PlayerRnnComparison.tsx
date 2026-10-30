@@ -4,6 +4,7 @@ import { translateDiagnostic, type Locale } from '../i18n';
 import { vocabulary } from '../levels/corpus';
 import { fixedWindowContext, fixedWindowExamples } from '../levels/fixed-window-evidence';
 import type { FixedWindowPrediction } from '../worker/fixed-window-protocol';
+import { loadFixedWindowResult, saveFixedWindowResult } from './fixed-window-cache';
 import {
   ExperimentSteps,
   RunPicker,
@@ -27,7 +28,14 @@ interface PlayerRnnComparisonProps {
 }
 
 export function PlayerRnnComparison({ progress, backend, ...props }: PlayerRnnComparisonProps) {
-  const fixed = useFixedWindowExperiment('fixed-window', progress, backend);
+  // 5-1 already trained this exact circuit with these settings: reuse it, don't retrain.
+  const [cached] = useState(() => loadFixedWindowResult(progress));
+  const fixed = useFixedWindowExperiment('fixed-window', progress, backend, {
+    initialSnapshots: cached,
+    onSnapshots: (snapshots) => {
+      if (snapshots.length === 2) saveFixedWindowResult(progress, snapshots);
+    },
+  });
   const recurrent = useFixedWindowExperiment('rnn', progress, backend);
   return (
     <PlayerRnnComparisonView
@@ -58,13 +66,27 @@ export function PlayerRnnComparisonView({
 }) {
   const [selectedStep, setSelectedStep] = useState<number>();
   const [resetHistory, setResetHistory] = useState(false);
+  const [skipped, setSkipped] = useState(false);
   const text = (key: string, params?: Readonly<Record<string, string | number>>) =>
     t(`levels.time-player-comparison.${key}`, params);
   const hasBothRuns = (state: FixedWindowExperimentState) =>
     state.status === 'ready' &&
     [320, 640].every((step) => state.snapshots.some((run) => run.step === step));
   const fixedComplete = hasBothRuns(fixedState);
-  const completed = fixedComplete && hasBothRuns(recurrentState);
+  const firstRecurrent =
+    recurrentState.status === 'ready' && recurrentState.snapshots.length === 1
+      ? recurrentState.snapshots[0]
+      : undefined;
+  // Skipping is offered only when the first RNN run already gets both sentences right.
+  const canSkip =
+    fixedComplete &&
+    !!firstRecurrent &&
+    fixedWindowExamples.every(
+      (example) =>
+        firstRecurrent.predictions.find((p) => p.history === example.history)?.prediction ===
+        example.target,
+    );
+  const completed = fixedComplete && (hasBothRuns(recurrentState) || (skipped && canSkip));
   const activeState = fixedComplete ? recurrentState : fixedState;
   const training = activeState.status === 'training';
   // Once RNN results exist, only offer budgets measured for both player graphs.
@@ -93,9 +115,15 @@ export function PlayerRnnComparisonView({
   }
   const characterLabel = characterLabeler(text);
   const stage = completed ? 2 : fixedComplete ? 1 : 0;
-  const recurrentPredictions = resetHistory
-    ? recurrentSnapshot?.resetPredictions
-    : recurrentSnapshot?.predictions;
+  const livePeek = training ? activeState.peek : undefined;
+  const recurrentPredictions =
+    livePeek && fixedComplete
+      ? livePeek.predictions
+      : resetHistory
+        ? recurrentSnapshot?.resetPredictions
+        : recurrentSnapshot?.predictions;
+  const fixedPredictions =
+    livePeek && !fixedComplete ? livePeek.predictions : fixedSnapshot?.predictions;
   const pct1 = (value: number) => `${(value * 100).toFixed(1)}%`;
   const modelRow = (
     result: FixedWindowPrediction | undefined,
@@ -103,6 +131,7 @@ export function PlayerRnnComparisonView({
     model: string,
     kind: 'fixed' | 'recurrent',
     seenKey: string,
+    liveStep?: number,
   ) => {
     const correct = result?.prediction === target;
     const verdict = result ? (correct ? 'is-correct' : 'is-wrong') : '';
@@ -114,7 +143,9 @@ export function PlayerRnnComparisonView({
             <i className={`comparison-swatch is-${kind}`} aria-hidden="true" />
             {model}
           </span>
-          <span className="experiment-meta">{text(seenKey)}</span>
+          <span className="experiment-meta">
+            {liveStep !== undefined ? text('liveStep', { step: liveStep }) : text(seenKey)}
+          </span>
         </div>
         {result ? (
           <div className="comparison-guess-body">
@@ -127,7 +158,9 @@ export function PlayerRnnComparisonView({
               </span>
               <span className="experiment-bar-value">{pct1(probability)}</span>
             </span>
-            <b className="experiment-verdict">{text(correct ? 'correct' : 'wrong')}</b>
+            {liveStep === undefined && (
+              <b className="experiment-verdict">{text(correct ? 'correct' : 'wrong')}</b>
+            )}
           </div>
         ) : (
           <span className="experiment-empty">{text('awaiting')}</span>
@@ -269,11 +302,12 @@ export function PlayerRnnComparisonView({
                 {highlighted(example.history, !resetHistory)}
                 <div className="comparison-guesses" aria-label={text('modelComparison')}>
                   {modelRow(
-                    fixedSnapshot?.predictions.find((p) => p.history === example.history),
+                    fixedPredictions?.find((p) => p.history === example.history),
                     example.target,
                     text('fixedModel'),
                     'fixed',
                     'seenWindow',
+                    livePeek && !fixedComplete ? livePeek.step : undefined,
                   )}
                   {modelRow(
                     recurrentPredictions?.find((p) => p.history === example.history),
@@ -281,6 +315,7 @@ export function PlayerRnnComparisonView({
                     text('recurrentModel'),
                     'recurrent',
                     resetHistory ? 'seenWindow' : 'seenWhole',
+                    livePeek && fixedComplete ? livePeek.step : undefined,
                   )}
                 </div>
               </article>
@@ -311,9 +346,26 @@ export function PlayerRnnComparisonView({
                 total: activeState.progress?.totalSteps ?? '…',
               })}
               progress={activeState.progress}
+              lossLabel={text('lossCurve', { model: text(activeModelKey) })}
+              lossHistory={activeState.lossHistory}
             />
-          ) : completed ? null : (
+          ) : completed ? null : canSkip ? (
             <div className="experiment-prompt" aria-live="polite">
+              <p>{text('skipPrompt')}</p>
+              <div className="experiment-actions">
+                <button type="button" className="btn btn-primary" onClick={() => setSkipped(true)}>
+                  {text('skipToResults')} →
+                </button>
+                <button type="button" className="btn" onClick={beginTraining}>
+                  {text(actionKey)}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="experiment-prompt" aria-live="polite">
+              {fixedState.cached && fixedComplete && !recurrentState.snapshots.length && (
+                <p className="experiment-meta">{text('fixedFromLesson')}</p>
+              )}
               <p>{text(promptKey)}</p>
               <button type="button" className="btn btn-primary" onClick={beginTraining}>
                 {text(actionKey)} →

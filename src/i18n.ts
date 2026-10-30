@@ -121,6 +121,7 @@ const diagnosticShapeParams: Readonly<Record<string, readonly string[]>> = Objec
   'errors.matmul_shape': ['a', 'b'],
   'errors.parameter_shape_mismatch': ['actual', 'expected'],
   'errors.reshape_mismatch': ['actual', 'expected'],
+  'errors.rnn_state_batch': ['h'],
 });
 
 /** Never renders unlocalized backend exception messages. */

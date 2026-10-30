@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Progress } from '../engine/levels';
 import type {
   CharacterComparisonModel,
+  FixedWindowPrediction,
   FixedWindowRequest,
   FixedWindowResponse,
   FixedWindowSnapshot,
@@ -12,6 +13,19 @@ export interface FixedWindowExperimentState {
   snapshots: readonly FixedWindowSnapshot[];
   progress?: Extract<FixedWindowResponse, { type: 'progress' }>;
   error?: Extract<FixedWindowResponse, { type: 'error' }>;
+  /** Loss values as they arrive (a few steps late, never a blocking readback). */
+  lossHistory?: readonly { step: number; loss: number }[];
+  /** Latest mid-training look at the two sentences. */
+  peek?: { step: number; predictions: readonly FixedWindowPrediction[] };
+  /** True when the snapshots came from the local experiment cache, not this page's training. */
+  cached?: boolean;
+}
+
+export interface FixedWindowExperimentOptions {
+  /** Previously measured runs (e.g. 5-1's result reused in 5-2). */
+  initialSnapshots?: readonly FixedWindowSnapshot[];
+  /** Called after every completed run with all runs so far. */
+  onSnapshots?: (snapshots: readonly FixedWindowSnapshot[]) => void;
 }
 
 /** Workers borrow circuit definitions only; experiment weights never enter player storage. */
@@ -19,7 +33,11 @@ export function useFixedWindowExperiment(
   model: CharacterComparisonModel = 'fixed-window',
   playerProgress?: Progress,
   backend?: 'cpu' | 'webgpu',
+  options: FixedWindowExperimentOptions = {},
 ) {
+  const onSnapshots = useRef(options.onSnapshots);
+  onSnapshots.current = options.onSnapshots;
+  const losses = useRef<{ step: number; loss: number }[]>([]);
   const worker = useRef<Worker | null>(null);
   const busy = useRef(false);
   type ProgressMessage = Extract<FixedWindowResponse, { type: 'progress' }>;
@@ -57,6 +75,7 @@ export function useFixedWindowExperiment(
         const sameRun = before && before.totalSteps === next.totalSteps;
         return {
           ...state,
+          lossHistory: losses.current.slice(),
           progress: {
             ...next,
             step: sameRun ? Math.max(before.step, next.step) : next.step,
@@ -67,10 +86,11 @@ export function useFixedWindowExperiment(
     });
     if (frame.current === -1) frame.current = id;
   };
-  const [state, setState] = useState<FixedWindowExperimentState>({
-    status: 'idle',
-    snapshots: [],
-  });
+  const [state, setState] = useState<FixedWindowExperimentState>(() =>
+    options.initialSnapshots?.length
+      ? { status: 'ready', snapshots: [...options.initialSnapshots], cached: true }
+      : { status: 'idle', snapshots: [] },
+  );
 
   useEffect(
     () => () => {
@@ -90,7 +110,12 @@ export function useFixedWindowExperiment(
       worker.current?.terminate();
       worker.current = null;
     }
-    setState({ status: 'training', snapshots: restart ? [] : state.snapshots });
+    if (restart) losses.current = [];
+    setState({
+      status: 'training',
+      snapshots: restart ? [] : state.snapshots,
+      lossHistory: losses.current.slice(),
+    });
 
     const fail = (
       error: Extract<FixedWindowResponse, { type: 'error' }> = {
@@ -102,7 +127,13 @@ export function useFixedWindowExperiment(
       worker.current = null;
       busy.current = false;
       cancelProgress();
-      setState((previous) => ({ ...previous, status: 'error', progress: undefined, error }));
+      setState(({ lossHistory, peek: _peek, ...previous }) => ({
+        ...previous,
+        ...(lossHistory?.length ? { lossHistory } : {}),
+        status: 'error',
+        progress: undefined,
+        error,
+      }));
     };
     try {
       const starting = !worker.current;
@@ -118,15 +149,30 @@ export function useFixedWindowExperiment(
             return;
           }
           if (data.type === 'progress') {
+            if (data.loss !== undefined && Number.isFinite(data.loss)) {
+              const last = losses.current.at(-1);
+              if (!last || data.step > last.step)
+                losses.current.push({ step: data.step, loss: data.loss });
+            }
             queueProgress(data);
+            return;
+          }
+          if (data.type === 'peek') {
+            setState((previous) =>
+              previous.status === 'training'
+                ? { ...previous, peek: { step: data.step, predictions: data.predictions } }
+                : previous,
+            );
             return;
           }
           cancelProgress();
           busy.current = false;
-          setState((previous) => ({
-            status: 'ready',
-            snapshots: [...previous.snapshots, data.snapshot],
-          }));
+          const lossHistory = losses.current.slice();
+          setState((previous) => {
+            const snapshots = [...previous.snapshots, data.snapshot];
+            onSnapshots.current?.(snapshots);
+            return { status: 'ready', snapshots, lossHistory };
+          });
         };
         current.onerror = (event) => {
           event.preventDefault();
