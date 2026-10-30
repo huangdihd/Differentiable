@@ -49,6 +49,8 @@ import { Random } from './engine/random';
 import Properties, { defaults } from './ui/Properties';
 import LossChart from './ui/LossChart';
 import DataPlot, { type PlotData } from './ui/DataPlot';
+import SequenceTry from './ui/SequenceTry';
+import { sequenceProbe } from './levels/sequence-probe';
 import DatasetCard from './ui/DatasetCard';
 import { VOCAB } from './levels/corpus';
 import { caseInputs, fullValues } from './ui/tensor-values';
@@ -714,6 +716,16 @@ function Editor({
   const [trainingPlot, setTrainingPlot] = useState<PlotData>();
   useEffect(() => {
     setPlotBase(undefined);
+    if (level.kind === 'train' && level.sequenceProbe && level.interface.inputs.x?.length === 2) {
+      const probe = sequenceProbe(level.sequenceProbe, level.interface.inputs.x[1]);
+      setPlotBase({
+        kind: 'regression',
+        x: probe.curve.x,
+        t: probe.curve.t,
+        targetLine: probe.targetLine,
+      });
+      return;
+    }
     // Text datasets are token ids, not coordinates: their card shows the text instead.
     const modality = level.kind === 'train' ? level.data?.dataset.modality : undefined;
     if (level.kind !== 'train' || !modality || modality === 'text') return;
@@ -2209,7 +2221,43 @@ function Editor({
               {level.data ? (
                 <DatasetCard t={t} data={level.data} inputs={level.interface.inputs} plot={plot} />
               ) : (
-                plot && <DataPlot data={plot} label={t('ui.data')} />
+                plot && (
+                  <DataPlot
+                    data={plot}
+                    label={t(
+                      level.sequenceProbe ? `ui.probe.${level.sequenceProbe}.label` : 'ui.data',
+                    )}
+                    axisLabels={
+                      level.sequenceProbe
+                        ? {
+                            x: t(`ui.probe.${level.sequenceProbe}.x`),
+                            y: t(`ui.probe.${level.sequenceProbe}.y`),
+                          }
+                        : undefined
+                    }
+                  />
+                )
+              )}
+              {level.sequenceProbe && (
+                <>
+                  <p className="hint">{t(`ui.probe.${level.sequenceProbe}.help`)}</p>
+                  <SequenceTry
+                    key={level.id}
+                    t={t}
+                    kind={level.sequenceProbe}
+                    length={level.interface.inputs.x?.[1] ?? 1}
+                    refreshKey={[
+                      computationKey,
+                      report ? Math.floor(report.step / 25) : -1,
+                      training,
+                    ]}
+                    predict={(rows) => {
+                      const c = client.current;
+                      if (!c) return Promise.reject(new Error('no worker'));
+                      return c.predict(level.id, state.graph, rows);
+                    }}
+                  />
+                </>
               )}
               {optimizers && optimizers.length > 1 && (
                 <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>

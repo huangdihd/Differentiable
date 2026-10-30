@@ -200,6 +200,10 @@ export class WorkerClient {
       temperature,
     });
   }
+  /** The model's prediction for each window: live weights while training, else the last trained. */
+  predict(levelId: string, graph: GraphJSON, rows: number[][]) {
+    return this.send<'predict'>({ type: 'predict', levelId, graph, rows });
+  }
   trainReset() {
     return this.send<'trainReset'>({ type: 'trainReset' });
   }

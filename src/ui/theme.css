@@ -2727,6 +2727,12 @@ input[type='range'] {
   stroke-linecap: round;
   opacity: 0.85;
 }
+.plot-target-line {
+  fill: none;
+  stroke: var(--muted, #8a8a8a);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
 .plot-fit {
   fill: none;
   stroke: var(--accent);
@@ -4061,4 +4067,58 @@ input[type='range'] {
   color: var(--accent, #f2c94c);
   opacity: 0.9;
   cursor: help;
+}
+
+/* "Try it": the player's own window and the model's prediction. */
+.seq-try {
+  display: grid;
+  gap: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px dashed var(--line);
+}
+.seq-try-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.seq-try-cell {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.seq-try-cell .field {
+  width: 100%;
+  padding: 4px 2px;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.seq-try-step {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+.seq-try-arrow {
+  display: none;
+}
+.seq-try-out {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-basis: 100%;
+}
+.seq-try-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.seq-try-value.is-off {
+  color: var(--warn, #c66);
+}
+.seq-try-expected {
+  font-size: 11px;
+  color: var(--muted);
 }

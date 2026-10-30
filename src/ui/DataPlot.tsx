@@ -8,6 +8,10 @@ export type PlotData =
       t: number[];
       /** The model's prediction at each x, when known. */
       p?: number[];
+      /** A denser prediction curve (x, p), drawn instead of p when present. */
+      fit?: { x: number[]; p: number[] };
+      /** Join the targets into a line (e.g. the identity a copy task should follow). */
+      targetLine?: boolean;
     }
   | {
       kind: 'classes';
@@ -108,7 +112,7 @@ export default function DataPlot({
   const xs = data.kind === 'regression' ? data.x : data.points.map((p) => p[0]);
   const ys =
     data.kind === 'regression'
-      ? [...data.t, ...(data.p ?? []).filter(Number.isFinite)]
+      ? [...data.t, ...(data.p ?? []).filter(Number.isFinite), ...(data.fit?.p ?? [])]
       : data.points.map((p) => p[1]);
   const range = (v: number[]) => {
     const lo = Math.min(...v),
@@ -141,7 +145,19 @@ export default function DataPlot({
       {axes}
       {data.kind === 'regression' ? (
         <g clipPath={`url(#${clipId})`}>
-          {data.p && data.p.every(Number.isFinite) && (
+          {data.targetLine && (
+            <polyline
+              className="plot-target-line"
+              points={data.x.map((x, i) => `${sx(x)},${sy(data.t[i])}`).join(' ')}
+            />
+          )}
+          {data.fit && data.fit.p.every(Number.isFinite) && (
+            <polyline
+              className="plot-fit"
+              points={data.fit.x.map((x, i) => `${sx(x)},${sy(data.fit!.p[i])}`).join(' ')}
+            />
+          )}
+          {!data.fit && data.p && data.p.every(Number.isFinite) && (
             <polyline
               className="plot-fit"
               points={data.x
@@ -151,17 +167,18 @@ export default function DataPlot({
                 .join(' ')}
             />
           )}
-          {data.x.map((x, i) => (
-            <circle
-              key={i}
-              className="plot-point"
-              cx={sx(x)}
-              cy={sy(data.t[i])}
-              r={3}
-              onMouseEnter={onHover && (() => onHover(i))}
-              onMouseLeave={onHover && (() => onHover(undefined))}
-            />
-          ))}
+          {!data.targetLine &&
+            data.x.map((x, i) => (
+              <circle
+                key={i}
+                className="plot-point"
+                cx={sx(x)}
+                cy={sy(data.t[i])}
+                r={3}
+                onMouseEnter={onHover && (() => onHover(i))}
+                onMouseLeave={onHover && (() => onHover(undefined))}
+              />
+            ))}
         </g>
       ) : (
         <>

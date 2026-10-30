@@ -475,6 +475,7 @@ export const temporalRnnDelayLevel = withPar<TrainLevel>(
     threshold: { loss: 0.015 },
     dataset: delayedCopyBatch,
     evaluationDataset: delayedCopyBatch,
+    sequenceProbe: 'delay',
   },
   [...preceding, ...temporalForwardLevels],
 );
@@ -584,6 +585,7 @@ export const temporalTrainLevel = withPar<TrainLevel>(
     threshold: { loss: 0.02 },
     dataset: waveBatch,
     evaluationDataset: waveBatch,
+    sequenceProbe: 'forecast',
   },
   [...preceding, ...temporalForwardLevels],
 );

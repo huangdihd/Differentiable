@@ -27,7 +27,8 @@ import {
   type TrainLevel,
 } from '../engine/levels';
 import { Random } from '../engine/random';
-import { TrainingPlotRefresh, trainingPlot } from './training-plot';
+import { TrainingPlotRefresh, sequencePlot, trainingPlot } from './training-plot';
+import { predictionSource } from '../levels/sequence-probe';
 import * as T from '../engine/tensor';
 import {
   crossEntropy,
@@ -84,7 +85,8 @@ export class WorkerRuntime {
     return JSON.stringify([levelId, computationGraph(graph)]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
-    if (!level.generates && level.chapter !== '3' && level.id !== 'xor') return;
+    if (!level.generates && !level.sequenceProbe && level.chapter !== '3' && level.id !== 'xor')
+      return;
     const values = new Map<string, { shape: number[]; data: Float32Array }>();
     for (const [id, value] of plan.parameters) {
       const data = new Float32Array(await value.read());
@@ -92,6 +94,66 @@ export class WorkerRuntime {
       values.set(id, { shape: [...value.shape], data });
     }
     this.generationParameters = { key: this.generationKey(level.id, graph), values };
+  }
+  /** Run the player's model on their own windows: live weights while training, else the last trained. */
+  private async predict(request: Extract<WorkerRequest, { type: 'predict' }>, level: TrainLevel) {
+    const length = level.interface.inputs.x?.[1];
+    const rows = request.rows;
+    if (
+      !level.sequenceProbe ||
+      !length ||
+      !Array.isArray(rows) ||
+      rows.length < 1 ||
+      rows.length > 64 ||
+      !rows.every(
+        (row) => Array.isArray(row) && row.length === length && row.every(Number.isFinite),
+      )
+    )
+      throw new Error('worker.invalid_request');
+    const source = predictionSource(request.graph);
+    if (!source) throw new Error('worker.predict_unavailable');
+    const key = this.generationKey(level.id, request.graph);
+    const parameters = new Map<string, T.Tensor>();
+    let state: 'initial' | 'current' | 'trained' = 'initial';
+    const run = this.run;
+    if (run && this.generationKey(run.level.id, run.request.graph) === key) {
+      for (const [id, value] of run.plan.parameters)
+        parameters.set(id, T.tensor(await value.read(), [...value.shape]));
+      state = 'current';
+    } else if (this.generationParameters?.key === key) {
+      for (const [id, value] of this.generationParameters.values)
+        parameters.set(id, T.tensor(value.data, value.shape));
+      state = 'trained';
+    }
+    const n = rows.length;
+    let plan: GraphPlan | undefined;
+    const x = T.tensor(rows.flat(), [n, length]);
+    const t = T.tensor(new Float32Array(n), [n]);
+    try {
+      plan = compileGraph(request.graph, {
+        registry: this.registry,
+        availableComponents: level.available,
+        inputShapes: { ...level.interface.inputs, x: [n, length], t: [n] },
+        random: new Random(level.seed),
+        parameters,
+      });
+      const trace = new Map<string, T.Tensor>();
+      const outputs = plan.execute({ x, t }, trace);
+      try {
+        const prediction = trace.get(source);
+        if (!prediction) throw new Error('worker.predict_unavailable');
+        const values = Array.from(await prediction.read());
+        if (values.length !== n) throw new Error('worker.predict_unavailable');
+        this.reply(request, { values, state });
+      } finally {
+        plan.releaseExecution(outputs, [x, t]);
+      }
+    } finally {
+      plan?.dispose();
+      x.dispose();
+      t.dispose();
+      for (const value of parameters.values()) value.dispose();
+    }
   }
   private async generate(request: Extract<WorkerRequest, { type: 'generate' }>, level: TrainLevel) {
     const temperature = request.temperature === undefined ? 1 : request.temperature;
@@ -282,8 +344,12 @@ export class WorkerRuntime {
       // This is awaited on the same queue as updates, stop/reset and revision changes.
       // Only coordinate data is plotted; text datasets are token ids.
       const modality = run.level.data?.dataset.modality;
-      const plot =
-        modality && modality !== 'text'
+      const plot = run.level.sequenceProbe
+        ? await run.plotRefresh.refresh(
+            () => sequencePlot(run.level, run.request.graph, run.plan),
+            report.step >= run.level.steps,
+          )
+        : modality && modality !== 'text'
           ? await run.plotRefresh.refresh(
               () =>
                 trainingPlot(
@@ -459,6 +525,11 @@ export class WorkerRuntime {
       if (!sourceLevel) throw new Error('worker.unknown_level');
       if (sourceLevel.kind === 'observation') throw new Error('worker.invalid_request');
       const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
+      if (request.type === 'predict') {
+        if (level.kind !== 'train') throw new Error('worker.predict_unavailable');
+        await this.predict(request, level);
+        return;
+      }
       if (request.type === 'generate') {
         if (level.kind !== 'train' || level.generates !== true)
           throw new Error('worker.generation_unavailable');

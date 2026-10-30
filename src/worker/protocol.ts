@@ -62,6 +62,7 @@ export type Command =
       seed?: number;
       temperature?: number;
     }
+  | { type: 'predict'; levelId: string; graph: GraphJSON; rows: number[][] }
   | { type: 'trainReset' }
   | { type: 'cancel' }
   | { type: 'pause' }
@@ -85,6 +86,7 @@ export interface ReplyData {
   start: { state: 'running' };
   trainStep: Awaited<ReturnType<TrainingSession['stepTrace']>>;
   generate: { text: string };
+  predict: { values: number[]; state: 'initial' | 'current' | 'trained' };
   trainReset: { state: 'reset' };
   cancel: { state: 'stopped' };
   pause: { state: 'paused' };

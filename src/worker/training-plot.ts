@@ -2,6 +2,8 @@ import type { GraphJSON, GraphPlan } from '../engine/graph';
 import type { TrainingBatchSource } from '../engine/training';
 import { tensor, type Tensor } from '../engine/tensor';
 import type { ClassField, PlotData } from '../ui/DataPlot';
+import type { TrainLevel } from '../engine/levels';
+import { predictionSource, sequenceProbe } from '../levels/sequence-probe';
 
 export const TRAINING_PLOT_INTERVAL_MS = 250;
 /** Decision-field resolution; drawn under the points of two-feature classification plots. */
@@ -174,4 +176,55 @@ async function classField(
     classes: result,
     ...(classes === 2 ? { margin } : {}),
   };
+}
+
+/**
+ * Sequence levels: run the model on a fixed sweep of windows (in chunks of the plan's batch)
+ * and pair the predictions with the target curve. Inside the runtime queue, like trainingPlot.
+ */
+export async function sequencePlot(
+  level: TrainLevel,
+  graph: GraphJSON,
+  plan: GraphPlan,
+): Promise<PlotData | undefined> {
+  const kind = level.sequenceProbe;
+  const shape = level.interface.inputs.x;
+  const source = predictionSource(graph);
+  if (!kind || !shape || shape.length !== 2 || !source) return undefined;
+  const [batch, length] = shape;
+  const probe = sequenceProbe(kind, length);
+  const runs: { inputs: Record<string, Tensor>; outputs: ReturnType<GraphPlan['execute']> }[] = [];
+  const traces: Map<string, Tensor>[] = [];
+  try {
+    for (let start = 0; start < probe.rows.length; start += batch) {
+      const data = new Float32Array(batch * length);
+      for (let r = 0; r < batch; r++)
+        data.set(probe.rows[Math.min(probe.rows.length - 1, start + r)], r * length);
+      const inputs: Record<string, Tensor> = {
+        x: tensor(data, [batch, length]),
+        ...(level.interface.inputs.t ? { t: tensor(new Float32Array(batch), [batch]) } : {}),
+      };
+      const trace = new Map<string, Tensor>();
+      traces.push(trace);
+      runs.push({ inputs, outputs: plan.execute(inputs, trace) });
+    }
+    const predictions = traces.map((trace) => trace.get(source));
+    if (predictions.some((p) => !p || p.shape.reduce((a, b) => a * b, 1) !== batch))
+      return undefined;
+    const all = await Promise.all(predictions.map((p) => p!.read()));
+    const p = probe.rows.map((_, k) => all[Math.floor(k / batch)][k % batch]);
+    if (!p.every(Number.isFinite)) return undefined;
+    return {
+      kind: 'regression',
+      x: probe.curve.x,
+      t: probe.curve.t,
+      fit: { x: probe.at, p },
+      targetLine: probe.targetLine,
+    };
+  } finally {
+    for (const run of runs) {
+      plan.releaseExecution(run.outputs, Object.values(run.inputs));
+      Object.values(run.inputs).forEach((t) => t.dispose());
+    }
+  }
 }
