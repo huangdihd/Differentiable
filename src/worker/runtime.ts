@@ -5,7 +5,7 @@ import { createBackend } from '../engine/backend-selection';
 import { trainDependencyError } from '../engine/train-dependency';
 import {
   compileGraph,
-  computationGraph,
+  computationIdentity,
   GraphError,
   type GraphPlan,
   type GraphJSON,
@@ -82,7 +82,7 @@ export class WorkerRuntime {
   private generationKey(levelId: string, graph: GraphJSON) {
     // Not tied to the revision: passing a level syncs progress, and the player expects the
     // model they just trained to write. Same level and graph means the same parameters.
-    return JSON.stringify([levelId, computationGraph(graph)]);
+    return JSON.stringify([levelId, computationIdentity(graph)]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
     if (!level.generates && !level.sequenceProbe && level.chapter !== '3' && level.id !== 'xor')
@@ -598,7 +598,7 @@ export class WorkerRuntime {
         if (level.kind !== 'train') throw new Error('worker.not_training_level');
         const learningRate = trainingLearningRate(level, request.learningRate);
         const kind = trainingOptimizer(level, request.optimizer);
-        const key = JSON.stringify([level.id, computationGraph(request.graph), kind]);
+        const key = JSON.stringify([level.id, computationIdentity(request.graph), kind]);
         if (this.stepRun?.key !== key) this.releaseStep();
         if (!this.stepRun) {
           const plan = compileGraph(request.graph, {

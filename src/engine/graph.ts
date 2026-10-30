@@ -40,6 +40,18 @@ export function computationGraph(graph: GraphJSON): GraphJSON {
     }),
   };
 }
+/**
+ * Identity used to decide whether a graph must be compiled or probed again.
+ * Parameter names and canvas layout (`ui`) are display-only; wires, attributes,
+ * and structure remain.
+ */
+export function computationIdentity(graph: GraphJSON): GraphJSON {
+  const computed = computationGraph(graph);
+  return {
+    ...computed,
+    nodes: computed.nodes.map(({ ui: _ui, ...node }) => node),
+  };
+}
 
 export type TensorPorts = Record<string, Tensor>;
 export type ShapePorts = Record<string, Shape>;
