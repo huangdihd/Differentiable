@@ -15,6 +15,7 @@ import {
   nodePorts,
   sidePortY,
   type Point,
+  movePositions,
 } from './graph-geometry';
 
 const IO = ['input', 'output'];
@@ -625,7 +626,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   },
                   () => {
                     setPreview({});
-                    if (Object.keys(next).length) p.onMove(next);
+                    if (Object.keys(next).length) p.onMove(movePositions(p.graph, layout, next));
                   },
                   () => setPreview({}),
                 );

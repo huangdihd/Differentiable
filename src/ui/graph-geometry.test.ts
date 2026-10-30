@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ComponentRegistry, GraphJSON } from '../engine/graph';
-import { NODE_W, freeSpot, nearestInput, sidePortY } from './graph-geometry';
+import {
+  NODE_W,
+  freeSpot,
+  layoutGraph,
+  movePositions,
+  nearestInput,
+  sidePortY,
+} from './graph-geometry';
 
 describe('freeSpot', () => {
   it('keeps the wanted spot when it is empty', () => {
@@ -57,5 +64,49 @@ describe('nearestInput', () => {
   it('ignores ports outside the radius and on the dragged node', () => {
     expect(nearestInput(graph, registry, positions, { x: 200, y: portB }, 30)).toBeUndefined();
     expect(nearestInput(graph, registry, positions, { x: 300, y: portB }, 30, 'm')).toBeUndefined();
+  });
+});
+
+describe('movePositions', () => {
+  // Reference solutions ship without `ui`, so every node is auto-laid-out.
+  const registry = new Map([
+    ['mul', { inputs: ['a', 'b'], outputs: ['out'] }],
+  ]) as unknown as ComponentRegistry;
+  const graph: GraphJSON = {
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x' } },
+      { id: 'y', component: 'input', attrs: { name: 'y' } },
+      { id: 'm', component: 'mul' },
+      { id: 'o', component: 'output' },
+    ],
+    edges: [
+      { from: { node: 'x', port: 'out' }, to: { node: 'm', port: 'a' } },
+      { from: { node: 'y', port: 'out' }, to: { node: 'm', port: 'b' } },
+      { from: { node: 'm', port: 'out' }, to: { node: 'o', port: 'x' } },
+    ],
+  };
+
+  it('dragging one auto-laid-out node leaves the others where they were', () => {
+    const before = layoutGraph(graph, registry);
+    const moved = { m: { x: 900, y: 900 } };
+    const positions = movePositions(graph, before, moved);
+    const next: GraphJSON = {
+      ...graph,
+      nodes: graph.nodes.map((n) => (positions[n.id] ? { ...n, ui: { ...positions[n.id] } } : n)),
+    };
+    const after = layoutGraph(next, registry);
+    expect(after.get('m')).toEqual({ x: 900, y: 900 });
+    for (const id of ['x', 'y', 'o']) expect(after.get(id)).toEqual(before.get(id));
+  });
+
+  it('does not override nodes the user already placed', () => {
+    const placed: GraphJSON = {
+      ...graph,
+      nodes: graph.nodes.map((n) => ({ ...n, ui: { x: 1, y: 2 } })),
+    };
+    expect(movePositions(placed, layoutGraph(placed, registry), { m: { x: 5, y: 5 } })).toEqual({
+      m: { x: 5, y: 5 },
+    });
   });
 });

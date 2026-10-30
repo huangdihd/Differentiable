@@ -336,3 +336,22 @@ export function nearestInput(
   }
   return best;
 }
+
+/**
+ * Positions to commit when nodes are dragged. Auto-laid-out nodes (no `ui`) are restacked
+ * below whatever is placed, so placing one would make every other free node jump. Pin all
+ * free nodes at their current layout position alongside the moved ones.
+ */
+export function movePositions(
+  graph: GraphJSON,
+  layout: Map<string, Point>,
+  moved: Record<string, Point>,
+): Record<string, Point> {
+  const out: Record<string, Point> = {};
+  for (const n of graph.nodes) {
+    const free = !(typeof n.ui?.x === 'number' && typeof n.ui?.y === 'number');
+    const at = layout.get(n.id);
+    if (free && at) out[n.id] = at;
+  }
+  return { ...out, ...moved };
+}
