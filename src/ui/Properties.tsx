@@ -5,7 +5,7 @@ import type {
   ComponentDefinition,
   ComponentAttributeDefinition,
 } from '../engine/graph';
-import { translatePort } from '../i18n';
+import { translatePort, type TranslationParams } from '../i18n';
 import { shapeText } from './Canvas';
 import { parseRealNumber, parseRealValue } from './real-number';
 
@@ -13,9 +13,19 @@ type Props = {
   node: GraphNode;
   connectedInputs?: readonly string[];
   definition?: ComponentDefinition;
-  t: (key: string) => string;
+  t: (key: string, params?: TranslationParams) => string;
   onChange: (attrs: Attributes) => void;
 };
+
+/** Reshape exposes d0–d3; rank is attrs.shape.length (see graph-geometry nodePorts). */
+const RESHAPE_MAX_RANK = 4;
+
+function reshapeShapeOf(attrs: Attributes): number[] {
+  const shape = attrs.shape;
+  if (Array.isArray(shape) && shape.length >= 1 && shape.every((n) => Number.isSafeInteger(n)))
+    return shape as number[];
+  return [-1];
+}
 export function defaults(
   component: string,
   definition?: ComponentDefinition,
@@ -215,6 +225,7 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
   const identity = `${node.id}:${node.component}`;
   const scalarLabel = t('ui.scalar');
   const [draft, setDraft] = useState(() => draftFrom(attrs, scalarLabel));
+  const [dimTexts, setDimTexts] = useState(() => reshapeShapeOf(attrs).map(String));
   const published = useRef<string | null>(null);
   const previousIdentity = useRef(identity);
   const previousScalarLabel = useRef(scalarLabel);
@@ -225,8 +236,11 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
       previousIdentity.current !== identity ||
       previousScalarLabel.current !== scalarLabel ||
       published.current !== source
-    )
-      setDraft(draftFrom(JSON.parse(source) as Attributes, scalarLabel));
+    ) {
+      const nextAttrs = JSON.parse(source) as Attributes;
+      setDraft(draftFrom(nextAttrs, scalarLabel));
+      setDimTexts(reshapeShapeOf(nextAttrs).map(String));
+    }
     previousIdentity.current = identity;
     previousScalarLabel.current = scalarLabel;
     published.current = null;
@@ -244,18 +258,110 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
       onChange(result.attrs);
     }
   };
+  const reshapeShape = reshapeShapeOf(attrs);
+  const publishReshapeShape = (next: number[]) => {
+    setDimTexts(next.map(String));
+    change('shape', JSON.stringify(next));
+  };
+  const reshapeDimValues = (texts: string[]): number[] | null => {
+    const built: number[] = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (connectedInputs.includes(`d${i}`)) {
+        built.push(reshapeShape[i] ?? 1);
+        continue;
+      }
+      const parsed = Number(texts[i].trim());
+      if (!Number.isSafeInteger(parsed)) return null;
+      built.push(parsed);
+    }
+    return built;
+  };
   return (
     <section className="section">
       <h3 className="label">{t('ui.properties')}</h3>
       {keys.map((key) => {
-        const wired = connectedInputs.filter((port) =>
-          node.component === 'reshape' && key === 'shape'
-            ? /^d[0-3]$/.test(port)
-            : node.component === 'arange' && key === 'n' && port === 'n',
-        );
         const attribute = componentAttribute(definition, key);
         const error = errors[key];
         const inputId = `${id}-${key}`;
+        if (node.component === 'reshape' && key === 'shape') {
+          const rank = dimTexts.length;
+          const lastWired = connectedInputs.includes(`d${rank - 1}`);
+          return (
+            <div key={key} className="reshape-dims">
+              <div className="label">{t('ui.shape')}</div>
+              {dimTexts.map((text, index) => {
+                const port = `d${index}`;
+                const wired = connectedInputs.includes(port);
+                const dimId = `${inputId}-${index}`;
+                return (
+                  <div key={port} className="reshape-dim-row">
+                    <label htmlFor={dimId}>
+                      {t('ui.shapeDim', { n: index })}
+                      {wired ? ` ← ${translatePort(t, node.component, port)}` : ''}
+                    </label>
+                    <input
+                      id={dimId}
+                      className="field"
+                      type="text"
+                      disabled={wired}
+                      aria-invalid={!!error}
+                      aria-describedby={error ? `${inputId}-error` : undefined}
+                      value={wired ? t('ui.shapeByWire') : text}
+                      onChange={(e) => {
+                        const nextTexts = dimTexts.map((value, i) =>
+                          i === index ? e.target.value : value,
+                        );
+                        setDimTexts(nextTexts);
+                        const built = reshapeDimValues(nextTexts);
+                        change(
+                          'shape',
+                          built
+                            ? JSON.stringify(built)
+                            : `[${nextTexts.map((v) => v.trim()).join(',')}]`,
+                        );
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              <div className="reshape-dim-actions btn-row">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={rank >= RESHAPE_MAX_RANK}
+                  onClick={() => {
+                    if (rank >= RESHAPE_MAX_RANK) return;
+                    const current = reshapeDimValues(dimTexts) ?? reshapeShape.slice(0, rank);
+                    const next = [...current, current.includes(-1) ? 1 : -1];
+                    publishReshapeShape(next);
+                  }}
+                >
+                  {t('ui.shapeAddDim')}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={rank <= 1 || lastWired}
+                  onClick={() => {
+                    if (rank <= 1 || lastWired) return;
+                    const current = reshapeDimValues(dimTexts) ?? reshapeShape.slice(0, rank);
+                    publishReshapeShape(current.slice(0, -1));
+                  }}
+                >
+                  {t('ui.shapeRemoveDim')}
+                </button>
+              </div>
+              {error && (
+                <p id={`${inputId}-error`} className="err">
+                  {t(error)}
+                </p>
+              )}
+            </div>
+          );
+        }
+        const wired = connectedInputs.filter(
+          (port) => node.component === 'arange' && key === 'n' && port === 'n',
+        );
         const accessibility = {
           id: inputId,
           disabled: wired.length > 0,

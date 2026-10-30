@@ -194,6 +194,36 @@ describe('property field validation', () => {
     expect(validateProperties('transpose', { perm: '1,0' }).errors).toEqual({});
     expect(validateProperties('transpose', { perm: '2,0' }).errors.perm).toBe('ui.invalidShape');
   });
+  it('renders reshape shape as one row per dimension', () => {
+    const t = createTranslator('en');
+    const html = renderToStaticMarkup(
+      createElement(Properties, {
+        node: { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
+        connectedInputs: ['d0'],
+        t,
+        onChange: vi.fn(),
+      }),
+    );
+    expect(html).toContain('Dimension 0');
+    expect(html).toContain('Set by wire');
+    expect(html).toContain('Target dimension 0');
+    expect(html).toContain('Dimension 1');
+    expect(html).toContain('value="-1"');
+    expect(html).not.toContain('value="[1,-1]"');
+    expect(html).toContain('Add dimension');
+    expect(html).toContain('Remove last dimension');
+    const zh = renderToStaticMarkup(
+      createElement(Properties, {
+        node: { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
+        connectedInputs: ['d0'],
+        t: createTranslator('zh-CN'),
+        onChange: vi.fn(),
+      }),
+    );
+    expect(zh).toContain('由接线决定');
+    expect(zh).toContain('维度 0');
+    expect(zh).toContain('维度 1');
+  });
   it('validates transpose pairs and preserves legacy permutation edits', () => {
     expect(validateProperties('transpose', { axes: '-2,-1' })).toEqual({
       attrs: { axes: [-2, -1] },

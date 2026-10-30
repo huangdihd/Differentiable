@@ -4059,6 +4059,23 @@ input[type='range'] {
   line-height: 1.4;
 }
 
+.reshape-dims {
+  display: grid;
+  gap: var(--s2);
+}
+.reshape-dim-row {
+  display: grid;
+  gap: 2px;
+}
+.reshape-dim-actions {
+  margin-top: 2px;
+}
+.field:disabled {
+  opacity: 0.7;
+  color: var(--muted);
+  cursor: default;
+}
+
 /* A level-fixed loss: shown with a lock in place of the delete button. */
 .node-lock {
   display: inline-flex;
