@@ -109,6 +109,8 @@ export interface TrainLevel extends LevelMetadata {
   generates?: boolean;
   /** Sequence regression: plot the model over a sweep of windows and offer a "try it" input. */
   sequenceProbe?: 'forecast' | 'delay';
+  /** The readout may see `input` only through the last step of a `recurrent` component. */
+  finalStateOnly?: { input: string; recurrent: string };
   seed: number;
   steps: number;
   optimizer: OptimizerOptions;

@@ -444,6 +444,7 @@ export const temporalRnnDelayLevel = withPar<TrainLevel>(
     dataset: delayedCopyBatch,
     evaluationDataset: delayedCopyBatch,
     sequenceProbe: 'delay',
+    finalStateOnly: { input: 'x', recurrent: 'rnn_window' },
   },
   [...preceding, ...temporalForwardLevels],
 );

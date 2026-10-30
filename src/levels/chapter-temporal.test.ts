@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { compileGraph, type Attributes, type GraphJSON, type ShapePorts } from '../engine/graph';
+import { trainDependencyError } from '../engine/train-dependency';
 import { evaluateLevel, graphMetrics, type CircuitLevel } from '../engine/levels';
 import { Random } from '../engine/random';
 import { tensor } from '../engine/tensor';
@@ -295,4 +296,56 @@ it('time-rnn-window reference is six Slices, six RNN cells (first h empty) and o
   expect(graph.nodes.filter((n) => !['input', 'output'].includes(n.component))).toHaveLength(13);
   expect(graph.edges.some((e) => e.to.node === 'step_0_hidden' && e.to.port === 'h')).toBe(false);
   expect(['const', 'mul', 'sum', 'unsqueeze', 'add'].map(count)).toEqual([0, 0, 0, 0, 0]);
+});
+
+/** The exploit players found: slice the FIRST hidden state (still holding ★), undo tanh, Linear. */
+function firstStepExploit(): GraphJSON {
+  const graph = structuredClone(temporalRnnDelayLevel.referenceGraph!);
+  graph.nodes.find((n) => n.id === 'final_state')!.attrs!.index = 0;
+  const add = (
+    id: string,
+    component: string,
+    inputs: Record<string, string>,
+    attrs?: Attributes,
+  ) => {
+    graph.nodes.push({ id, component, ...(attrs ? { attrs } : {}) });
+    for (const [port, from] of Object.entries(inputs))
+      graph.edges.push({ from: { node: from, port: 'out' }, to: { node: id, port } });
+  };
+  add('one', 'const', {}, { value: 1 });
+  add('minus_one', 'const', {}, { value: -1 });
+  add('half', 'const', {}, { value: 0.5 });
+  add('neg_h', 'mul', { a: 'final_state', b: 'minus_one' });
+  add('one_plus', 'add', { a: 'one', b: 'final_state' });
+  add('one_minus', 'add', { a: 'one', b: 'neg_h' });
+  add('ratio', 'mul', { a: 'one_plus', b: 'inv' });
+  add('inv', 'recip', { x: 'one_minus' });
+  add('log_ratio', 'log', { x: 'ratio' });
+  add('arctanh', 'mul', { a: 'log_ratio', b: 'half' });
+  const readout = graph.edges.find((e) => e.to.node === 'prediction_column')!;
+  readout.from = { node: 'arctanh', port: 'out' };
+  return graph;
+}
+
+it('5-4 rejects reading the first hidden state (slice step 0 → arctanh → Linear)', async () => {
+  const result = await evaluateLevel(playable(temporalRnnDelayLevel), firstStepExploit(), {
+    registry,
+  });
+  expect(result.passed).toBe(false);
+  expect(result.errorKey).toBe('levels.train_final_state_only');
+});
+
+it('5-4 rejects a readout that reads x directly, but accepts the final-state reference', () => {
+  const graph = structuredClone(temporalRnnDelayLevel.referenceGraph!);
+  graph.edges.find((e) => e.to.node === 'prediction_column')!.from = { node: 'x', port: 'out' };
+  graph.nodes.find((n) => n.id === 'prediction_column')!.attrs!.in_features = 6;
+  expect(trainDependencyError(temporalRnnDelayLevel, graph, registry)).toBe(
+    'levels.train_final_state_only',
+  );
+  expect(
+    trainDependencyError(temporalRnnDelayLevel, temporalRnnDelayLevel.referenceGraph!, registry),
+  ).toBeNull();
+  const lastByIndex = structuredClone(temporalRnnDelayLevel.referenceGraph!);
+  lastByIndex.nodes.find((n) => n.id === 'final_state')!.attrs!.index = 5;
+  expect(trainDependencyError(temporalRnnDelayLevel, lastByIndex, registry)).toBeNull();
 });

@@ -1065,7 +1065,7 @@
   "levels.time-rnn-window.hint1": "Taking character k: use Slice with axis 1, start index k, length 1 and Keep dimensions on, which gives [B,1]. Six characters means six Slices (start index 0 to 5). Feed each one into an RNN cell, wiring the same wx, wh and b into every step (in this level the RNN cell starts with automatic parameters off, so it has those ports).",
   "levels.time-rnn-window.hint2": "Chain the six cells: leave the first cell's h unconnected and it starts from an all-zero state [B,8]; every later cell takes the previous cell's output as h. Finally Stack (Inputs 6, axis 1) the six states in order into a…f to get [B,6,8].",
   "levels.time-rnn-delay.title": "Train memory over a short delay",
-  "levels.time-rnn-delay.description": "Train an RNN to remember the first number of a 6-number sequence; the other 5 numbers are small noise.\nWhy: this checks that the hidden state really carries early information all the way to the end — which is what let the RNN read the whole sentence.\nBuild: feed x into RNN window, take the last step's state with Slice (axis 1, start index -1), apply a Linear 8→1, flatten to [32], and wire it into the locked Mean squared error's p (t and loss are already connected).\nThen train: 300 steps; you pass when the loss is below 0.015.",
+  "levels.time-rnn-delay.description": "Train an RNN to remember the first number of a 6-number sequence; the other 5 numbers are small noise.\nWhy: this checks that the hidden state really carries early information all the way to the end — which is what let the RNN read the whole sentence.\nBuild: feed x into RNN window, take the last step's state with Slice (axis 1, start index -1), apply a Linear 8→1, flatten to [32], and wire it into the locked Mean squared error's p (t and loss are already connected).\nRule: the readout may only see the final step's state. No reading x directly and no slicing earlier steps — that would skip the memory test.\nThen train: 300 steps; you pass when the loss is below 0.015.",
   "levels.time-rnn-delay.hint1": "Set RNN window to 1 input feature and hidden width 8. It outputs [32,6,8]; use Slice with axis 1, start index -1, length 1 and keep dims off to get the last step, [32,8].",
   "levels.time-rnn-delay.hint2": "Feed [32,8] into a Linear 8→1 to get [32,1], flatten it to [32] with Reshape, then wire it into the locked Mean squared error's p.",
   "components.rnn_window": "RNN window",
@@ -1170,5 +1170,6 @@
   "ui.try.outOfRange": "Some values are outside the training range (about −1 to 1); the model is probably unreliable there.",
   "ui.try.state.initial": "(Not trained yet: initial random parameters.)",
   "ui.try.state.current": "(Training: current parameters.)",
-  "ui.try.state.trained": "(Parameters from your latest training.)"
+  "ui.try.state.trained": "(Parameters from your latest training.)",
+  "levels.train_final_state_only": "This level may only read the RNN's final state: x may only feed RNN window's x, and RNN window's output may only go into a Slice of the last step (axis 1, start index -1, length 1). Reading x directly or slicing an earlier step skips the point: carrying the first number all the way to the end."
 }

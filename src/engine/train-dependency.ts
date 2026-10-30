@@ -3,6 +3,8 @@ import type { TrainLevel } from './levels';
 
 /** Error key raised when a training graph's prediction ignores the data or has nothing to learn. */
 export const TRAIN_DEPENDENCY_ERROR = 'levels.train_no_dependency';
+/** Error key raised when a memory level's readout looks at the sequence other than via the final state. */
+export const FINAL_STATE_ERROR = 'levels.train_final_state_only';
 
 function componentTrains(
   registry: ComponentRegistry,
@@ -72,7 +74,41 @@ export function trainDependencyError(
     if (componentTrains(registry, node.component, node.attrs)) trainable = true;
     for (const edge of graph.edges) if (edge.to.node === id) pending.push(edge.from.node);
   }
+  if (level.finalStateOnly && finalStateLeak(level, graph, seen)) return FINAL_STATE_ERROR;
   // Target-free objectives (no data inputs at all) only need something to train.
   const hasData = Object.keys(level.interface.inputs).some((name) => name !== target);
   return (data || !hasData) && trainable ? null : TRAIN_DEPENDENCY_ERROR;
+}
+
+/**
+ * Memory levels: within the prediction's dependency cone, the sequence input may only enter an
+ * RNN window's x port, and an RNN window's history may only leave through a slice of its last
+ * step. Otherwise the readout could skip the recurrence, e.g. slice step 0 and decode it.
+ */
+function finalStateLeak(level: TrainLevel, graph: GraphJSON, cone: ReadonlySet<string>): boolean {
+  const { input, recurrent } = level.finalStateOnly!;
+  const length = level.interface.inputs[input]?.[1];
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  for (const edge of graph.edges) {
+    if (!cone.has(edge.to.node)) continue;
+    const from = byId.get(edge.from.node),
+      to = byId.get(edge.to.node);
+    if (!from || !to) continue;
+    if (from.component === 'input' && from.attrs?.name === input) {
+      if (to.component !== recurrent || edge.to.port !== 'x') return true;
+    } else if (from.component === recurrent) {
+      const a = to.attrs ?? {};
+      const index = Number(a.index ?? 0);
+      const last = index === -1 || (length !== undefined && index === length - 1);
+      const axis = Number(a.axis ?? 1);
+      if (
+        to.component !== 'slice' ||
+        (axis !== 1 && axis !== -2) ||
+        !last ||
+        Number(a.length ?? 1) !== 1
+      )
+        return true;
+    }
+  }
+  return false;
 }
