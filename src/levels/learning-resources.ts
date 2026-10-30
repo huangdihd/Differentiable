@@ -103,6 +103,16 @@ export const levelLearningResources: Readonly<Record<string, readonly LearningRe
       ),
     },
   ],
+  'time-attention': [
+    {
+      titleKey: 'learning.scaledDotProduct.title',
+      descriptionKey: 'learning.scaledDotProduct.description',
+      url: d2l(
+        'https://zh.d2l.ai/chapter_attention-mechanisms/attention-scoring-functions.html',
+        'https://en.d2l.ai/chapter_attention-mechanisms-and-transformers/attention-scoring-functions.html',
+      ),
+    },
+  ],
   '5-1': [
     {
       titleKey: 'learning.attention.title',

@@ -723,7 +723,7 @@
   "levels.time-rnn.hint1": "用 wx 投影 x，用 wh 投影 h；两个结果都是 [B,H]，可与 b 相加。",
   "levels.time-rnn.hint2": "计算 $tanh(x·wx+h·wh+b)$。它的输出会成为下一时刻的上一状态。",
   "levels.time-attention.title": "让 RNN 回头看",
-  "levels.time-attention.description": "只读最后一个隐藏状态，等于把整段历史挤进一个固定长度的向量：两段不同的历史，只要最后的状态一样，模型给出的答案就一样，它分不出来。注意力换个做法：每一步的状态都留着，需要时挨个看一遍，再决定看重哪几步。\n具体做法：拿查询 query 和每一步的状态比一比（缩放点积），点积分数还要除以 √H（H 是隐藏维，也就是 history 的最后一维）：维数越大，点积越容易爆，Softmax 会变得特别尖，除以 √H 是为了把量级压回去。再经 Softmax 变成权重，把各步状态按权重加起来，得到上下文 context。query 可以来自 RNN 的最终状态。\n输入 history [B,T,H] 与 query [B,H]，输出 context [B,H]。这些都是已经看过的历史，不需要因果遮罩。默认 B/T/H 为 3/5/4，测试会改变尺寸。",
+  "levels.time-attention.description": "只读最后一个隐藏状态，等于把整段历史挤进一个固定长度的向量：两段不同的历史，只要最后的状态一样，模型给出的答案就一样，它分不出来。注意力换个做法：每一步的状态都留着，需要时挨个看一遍，再决定看重哪几步。\n具体做法：拿查询 query 和每一步的状态比一比（缩放点积），点积分数还要除以 √H（H 是隐藏维，也就是 history 的最后一维），让分数的量级不随 H 变大；为什么恰好是 √H，见下方学习资料。再经 Softmax 变成权重，把各步状态按权重加起来，得到上下文 context。query 可以来自 RNN 的最终状态。\n输入 history [B,T,H] 与 query [B,H]，输出 context [B,H]。这些都是已经看过的历史，不需要因果遮罩。默认 B/T/H 为 3/5/4，测试会改变尺寸。",
   "levels.time-attention.hint1": "给 query 插入长度为 1 的时间轴，与转置为 [B,H,T] 的 history 相乘，再把分数除以 √H。",
   "levels.time-attention.hint2": "对 T 个分数做 Softmax，用 [B,1,T] 乘 history [B,T,H]，再把 [B,1,H] 重塑为 [B,H]。",
   "levels.time-forecast.title": "预测下一个数值",
@@ -1168,5 +1168,7 @@
   "ui.try.state.initial": "（还没训练，用的是初始随机参数。）",
   "ui.try.state.current": "（训练中，用的是当前参数。）",
   "ui.try.state.trained": "（用的是最近一次训练后的参数。）",
-  "levels.train_final_state_only": "这一关只能读 RNN 最后一步的状态：x 只能接「RNN 窗口」的 x，「RNN 窗口」的输出只能接「切片」取最后一步（维度 1，起始位置 -1，长度 1）。直接读 x 或切出更早的步骤，就绕过了“把开头的数一路记到最后”这件事。"
+  "levels.train_final_state_only": "这一关只能读 RNN 最后一步的状态：x 只能接「RNN 窗口」的 x，「RNN 窗口」的输出只能接「切片」取最后一步（维度 1，起始位置 -1，长度 1）。直接读 x 或切出更早的步骤，就绕过了“把开头的数一路记到最后”这件事。",
+  "learning.scaledDotProduct.title": "缩放点积注意力：为什么除以 √d",
+  "learning.scaledDotProduct.description": "资料里的 d 就是这一关的 H。如果 query 和 key 的每一维都是均值 0、方差 1 的随机数，它们的点积是 d 项相加，方差约为 d，标准差约为 √d。除以 √d 把分数的波动拉回 1 左右，Softmax 不会因为 d 变大就变得极尖、梯度几乎为 0。"
 }
