@@ -11,6 +11,7 @@ import {
   type ShapePorts,
 } from './graph';
 import type { DatasetUse } from '../datasets';
+import { trainDependencyError } from './train-dependency';
 import { Random } from './random';
 import * as T from './tensor';
 import {
@@ -95,6 +96,13 @@ export interface ForwardLevel extends LevelMetadata, LevelCases {
   atol?: number;
   rtol?: number;
 }
+export interface LockedLoss {
+  component: string;
+  attrs?: Attributes;
+  predictionPort: string;
+  target: string;
+  targetPort: string;
+}
 export interface TrainLevel extends LevelMetadata {
   kind: 'train';
   /** Allows seeded autoregressive text generation from the trained graph. */
@@ -115,6 +123,11 @@ export interface TrainLevel extends LevelMetadata {
   data?: DatasetUse;
   evaluationDataset?: (random: Random) => TrainingBatch;
   lossOutput?: string;
+  /**
+   * The loss is pre-placed and locked: the player only wires the prediction into it. The loss
+   * node feeds the loss output and reads `target` on `targetPort`.
+   */
+  lockedLoss?: LockedLoss;
   threshold: { loss: number; accuracy?: number };
 }
 export interface ObservationLevel extends Pick<
@@ -297,6 +310,8 @@ export async function evaluateLevel(
     optimizer?: OptimizerOptions['kind'];
     onReport?: (report: TrainingReport) => void;
     signal?: AbortSignal;
+    /** Tests of the held-out-data defence turn off the structural anti-cheat check. */
+    checkDependency?: boolean;
   } = {},
 ): Promise<LevelResult> {
   const result: LevelResult = {
@@ -325,6 +340,10 @@ export async function evaluateLevel(
     )
       throw new Error('levels.output_shape');
     if (level.kind === 'train') {
+      const dependency =
+        options.checkDependency !== false &&
+        trainDependencyError(level, graph, options.registry ?? createDefaultRegistry());
+      if (dependency) throw new Error(dependency);
       const batch = trainingBatchSource(level);
       let evaluationBatch: TrainingBatch | undefined;
       let session: TrainingSession | undefined;

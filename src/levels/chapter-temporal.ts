@@ -1,3 +1,4 @@
+import { mseLock } from './level-helpers';
 import type { Attributes, GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { ForwardLevel, ObservationLevel, TrainLevel } from '../engine/levels';
 import { Random } from '../engine/random';
@@ -470,6 +471,7 @@ export const temporalRnnDelayLevel = withPar<TrainLevel>(
     optimizer: { kind: 'adam', learningRate: 0.02 },
     tunable: { learningRate: { min: 0.001, max: 0.1, default: 0.02 }, optimizer: ['adam'] },
     lossOutput: 'loss',
+    lockedLoss: mseLock,
     threshold: { loss: 0.015 },
     dataset: delayedCopyBatch,
     evaluationDataset: delayedCopyBatch,
@@ -578,6 +580,7 @@ export const temporalTrainLevel = withPar<TrainLevel>(
     optimizer: { kind: 'adam', learningRate: 0.02 },
     tunable: { learningRate: { min: 0.001, max: 0.1, default: 0.02 }, optimizer: ['adam'] },
     lossOutput: 'loss',
+    lockedLoss: mseLock,
     threshold: { loss: 0.02 },
     dataset: waveBatch,
     evaluationDataset: waveBatch,

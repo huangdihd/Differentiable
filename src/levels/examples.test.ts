@@ -55,9 +55,10 @@ it('incorrect XOR constant classifier cannot pass', async () => {
     edges: [{ from: { node: 'p', port: 'out' }, to: { node: 'y', port: 'x' } }],
   };
   const result = await evaluateLevel({ ...xorLevel, steps: 2 }, graph);
-  expect(result.errorKey).toBeUndefined();
+  // A constant classifier is caught before training: it never reads x.
+  expect(result.errorKey ?? result.error?.key).toBe('levels.train_no_dependency');
   expect(result.passed).toBe(false);
-  expect(result.training?.accuracy).toBe(0.5);
+  expect(result.training).toBeUndefined();
 });
 
 it('correct sigmoid forward solution passes fixed and seeded cases', async () => {

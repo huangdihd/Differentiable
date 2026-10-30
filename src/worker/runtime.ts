@@ -2,6 +2,7 @@ import { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { Backend } from '../engine/backend';
 import { trainingBackward } from '../engine/training-backward';
 import { createBackend } from '../engine/backend-selection';
+import { trainDependencyError } from '../engine/train-dependency';
 import {
   compileGraph,
   computationGraph,
@@ -542,6 +543,8 @@ export class WorkerRuntime {
               JSON.stringify(level.interface.outputShape)
             )
               throw new Error('levels.output_shape');
+            const dependency = trainDependencyError(level, request.graph, this.registry);
+            if (dependency) throw new Error(dependency);
             batch = trainingBatchSource(level);
             const session = new TrainingSession(
               plan,
@@ -623,6 +626,14 @@ export class WorkerRuntime {
         ) {
           plan.dispose();
           throw new Error('levels.output_shape');
+        }
+        const dependency =
+          level.kind === 'train' && request.type !== 'probe' && request.type !== 'compile'
+            ? trainDependencyError(level, graph, this.registry)
+            : null;
+        if (dependency) {
+          plan.dispose();
+          throw new Error(dependency);
         }
       } catch (error) {
         if (request.type !== 'compile') throw error;

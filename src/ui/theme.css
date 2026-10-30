@@ -4052,3 +4052,13 @@ input[type='range'] {
   font-size: 0.85em;
   line-height: 1.4;
 }
+
+/* A level-fixed loss: shown with a lock in place of the delete button. */
+.node-lock {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--accent, #f2c94c);
+  opacity: 0.9;
+  cursor: help;
+}

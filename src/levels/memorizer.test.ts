@@ -1,3 +1,4 @@
+import { TRAIN_DEPENDENCY_ERROR } from '../engine/train-dependency';
 import { expect, it } from 'vitest';
 import type { GraphJSON } from '../engine/graph';
 import { evaluateLevel, type ForwardLevel, type TrainLevel } from '../engine/levels';
@@ -104,10 +105,16 @@ it.each(guarded)(
   async (id) => {
     const level = trainLevels.find((l) => l.id === id)!;
     const graph = memorizer(level);
+    // The structural anti-cheat already rejects it: the prediction never reads x.
+    const flagged = await evaluateLevel(playable(level), graph, { registry });
+    expect(flagged.passed).toBe(false);
+    expect(flagged.errorKey ?? flagged.error?.key).toBe(TRAIN_DEPENDENCY_ERROR);
+    // Without that check, the held-out evaluation batch must still catch it.
     const options = {
       registry,
       learningRate: level.lossOutput ? 0.5 : 0.1,
       optimizer: 'adam' as const,
+      checkDependency: false,
     };
     // Control: on the old same-batch grading the memorizer passes, so the test bites.
     const ungraded = await evaluateLevel(

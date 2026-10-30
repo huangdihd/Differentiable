@@ -1,3 +1,4 @@
+import { isLockedNode } from '../editor/locked-loss';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { ComponentRegistry, GraphJSON, GraphEndpoint, GraphNode } from '../engine/graph';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
@@ -637,7 +638,25 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                     <span className="node-shape"> · {shapeText(p.ioShapes[n.id], p.t)}</span>
                   )}
                 </span>
-                {!io && !p.readonly && (
+                {isLockedNode(n) && (
+                  <span
+                    className="node-lock"
+                    role="img"
+                    aria-label={p.t('ui.lockedLoss')}
+                    title={p.t('ui.lockedLoss')}
+                  >
+                    <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+                      <rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor" />
+                      <path
+                        d="M3.8 5.5V4a2.2 2.2 0 0 1 4.4 0v1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.3"
+                      />
+                    </svg>
+                  </span>
+                )}
+                {!io && !p.readonly && !isLockedNode(n) && (
                   <button
                     className="icon-btn node-delete"
                     aria-label={p.t('ui.delete')}

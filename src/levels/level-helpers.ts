@@ -1,3 +1,4 @@
+import type { LockedLoss } from '../engine/levels';
 import { parseExpression } from '../engine/expression';
 import {
   ComponentRegistry,
@@ -271,3 +272,11 @@ export function tensorCases(index: number, inputs: ShapePorts) {
     },
   };
 }
+
+/** Training levels whose lesson is not the loss get a pre-placed, locked MSE(p, t). */
+export const mseLock: LockedLoss = {
+  component: 'mse',
+  predictionPort: 'p',
+  target: 't',
+  targetPort: 't',
+};

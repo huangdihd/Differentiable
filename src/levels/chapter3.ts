@@ -1,3 +1,4 @@
+import { mseLock } from './level-helpers';
 import { noisyLine, noisyLineBatch, rings, smallAndLarge, trainOn, twoBlobs } from '../datasets';
 import { Random } from '../engine/random';
 import { axisLabels, matrixAxes } from './output-axes';
@@ -232,6 +233,7 @@ export const chapter3TrainLevel = withPar<TrainLevel>(
     optimizer: { kind: 'sgd', learningRate: 0.01 },
     tunable: { learningRate: { min: 0.001, max: 2, default: 0.01 } },
     lossOutput: 'loss',
+    lockedLoss: mseLock,
     threshold: { loss: 0.05 },
     ...trainOn(noisyLine),
     // Same 16 noisy points, shuffled for grading: a [16] Parameter fitted row by row fails.

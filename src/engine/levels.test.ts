@@ -112,6 +112,8 @@ describe('loss-only evaluation and component progression', () => {
     edges: [{ from: { node: 'x', port: 'out' }, to: { node: 'out', port: 'x' } }],
   };
   it('uses seeded held-out data and scalar graph loss without accuracy', async () => {
+    // Evaluation plumbing only: the graph is the bare input, so skip the anti-cheat check.
+    const plumbing = { checkDependency: false };
     const seeds: number[] = [];
     const level = {
       ...xorLevel,
@@ -126,8 +128,8 @@ describe('loss-only evaluation and component progression', () => {
         return { inputs: { x: T.tensor([3], []) }, targets: T.tensor([0], []) };
       },
     };
-    const a = await evaluateLevel(level, graph),
-      b = await evaluateLevel(level, graph);
+    const a = await evaluateLevel(level, graph, plumbing),
+      b = await evaluateLevel(level, graph, plumbing);
     // Legacy, non-tunable levels report unmet thresholds without a training error.
     expect(a.errorKey).toBeUndefined();
     expect(a.error).toBeUndefined();
@@ -137,7 +139,7 @@ describe('loss-only evaluation and component progression', () => {
     expect(a.training?.accuracy).toBeUndefined();
     expect(a).toEqual(b);
     expect(seeds[0]).toBe(seeds[1]);
-    expect((await evaluateLevel({ ...level, threshold: { loss: 4 } }, graph)).passed).toBe(true);
+    expect((await evaluateLevel({ ...level, threshold: { loss: 4 } }, graph, plumbing)).passed).toBe(true);
   });
   it('rejects nonfinite evaluation and releases execution on training exceptions', async () => {
     const input = T.tensor([1], []),

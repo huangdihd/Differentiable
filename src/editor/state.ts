@@ -10,6 +10,7 @@ import {
 } from '../engine/graph';
 import type { CircuitLevel } from '../engine/levels';
 import type { ExpressionGraph } from '../engine/expression';
+import { ensureLockedLoss, isLockedEdge, isLockedNode } from './locked-loss';
 
 export interface Point {
   x: number;
@@ -58,6 +59,11 @@ export type EditorCommand =
   | { type: 'setViewport'; viewport: Viewport };
 
 const clone = <T>(value: T): T => structuredClone(value);
+/** Copies of a locked loss are ordinary, editable nodes. */
+const withoutLock = (ui: GraphNode['ui']) => {
+  const { locked: _locked, ...rest } = ui ?? {};
+  return rest;
+};
 const protectedNode = (node: GraphNode) =>
   node.component === 'input' || node.component === 'output';
 const snapshot = (state: EditorState): EditorSnapshot => ({
@@ -125,7 +131,7 @@ export function createEditorState(
   available: readonly string[] = level.available,
 ): EditorState {
   return {
-    graph: clone(graph),
+    graph: ensureLockedLoss(level, clone(graph)),
     available: [...available],
     selection: [],
     nextId: 1,
@@ -168,6 +174,14 @@ function connect(
   edge: GraphEdge,
   registry: ComponentRegistry,
 ): GraphJSON | string {
+  if (graph.edges.some((e) => endpointEqual(e.to, edge.to) && isLockedEdge(graph, e)))
+    return 'locked_node';
+  const target = graph.nodes.find((n) => n.id === edge.to.node);
+  if (
+    target?.component === 'output' &&
+    graph.edges.some((e) => e.to.node === target.id && isLockedEdge(graph, e))
+  )
+    return 'locked_node';
   const base = { ...graph, edges: graph.edges.filter((e) => !endpointEqual(e.to, edge.to)) };
   const error = connectionError(base, edge, registry);
   return error ?? { ...base, edges: [...base.edges, clone(edge)] };
@@ -290,7 +304,9 @@ export function editorReducer(
     case 'removeNodes': {
       const ids = new Set(command.ids ?? state.selection);
       const removed = new Set(
-        state.graph.nodes.filter((n) => ids.has(n.id) && !protectedNode(n)).map((n) => n.id),
+        state.graph.nodes
+          .filter((n) => ids.has(n.id) && !protectedNode(n) && !isLockedNode(n))
+          .map((n) => n.id),
       );
       return commit(
         state,
@@ -308,6 +324,8 @@ export function editorReducer(
     case 'rewire': {
       if (command.type === 'rewire' && !state.graph.edges.some((e) => edgeEqual(e, command.edge)))
         return reject('missing_edge');
+      if (command.type === 'rewire' && isLockedEdge(state.graph, command.edge))
+        return reject('locked_node');
       const base =
         command.type === 'rewire'
           ? { ...state.graph, edges: state.graph.edges.filter((e) => !edgeEqual(e, command.edge)) }
@@ -316,6 +334,7 @@ export function editorReducer(
       return typeof graph === 'string' ? reject(graph) : commit(state, graph);
     }
     case 'disconnect':
+      if (isLockedEdge(state.graph, command.edge)) return reject('locked_node');
       return commit(state, {
         ...state.graph,
         edges: state.graph.edges.filter((e) => !edgeEqual(e, command.edge)),
@@ -372,6 +391,7 @@ export function editorReducer(
       const node = state.graph.nodes.find((n) => n.id === command.id);
       if (!node) return reject('missing_node');
       if (protectedNode(node)) return reject('protected_node');
+      if (isLockedNode(node)) return reject('locked_node');
       const attrs = command.replace
         ? clone(command.attrs)
         : { ...node.attrs, ...clone(command.attrs) };
@@ -428,7 +448,11 @@ export function editorReducer(
         id: remap.get(n.id)!,
         ui:
           command.type === 'paste'
-            ? { ...n.ui, x: nodePosition(n).x + offset.x, y: nodePosition(n).y + offset.y }
+            ? {
+                ...withoutLock(n.ui),
+                x: nodePosition(n).x + offset.x,
+                y: nodePosition(n).y + offset.y,
+              }
             : { x: offset.x + i * 220, y: offset.y },
       }));
       let graph: GraphJSON = { ...state.graph, nodes: [...state.graph.nodes, ...nodes] };
