@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { useState } from 'react';
 import type { Progress } from '../engine/levels';
 import { saveFixedWindowResult } from './fixed-window-cache';

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { GraphJSON, GraphPlan } from '../engine/graph';
 import type { TrainingBatchSource } from '../engine/training';
 import { tensor, type Tensor } from '../engine/tensor';

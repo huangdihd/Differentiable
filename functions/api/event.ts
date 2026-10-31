@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 // Cloudflare Pages Function: POST /api/event stores one anonymous analytics event in D1.
 // Requires a D1 binding named DB (see analytics/README.md). Without it, events are dropped.
 

@@ -1,3 +1,7 @@
+/* Copyright (C) 2026 huangdihd
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Part of Differentiable. Full terms in LICENSE at the repository root.
+ */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=IBM+Plex+Mono:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Noto+Sans+SC:wght@400;600&family=Noto+Serif+SC:wght@400;600&display=swap');
 
 /* ---------- 三套主题 ---------- */
@@ -189,3 +193,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 }
 :root[data-theme="paper"] .modal { box-shadow: 5px 5px 0 var(--node-border); border-color: var(--node-border); }
 .modal h2 { font-family: var(--font-title); margin: 4px 0 6px; font-size: 22px; }
+
+/* GPLv3 署名：每个页面都要能看见版权、许可和源码地址 */
+.demo-license {
+  margin: 18px 0 0; padding-top: 12px; border-top: 1px dashed var(--line);
+  font-size: 11px; line-height: 1.7; color: var(--muted);
+}
+.demo-license a { color: var(--muted); text-underline-offset: 2px; }
+.demo-license a:hover { color: var(--accent); }

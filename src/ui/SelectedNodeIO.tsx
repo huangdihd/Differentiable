@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { ComponentRegistry, GraphEndpoint, GraphJSON, GraphNode } from '../engine/graph';
 import { translatePort } from '../i18n';
 import { broadcastDisplayShapes, shapeText, type NodeValue } from './Canvas';

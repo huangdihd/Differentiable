@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { PlotData } from '../ui/DataPlot';
 import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph';
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';

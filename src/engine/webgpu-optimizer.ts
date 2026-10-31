@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { type Command, size } from './backend';
 
 export function optimizerKernel(c: Command): { code: string; workgroups: [number] } | undefined {

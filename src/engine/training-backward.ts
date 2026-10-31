@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { buildBackwardGraph, traceBackward } from './backward-graph';
 import { CpuBackend } from './cpu';
 import { compileGraph, type ComponentRegistry, type GraphJSON, type Attributes } from './graph';

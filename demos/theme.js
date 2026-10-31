@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 // 主题切换：电路板 / 论文 / 蓝图。页面里放一个 #theme-switch 即可。
 (function () {
   const THEMES = [['circuit', '电路板'], ['paper', '论文'], ['blueprint', '蓝图']];

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { useEffect, useState, type CSSProperties } from 'react';
 
 export type TensorTransformKind = 'softmax' | 'layernorm' | 'mse' | 'cross_entropy';

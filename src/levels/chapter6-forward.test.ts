@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { expect, it } from 'vitest';
 import { evaluateLevel, graphMetrics } from '../engine/levels';
 import { chapter6ForwardLevels, chapter6Preceding } from './chapter6-forward';

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { shuffledOrder } from '../datasets';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';

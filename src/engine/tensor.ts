@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { type Backend, type Value, type Shape, type Attributes, infer, size } from './backend';
 import { CpuBackend } from './cpu';
 /** Set once before constructing a game; existing tensors keep their backend. */

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { evaluateLevel, type CircuitLevel, type LevelResult, type GraphMetrics } from './levels';
 import type { GraphJSON, ComponentRegistry } from './graph';
 

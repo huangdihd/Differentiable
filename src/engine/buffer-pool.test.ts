@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { expect, it, vi } from 'vitest';
 import { BufferPool, FREE_BUFFER_BUDGET } from './buffer-pool';
 const buffer = (size: number) => ({ size, destroy: vi.fn() });

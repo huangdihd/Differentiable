@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /** The original papers behind a level's idea, shown as further reading. Only levels whose
  * concept has a clear primary source are listed; titles stay in their original language. */
 export interface Paper {

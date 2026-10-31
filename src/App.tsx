@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   computationIdentity,
@@ -538,6 +541,19 @@ function Home({
             <span>{t('home.qqGroup', { number: '1130870192' })}</span>
           </p>
           <p>{t('home.credit')}</p>
+          <p className="home-license">
+            <span>{t('home.licenseNotice')}</span>
+            <a href="https://github.com/huangdihd/differentiable" target="_blank" rel="noreferrer">
+              {t('home.licenseSource')}
+            </a>
+            <a
+              href="https://github.com/huangdihd/differentiable/blob/main/LICENSE"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('home.licenseText')}
+            </a>
+          </p>
         </footer>
       </div>
     </main>

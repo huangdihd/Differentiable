@@ -2,6 +2,29 @@
 
 A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–7, including the XOR challenge, time-series forecasting and character language models. `demos/` is untouched reference material, not application source.
 
+- Repository: <https://github.com/huangdihd/differentiable>
+- License: GNU GPLv3 or later — see [`LICENSE`](LICENSE)
+- Third-party notices: [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+
+## License
+
+Differentiable is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+It is distributed in the hope that it will be useful, but **without any warranty**; without even
+the implied warranty of merchantability or fitness for a particular purpose. See [`LICENSE`](LICENSE)
+for the full terms.
+
+Every source file carries `SPDX-License-Identifier: GPL-3.0-or-later`. Third-party packages and
+fonts, all under licenses compatible with the GPLv3, are listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
+The public demo bundle is obfuscated by `npm run build:demo`. Obfuscation does not make it less
+free: GPLv3 section 6 requires that anyone who receives that bundle can obtain its corresponding
+source, and this repository is exactly that. Keep the repository publicly readable for as long as
+the demo build is publicly served.
+
 ## Development
 
 Use a current Node release supported by Vitest 5 (Node 22.12+, 24+, or 26+) and npm.
@@ -21,7 +44,8 @@ Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT
 
 ## Demo deployment
 
-The GitHub repository is private. `main` holds development history; the `demo` branch is the only
+The repository is public, so the `LICENSE` file and this source tree are the corresponding source
+for every published demo build. `main` holds development history; the `demo` branch is the only
 source branch that triggers `.github/workflows/deploy-demo.yml`. Each push to `demo` installs the
 locked dependencies, runs `npm run build:demo` to build and obfuscate `dist/`, then uploads that
 untracked output to the existing `differentiable` Cloudflare Pages production project. The workflow

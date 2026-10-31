@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /**
  * Short synthesized interface sounds: no assets, same soft sine/triangle palette and A minor
  * pentatonic as the chapter-0 music, so effects sit inside the score instead of on top of it.

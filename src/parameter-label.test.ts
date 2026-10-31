@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { describe, expect, it } from 'vitest';
 import { createEditorState, editorReducer } from './editor/state';
 import {

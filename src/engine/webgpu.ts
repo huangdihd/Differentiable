@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { type Backend, type Command, type Handle, type Shape, size } from './backend';
 import type { Gpu, GpuBuffer, GpuDevice, GpuEncoder, GpuPipeline } from './gpu-api';
 import { kernel } from './webgpu-kernels';

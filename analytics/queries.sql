@@ -1,3 +1,6 @@
+-- Copyright (C) 2026 huangdihd
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Part of Differentiable. Full terms in LICENSE at the repository root.
 -- 用法：npx wrangler d1 execute differentiable-analytics --remote --file analytics/queries.sql
 -- 或者把单条查询用 --command "..." 执行。
 

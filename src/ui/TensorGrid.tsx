@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { tensorBlocks } from './tensor-values';
 
 /** Read-only tensor view: rows follow the last axis, higher axes stack as separate blocks. */

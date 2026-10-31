@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 export type Shape = readonly number[];
 export type Attributes = Record<string, unknown>;
 /** Opaque backend-owned storage identity, never a host array. */

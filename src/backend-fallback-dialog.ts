@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /** Preference key for the WebGPU→CPU fallback dialog. Kept outside Progress. */
 export const BACKEND_FALLBACK_DIALOG_KEY = 'differentiable.backendFallbackDialogDismissed';
 

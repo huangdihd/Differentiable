@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { BAR_SECONDS, clampChapter, generateBar, type Note } from './sequence';
 
 export interface Music {

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { createServer } from 'vite';
 
 const [model, delayText, seedText = '811'] = process.argv.slice(2);

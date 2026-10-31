@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { ForwardLevel } from '../engine/levels';
 import * as T from '../engine/tensor';
 import { cases, formulaGraph, scalarPrimitives, withPar } from './level-helpers';

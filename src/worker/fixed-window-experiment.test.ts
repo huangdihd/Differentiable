@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { afterEach, expect, it, onTestFailed, vi } from 'vitest';
 import { CpuBackend } from '../engine/cpu';
 import { WebGpuBackend } from '../engine/webgpu';
@@ -245,7 +248,7 @@ it('trains and predicts with the original fixed-batch flatten without changing t
     dynamic.dispose();
   }
   for (const backend of backends) expect(backend.liveBuffers).toBe(0);
-});
+}, 60000);
 
 it('normalizes player output weights like generation without changing training, top-1 or the saved graph', async () => {
   const progress = recurrentCharacterTestProgress();

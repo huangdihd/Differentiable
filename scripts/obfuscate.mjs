@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 // Obfuscates the built JavaScript in dist/assets for the public demo build.
 // Only cheap transforms: the tensor engine runs tight loops, and control-flow flattening,
 // dead-code injection or base64 string decoding would slow training (base64 doubled XOR's

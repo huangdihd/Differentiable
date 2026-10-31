@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { debugCheck, trainingDebugEnabled } from './training-debug';
 /** devDebug samples one optimizer step in this many (each check reads tensors back). */
 const DEBUG_EVERY = 10;

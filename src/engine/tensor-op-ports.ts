@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { Attributes } from './backend';
 
 /** Port names for the variadic tensor ops; `count`/`parts` decides how many are live. */

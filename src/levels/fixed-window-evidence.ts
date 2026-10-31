@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { corpus } from './corpus';
 
 /** Real continuations in the previous chapter's corpus, not predictions from a saved model. */

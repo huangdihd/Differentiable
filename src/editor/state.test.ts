@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { describe, expect, it } from 'vitest';
 import { createExampleRegistry, sigmoidLevel } from '../levels/examples';
 import { chapter1Levels } from '../levels/chapter1';

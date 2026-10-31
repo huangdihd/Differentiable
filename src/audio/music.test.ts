@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMusic } from './music';
 import { BAR_SECONDS, CHAPTER_MUSIC, clampChapter, generateBar } from './sequence';

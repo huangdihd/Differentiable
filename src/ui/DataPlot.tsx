@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { useId } from 'react';
 
 /** What a training level learns from, in the plane: the points and what the model makes of them. */

@@ -1,3 +1,6 @@
+-- Copyright (C) 2026 huangdihd
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Part of Differentiable. Full terms in LICENSE at the repository root.
 -- Anonymous per-level analytics events (see functions/api/event.ts).
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /** Minimal structural WebGPU surface used here; avoids a runtime dependency. */
 export interface GpuBuffer {
   readonly size: number;

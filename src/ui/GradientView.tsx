@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import type { BackwardGraph, BackwardTrace } from '../engine/backward-graph';
 import type { GraphJSON } from '../engine/graph';
 import { translateValueName } from '../i18n';

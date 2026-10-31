@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /** Preserve every value in tooltips; previews alone may be truncated. */
 export function fullValues(values: readonly number[]): string {
   return values.join(', ');

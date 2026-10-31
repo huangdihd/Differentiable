@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 // Anonymous per-level analytics for measuring how players move through the curriculum.
 // Only random ids and level timings are sent; every failure is swallowed so gameplay never breaks.
 

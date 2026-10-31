@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 /** Free storage only: callers must wait for GPU completion before returning buffers. */
 export const FREE_BUFFER_BUDGET = 64 * 1024 * 1024;
 

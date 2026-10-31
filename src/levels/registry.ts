@@ -1,3 +1,6 @@
+// Copyright (C) 2026 huangdihd
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Part of Differentiable. Full terms in LICENSE at the repository root.
 import { ComponentRegistry, createDefaultRegistry, type GraphJSON } from '../engine/graph';
 import type { CircuitLevel, Level, Progress } from '../engine/levels';
 import { configurableModule } from '../engine/parameterized-components';
