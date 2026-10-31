@@ -543,11 +543,11 @@ function Home({
           <p>{t('home.credit')}</p>
           <p className="home-license">
             <span>{t('home.licenseNotice')}</span>
-            <a href="https://github.com/huangdihd/differentiable" target="_blank" rel="noreferrer">
+            <a href="https://github.com/huangdihd/Differentiable" target="_blank" rel="noreferrer">
               {t('home.licenseSource')}
             </a>
             <a
-              href="https://github.com/huangdihd/differentiable/blob/main/LICENSE"
+              href="https://github.com/huangdihd/Differentiable/blob/main/LICENSE"
               target="_blank"
               rel="noreferrer"
             >

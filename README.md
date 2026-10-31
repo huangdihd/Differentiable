@@ -2,7 +2,7 @@
 
 A neural-network construction game. Includes the tensor engines, a functional React editor, chapters 0–7, including the XOR challenge, time-series forecasting and character language models. `demos/` is untouched reference material, not application source.
 
-- Repository: <https://github.com/huangdihd/differentiable>
+- Repository: <https://github.com/huangdihd/Differentiable>
 - License: GNU GPLv3 or later — see [`LICENSE`](LICENSE)
 - Third-party notices: [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
 
