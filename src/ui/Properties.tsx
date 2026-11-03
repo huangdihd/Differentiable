@@ -8,6 +8,7 @@ import type {
   ComponentDefinition,
   ComponentAttributeDefinition,
 } from '../engine/graph';
+import { concreteReshapeDim, reshapeShapeOf } from '../editor/reshape-dims';
 import { translatePort, type TranslationParams } from '../i18n';
 import { shapeText } from './Canvas';
 import { parseRealNumber, parseRealValue } from './real-number';
@@ -15,20 +16,19 @@ import { parseRealNumber, parseRealValue } from './real-number';
 type Props = {
   node: GraphNode;
   connectedInputs?: readonly string[];
+  /** Concrete integers already known for wired reshape ports (e.g. from a live probe). */
+  wiredDimValues?: Readonly<Record<string, number>>;
   definition?: ComponentDefinition;
   t: (key: string, params?: TranslationParams) => string;
   onChange: (attrs: Attributes) => void;
 };
 
+const EMPTY_WIRED_DIMS: Readonly<Record<string, number>> = {};
+
 /** Reshape exposes d0–d3; rank is attrs.shape.length (see graph-geometry nodePorts). */
 const RESHAPE_MAX_RANK = 4;
 
-function reshapeShapeOf(attrs: Attributes): number[] {
-  const shape = attrs.shape;
-  if (Array.isArray(shape) && shape.length >= 1 && shape.every((n) => Number.isSafeInteger(n)))
-    return shape as number[];
-  return [-1];
-}
+export { concreteReshapeDim, reshapeShapeOf };
 export function defaults(
   component: string,
   definition?: ComponentDefinition,
@@ -213,7 +213,14 @@ export function validateProperties(
   return { attrs, errors };
 }
 
-export default function Properties({ node, connectedInputs = [], definition, t, onChange }: Props) {
+export default function Properties({
+  node,
+  connectedInputs = [],
+  wiredDimValues = EMPTY_WIRED_DIMS,
+  definition,
+  t,
+  onChange,
+}: Props) {
   const declaredDefaults = Object.fromEntries(
     (definition?.attributes ?? []).map((attribute) => [attribute.name, attribute.default]),
   );
@@ -248,6 +255,46 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
     previousScalarLabel.current = scalarLabel;
     published.current = null;
   }, [source, identity, scalarLabel]);
+  // Wired dims store the wire's concrete size (never -1). Apply known resolutions once per wire;
+  // disconnect leaves the last concrete value in attrs.
+  const appliedWireResolution = useRef<Set<string>>(new Set());
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    if (node.component !== 'reshape') return;
+    const wired = connectedInputs.filter((port) => /^d\d+$/.test(port));
+    const active = new Set(wired);
+    for (const port of [...appliedWireResolution.current]) {
+      if (!active.has(port)) appliedWireResolution.current.delete(port);
+    }
+    const currentAttrs = JSON.parse(source) as Attributes;
+    const current = reshapeShapeOf(currentAttrs);
+    const next = current.slice();
+    let changed = false;
+    for (let i = 0; i < next.length; i++) {
+      const port = `d${i}`;
+      if (!active.has(port)) continue;
+      const resolved = wiredDimValues[port];
+      const already = appliedWireResolution.current.has(port);
+      if (resolved !== undefined && Number.isSafeInteger(resolved) && resolved >= 0) {
+        if (!already || next[i] === -1) {
+          if (next[i] !== resolved) {
+            next[i] = resolved;
+            changed = true;
+          }
+          appliedWireResolution.current.add(port);
+        }
+      } else if (next[i] === -1) {
+        next[i] = 1;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    const result = { ...currentAttrs, shape: next };
+    published.current = JSON.stringify(result);
+    setDimTexts(next.map(String));
+    onChangeRef.current(result);
+  }, [node.component, connectedInputs, wiredDimValues, source]);
   const keys = componentFields(node.component, definition);
   if (!keys.length) return null;
   const { errors } = validateProperties(node.component, draft, attrs, scalarLabel, definition);
@@ -270,7 +317,7 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
     const built: number[] = [];
     for (let i = 0; i < texts.length; i++) {
       if (connectedInputs.includes(`d${i}`)) {
-        built.push(reshapeShape[i] ?? 1);
+        built.push(concreteReshapeDim(reshapeShape[i], wiredDimValues[`d${i}`]));
         continue;
       }
       const parsed = Number(texts[i].trim());
@@ -309,7 +356,11 @@ export default function Properties({ node, connectedInputs = [], definition, t, 
                       disabled={wired}
                       aria-invalid={!!error}
                       aria-describedby={error ? `${inputId}-error` : undefined}
-                      value={wired ? t('ui.shapeByWire') : text}
+                      value={
+                        wired
+                          ? String(concreteReshapeDim(reshapeShape[index], wiredDimValues[port]))
+                          : text
+                      }
                       onChange={(e) => {
                         const nextTexts = dimTexts.map((value, i) =>
                           i === index ? e.target.value : value,

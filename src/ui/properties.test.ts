@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { ComponentDefinition } from '../engine/graph';
 import { createTranslator } from '../i18n';
-import Properties, { defaults, validateProperties } from './Properties';
+import Properties, { concreteReshapeDim, defaults, validateProperties } from './Properties';
 
 const configurableLinear: ComponentDefinition = {
   name: 'linear',
@@ -188,6 +188,17 @@ describe('property field validation', () => {
       'ui.invalidInit',
     );
   });
+  it('stores a concrete size for wired reshape dims so another axis can use -1', () => {
+    expect(concreteReshapeDim(-1)).toBe(1);
+    expect(concreteReshapeDim(-1, 8)).toBe(8);
+    expect(concreteReshapeDim(4, 8)).toBe(8);
+    expect(concreteReshapeDim(undefined)).toBe(1);
+    // Issue #4: dim0 was -1 then wired to a size-8 wire; dim1 can become -1.
+    const released = [-1, 2].map((dim, i) => concreteReshapeDim(dim, i === 0 ? 8 : undefined));
+    expect(released).toEqual([8, 2]);
+    expect(validateProperties('reshape', { shape: '[8,-1]' }).errors).toEqual({});
+    expect(validateProperties('reshape', { shape: '[-1,-1]' }).errors.shape).toBe('ui.invalidShape');
+  });
   it('validates reshape, axes and permutations without knowing input rank', () => {
     expect(validateProperties('reshape', { shape: '-1,2' }).errors).toEqual({});
     for (const shape of ['-1,-1', '-2', '-1,0', '2,', '9007199254740991,2'])
@@ -203,12 +214,14 @@ describe('property field validation', () => {
       createElement(Properties, {
         node: { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
         connectedInputs: ['d0'],
+        wiredDimValues: { d0: 4 },
         t,
         onChange: vi.fn(),
       }),
     );
     expect(html).toContain('Dimension 0');
-    expect(html).toContain('Set by wire');
+    expect(html).toContain('value="4"');
+    expect(html).not.toContain('Set by wire');
     expect(html).toContain('Target dimension 0');
     expect(html).toContain('Dimension 1');
     expect(html).toContain('value="-1"');
@@ -217,13 +230,15 @@ describe('property field validation', () => {
     expect(html).toContain('Remove last dimension');
     const zh = renderToStaticMarkup(
       createElement(Properties, {
-        node: { id: 'flatten', component: 'reshape', attrs: { shape: [1, -1] } },
+        node: { id: 'flatten', component: 'reshape', attrs: { shape: [8, -1] } },
         connectedInputs: ['d0'],
+        wiredDimValues: { d0: 8 },
         t: createTranslator('zh-CN'),
         onChange: vi.fn(),
       }),
     );
-    expect(zh).toContain('由接线决定');
+    expect(zh).not.toContain('由接线决定');
+    expect(zh).toContain('value="8"');
     expect(zh).toContain('维度 0');
     expect(zh).toContain('维度 1');
   });

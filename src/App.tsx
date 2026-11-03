@@ -1404,6 +1404,21 @@ function Editor({
       cancelled = true;
     };
   }, [selectedProbeKey, computationKey, parsedInputs, shapeGroup, busy, locale]);
+  const reshapeWiredDimValues = useMemo(() => {
+    if (!selected || selected.component !== 'reshape') return undefined;
+    const values: Record<string, number> = {};
+    for (const port of ['d0', 'd1', 'd2', 'd3'] as const) {
+      const probe = selectedProbes[`input:${port}`];
+      if (probe?.status !== 'value' || !probe.value.ok || !probe.value.values) continue;
+      if ((probe.value.shape?.length ?? 0) !== 0 || probe.value.values.length !== 1) continue;
+      const raw = probe.value.values[0];
+      const integer = Math.round(raw);
+      if (!Number.isFinite(raw) || Math.abs(raw - integer) > 1e-3) continue;
+      if (!Number.isSafeInteger(integer) || integer < 0) continue;
+      values[port] = integer;
+    }
+    return values;
+  }, [selected, selectedProbes]);
   const display = inside.at(-1)?.graph ?? state.graph;
   // "Not wired yet" is unfinished work, not a mistake: shown as a quiet note instead of in red.
   const SOFT = new Set(['missing_port', 'missing_input']);
@@ -2049,6 +2064,7 @@ function Editor({
             connectedInputs={state.graph.edges
               .filter((edge) => edge.to.node === selected.id)
               .map((edge) => edge.to.port)}
+            wiredDimValues={reshapeWiredDimValues}
             definition={registry.get(selected.component)}
             t={t}
             onChange={(attrs) =>

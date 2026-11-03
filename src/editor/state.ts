@@ -14,6 +14,7 @@ import {
 import type { CircuitLevel } from '../engine/levels';
 import type { ExpressionGraph } from '../engine/expression';
 import { ensureLockedLoss, isLockedEdge, isLockedNode } from './locked-loss';
+import { withWiredReshapeDims } from './reshape-dims';
 
 export interface Point {
   x: number;
@@ -187,7 +188,10 @@ function connect(
     return 'locked_node';
   const base = { ...graph, edges: graph.edges.filter((e) => !endpointEqual(e.to, edge.to)) };
   const error = connectionError(base, edge, registry);
-  return error ?? { ...base, edges: [...base.edges, clone(edge)] };
+  if (error) return error;
+  const connected = { ...base, edges: [...base.edges, clone(edge)] };
+  // Persist a concrete reshape dim for wired dN so attrs never keep a leftover -1.
+  return withWiredReshapeDims(connected, edge);
 }
 function commit(
   state: EditorState,
