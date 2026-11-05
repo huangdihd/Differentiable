@@ -12,8 +12,9 @@ import {
 } from './engine/levels';
 import { availableComponents, buildPlayerRegistry } from './levels/registry';
 import { browserLocale, isLocale, type Locale } from './i18n';
+import { isSandboxSave } from './sandbox/slots';
 
-export const STORAGE_VERSION = 10;
+export const STORAGE_VERSION = 11;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
 export interface StorageLike {
@@ -107,6 +108,7 @@ export function isProgress(value: unknown): value is Progress {
         ))
     )
       return false;
+    if (value.sandbox !== undefined && !isSandboxSave(value.sandbox, isGraphJSON)) return false;
     if (!value.passed.every((id) => (value.unlocked as string[]).includes(id))) return false;
     if (!Object.values(value.savedGraphs).every(isGraphJSON)) return false;
     if (
@@ -637,6 +639,7 @@ export async function loadProgressWithMigration(
     if (!envelope) return finishLoad(createInitialProgress(), false);
     if (
       envelope.version === STORAGE_VERSION ||
+      envelope.version === 10 ||
       envelope.version === 9 ||
       envelope.version === 8 ||
       envelope.version === 7 ||
@@ -824,6 +827,7 @@ export function loadLanguage(
           envelope.version === 7 ||
           envelope.version === 8 ||
           envelope.version === 9 ||
+          envelope.version === 10 ||
           envelope.version === STORAGE_VERSION) &&
         isLocale(envelope.language)
       )

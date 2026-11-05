@@ -118,6 +118,8 @@ import {
   newlyIntroducedComponents,
 } from './ui/new-components';
 import './ui/layout.css';
+import { SandboxScreen } from './ui/Sandbox';
+import { isSandboxUnlocked, sandboxSlots } from './sandbox/slots';
 
 type T = ReturnType<typeof createTranslator>;
 
@@ -141,8 +143,10 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [level, setLevel] = useState<Level>();
   const [showPlayerComparison, setShowPlayerComparison] = useState(false);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
   const openLevel = (next?: Level) => {
     setShowPlayerComparison(false);
+    setSandboxOpen(false);
     setLevel(next);
   };
   const [backend, setBackend] = useState<'pending' | 'cpu' | 'webgpu'>('pending');
@@ -237,7 +241,9 @@ export default function App() {
           DEMO
         </span>
         <span className="crumb">
-          {entry ? (
+          {sandboxOpen ? (
+            <b>{t('sandbox.title')}</b>
+          ) : entry ? (
             <>
               {t('ui.chapterNamed', { n: entry.chapter, name: t(`chapter.${entry.chapter}`) })} /{' '}
               <b>
@@ -333,6 +339,35 @@ export default function App() {
           }}
           progress={save.progress}
         />
+      ) : sandboxOpen ? (
+        <SandboxScreen
+          t={t}
+          progress={save.progress}
+          onProgress={(update) => setSave((s) => ({ ...s, progress: update(s.progress) }))}
+          ready={backend !== 'pending'}
+          client={client}
+          onExit={() => {
+            void client.current?.setSandbox(null).catch(() => undefined);
+            openLevel();
+          }}
+          renderEditor={({ key, level: sandboxLevel, progress: virtual, onProgress, sandbox }) => (
+            <Editor
+              key={key}
+              level={sandboxLevel}
+              progress={virtual}
+              onProgress={onProgress}
+              onExit={() => {
+                void client.current?.setSandbox(null).catch(() => undefined);
+                openLevel();
+              }}
+              locale={save.settings.language}
+              backend={backend}
+              client={client}
+              revision={revision}
+              sandbox={sandbox}
+            />
+          )}
+        />
       ) : level ? (
         <Editor
           key={level.id}
@@ -359,11 +394,60 @@ export default function App() {
           progress={save.progress}
           ready={backend !== 'pending'}
           onOpen={openLevel}
+          onOpenSandbox={() => {
+            openLevel();
+            setSandboxOpen(true);
+          }}
           revoked={revoked}
           onDismissRevoked={() => setRevoked([])}
         />
       )}
     </div>
+  );
+}
+
+/** The sandbox sits beside the chapters, closed until every level on the road is passed. */
+function SandboxEntry({
+  t,
+  progress,
+  ready,
+  onOpen,
+}: {
+  t: T;
+  progress: Progress;
+  ready: boolean;
+  onOpen: () => void;
+}) {
+  const unlocked = isSandboxUnlocked(
+    progress,
+    catalog.map((e) => e.level),
+  );
+  const count = sandboxSlots(progress).length;
+  return (
+    <section className="chapter sandbox-entry">
+      <header className="chapter-head">
+        <span className="road-n">∞</span>
+        <h2>{t('sandbox.title')}</h2>
+        <p className="muted">{t('sandbox.lead')}</p>
+      </header>
+      <div className="chapter-levels">
+        <button
+          className={`level-card ${unlocked ? 'is-playable' : 'is-locked'}`}
+          disabled={!ready || !unlocked}
+          onClick={onOpen}
+        >
+          <span className="level-id">∞</span>
+          <span className="level-card-title">{t('sandbox.title')}</span>
+          <span className="level-state">
+            {unlocked
+              ? count
+                ? t('sandbox.slotCount', { n: count })
+                : t('sandbox.open')
+              : t('sandbox.lockedHint')}
+          </span>
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -398,6 +482,7 @@ function Home({
   progress,
   ready,
   onOpen,
+  onOpenSandbox,
   revoked,
   onDismissRevoked,
 }: {
@@ -405,6 +490,7 @@ function Home({
   progress: Progress;
   ready: boolean;
   onOpen: (level: Level) => void;
+  onOpenSandbox: () => void;
   revoked: string[];
   onDismissRevoked: () => void;
 }) {
@@ -530,6 +616,7 @@ function Home({
             </div>
           )}
         </section>
+        <SandboxEntry t={t} progress={progress} ready={ready} onOpen={onOpenSandbox} />
         <footer className="home-foot">
           <p>
             <span className="tag demo-tag">DEMO</span> {t('home.demoNote')}
@@ -575,6 +662,8 @@ type EditorProps = {
   backend: string;
   client: React.RefObject<WorkerClient | null>;
   revision: React.RefObject<number>;
+  /** Free play: a slot name instead of a level code, and sandbox tools under the description. */
+  sandbox?: { label: string; panel: React.ReactNode };
 };
 
 /** Time each test case stays on the canvas during step-through verification. */
@@ -632,10 +721,13 @@ function Editor({
   backend,
   client,
   revision,
+  sandbox,
 }: EditorProps) {
   const entry = entryFor(level);
   const tracker = useRef<ReturnType<typeof levelTracker>>(null);
   useEffect(() => {
+    // Sandbox slots are private free play, not curriculum levels: no analytics.
+    if (sandbox) return;
     const t = levelTracker(level.id, entry.chapter);
     tracker.current = t;
     return () => t.dispose();
@@ -1659,7 +1751,7 @@ function Editor({
     !state.graph.edges.length &&
     !state.past.length &&
     state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
-  const threshold = level.kind === 'train' ? level.threshold.loss : undefined;
+  const threshold = level.kind === 'train' && !sandbox ? level.threshold.loss : undefined;
   // The expression box is a tool you earn at the end of chapter 1; early levels are about wiring.
   const expressionUnlocked = isExpressionUnlocked(progress, gameLevels);
   // Not on levels up to and including the one that teaches backprop by hand: no spoilers.
@@ -1693,11 +1785,12 @@ function Editor({
     <main className="workspace">
       <aside className="panel panel-left">
         <div className="section">
-          <div className="level-id">LEVEL {entry.code}</div>
+          <div className="level-id">{sandbox ? sandbox.label : `LEVEL ${entry.code}`}</div>
           <h1 className="level-title">{t(level.titleKey)}</h1>
           <div className="level-desc">
             <MathText text={t(level.descriptionKey)} />
           </div>
+          {sandbox?.panel}
           <LevelFigure levelId={level.id} t={t} />
           <TemporalBenchmarkEvidence levelId={level.id} locale={locale} t={t} />
           {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}

@@ -45,6 +45,8 @@ import { VOCAB, encode, decode } from '../levels/corpus';
 import { availableComponents, buildPlayerRegistry } from '../levels/registry';
 import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
 import { workerError } from './error';
+import { buildSandboxLevel } from '../sandbox/level';
+import type { WeightsFile } from '../sandbox/slots';
 
 export { workerError } from './error';
 
@@ -76,6 +78,16 @@ export class WorkerRuntime {
   private queue: Promise<void> = Promise.resolve();
   private run?: Run;
   private stepRun?: StepRun;
+  /** The open sandbox slot as a level, plus the weights its training starts from. */
+  private sandbox?: { level: TrainLevel; weights?: WeightsFile };
+  /** Fresh tensors each compile: a plan takes ownership of its parameter map's contents. */
+  private sandboxParameters(level: TrainLevel): Map<string, T.Tensor> | undefined {
+    const weights = level.sandbox ? this.sandbox?.weights : undefined;
+    if (!weights) return undefined;
+    return new Map(
+      Object.entries(weights.parameters).map(([id, p]) => [id, T.tensor(p.values, p.shape)]),
+    );
+  }
   // A single CPU snapshot: latest successful continuous completion/stop or step wins.
   // Never borrow tensors owned by a training plan, which release() will dispose.
   private generationParameters?: {
@@ -88,7 +100,13 @@ export class WorkerRuntime {
     return JSON.stringify([levelId, computationIdentity(graph)]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
-    if (!level.generates && !level.sequenceProbe && level.chapter !== '3' && level.id !== 'xor')
+    if (
+      !level.generates &&
+      !level.sequenceProbe &&
+      !level.sandbox &&
+      level.chapter !== '3' &&
+      level.id !== 'xor'
+    )
       return;
     const values = new Map<string, { shape: number[]; data: Float32Array }>();
     for (const [id, value] of plan.parameters) {
@@ -413,7 +431,7 @@ export class WorkerRuntime {
     ) {
       run.result.errorKey = 'levels.train_accuracy';
       run.result.error = { key: run.result.errorKey, params: { accuracy: report.accuracy } };
-    } else if (completed && !passed && run.level.tunable) {
+    } else if (completed && !passed && run.level.tunable && !run.level.sandbox) {
       // Ending above where it started is also overshooting, just more slowly.
       const key = report.loss > run.initialLoss ? 'levels.train_diverged' : 'levels.train_slow';
       run.result.errorKey = key;
@@ -498,6 +516,20 @@ export class WorkerRuntime {
         this.reply(request, { state: 'synced' });
         return;
       }
+      if (request.type === 'setSandbox') {
+        this.release();
+        this.releaseStep();
+        this.generationParameters = undefined;
+        const spec = request.sandbox;
+        this.sandbox = spec
+          ? {
+              level: buildSandboxLevel(spec.slotId, spec.dataset),
+              ...(spec.weights ? { weights: structuredClone(spec.weights) } : {}),
+            }
+          : undefined;
+        this.reply(request, { state: 'synced' });
+        return;
+      }
       if (request.type === 'pause' || request.type === 'resume' || request.type === 'stop') {
         const run = this.run;
         if (!run) throw new Error('worker.no_training');
@@ -524,10 +556,31 @@ export class WorkerRuntime {
         }
         return;
       }
-      const sourceLevel = this.levels.find((l) => l.id === request.levelId);
+      const sourceLevel =
+        this.sandbox && request.levelId === this.sandbox.level.id
+          ? this.sandbox.level
+          : this.levels.find((l) => l.id === request.levelId);
       if (!sourceLevel) throw new Error('worker.unknown_level');
       if (sourceLevel.kind === 'observation') throw new Error('worker.invalid_request');
       const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
+      if (request.type === 'exportWeights') {
+        if (level.kind !== 'train' || !level.sandbox) throw new Error('worker.invalid_request');
+        const key = this.generationKey(level.id, request.graph);
+        const parameters: Record<string, { shape: number[]; values: number[] }> = {};
+        const run = this.run;
+        let state: 'current' | 'trained';
+        if (run && this.generationKey(run.level.id, run.request.graph) === key) {
+          for (const [id, value] of run.plan.parameters)
+            parameters[id] = { shape: [...value.shape], values: Array.from(await value.read()) };
+          state = 'current';
+        } else if (this.generationParameters?.key === key) {
+          for (const [id, value] of this.generationParameters.values)
+            parameters[id] = { shape: [...value.shape], values: Array.from(value.data) };
+          state = 'trained';
+        } else throw new Error('sandbox.weights.error.untrained');
+        this.reply(request, { parameters, state });
+        return;
+      }
       if (request.type === 'predict') {
         if (level.kind !== 'train') throw new Error('worker.predict_unavailable');
         await this.predict(request, level);
@@ -609,12 +662,16 @@ export class WorkerRuntime {
             inputShapes: level.interface.inputs,
             availableComponents: level.available,
             random: new Random(level.seed),
+            parameters: this.sandboxParameters(level),
           });
           let batch: TrainingBatchSource | undefined;
           try {
+            const lossShape = plan.outputShapes[level.interface.output];
             if (
-              JSON.stringify(plan.outputShapes[level.interface.output]) !==
-              JSON.stringify(level.interface.outputShape)
+              level.sandbox
+                ? // The sandbox takes any one-element loss: mean gives [], mse gives [1].
+                  !lossShape || lossShape.reduce((n, d) => n * d, 1) !== 1
+                : JSON.stringify(lossShape) !== JSON.stringify(level.interface.outputShape)
             )
               throw new Error('levels.output_shape');
             const dependency = trainDependencyError(level, request.graph, this.registry);
@@ -690,6 +747,10 @@ export class WorkerRuntime {
           inputShapes: shapes,
           availableComponents: level.available,
           random: new Random(level.kind === 'train' ? level.seed : 1),
+          parameters:
+            request.type === 'start' && level.kind === 'train'
+              ? this.sandboxParameters(level)
+              : undefined,
         });
         if (
           request.type !== 'probe' &&

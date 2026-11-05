@@ -130,6 +130,13 @@ export class WorkerClient {
     this.setRevision(revision);
     return this.send<'syncProgress'>({ type: 'syncProgress', progress });
   }
+  setSandbox(sandbox: Extract<Command, { type: 'setSandbox' }>['sandbox']) {
+    return this.send<'setSandbox'>({ type: 'setSandbox', sandbox });
+  }
+  /** Sandbox only: live weights while training, else those of the last finished run. */
+  exportWeights(levelId: string, graph: GraphJSON) {
+    return this.send<'exportWeights'>({ type: 'exportWeights', levelId, graph });
+  }
   compile(levelId: string, graph: GraphJSON) {
     return this.send<'compile'>({ type: 'compile', levelId, graph });
   }

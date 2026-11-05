@@ -27,6 +27,8 @@ import {
   type TrainingReport,
 } from './training';
 
+import type { SandboxSave } from '../sandbox/slots';
+
 export interface LevelMetadata {
   id: string;
   titleKey: string;
@@ -108,6 +110,8 @@ export interface LockedLoss {
 }
 export interface TrainLevel extends LevelMetadata {
   kind: 'train';
+  /** Free play: no pass condition, and a finished run is never reported as too slow. */
+  sandbox?: boolean;
   /** Allows seeded autoregressive text generation from the trained graph. */
   generates?: boolean;
   /** Sequence regression: plot the model over a sweep of windows and offer a "try it" input. */
@@ -584,6 +588,8 @@ export interface Progress {
   passedSolutions: Record<string, GraphJSON>;
   bestScores: Record<string, GraphMetrics>;
   trainingSettings?: Record<string, { learningRate: number; optimizer?: 'sgd' | 'adam' }>;
+  /** Local sandbox slots (storage v11+); absent until the player creates one. */
+  sandbox?: SandboxSave;
 }
 export const initialProgress = (
   levels: readonly string[],
