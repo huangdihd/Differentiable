@@ -9,7 +9,7 @@ import { translatePort, translateValueName } from '../i18n';
 import { parameterName } from './parameter-label';
 import {
   NODE_W,
-  SYMBOLS,
+  symbolOf,
   bodyHeight,
   categoryOf,
   graphBounds,
@@ -563,7 +563,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
           const errors = notes.filter((e) => !e.soft);
           const io = IO.includes(n.component);
           const value = p.values?.[n.id];
-          const name = io ? String(n.attrs?.name ?? '') : (SYMBOLS[n.component] ?? '');
+          const name = io ? String(n.attrs?.name ?? '') : (symbolOf(n.component) ?? '');
           const sym =
             parameterName(n) ??
             (n.component === 'param' && Array.isArray(n.attrs?.shape)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 import { useState, type PointerEvent } from 'react';
-import { SYMBOLS, categoryOf, type Category } from './graph-geometry';
+import { categoryOf, symbolOf, type Category } from './graph-geometry';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 type PaletteCategory = Category | 'other';
@@ -206,8 +206,8 @@ function PaletteItem({
 }) {
   const content = (
     <>
-      <span className={`sym ${(SYMBOLS[entry.name] ?? '').length > 6 ? 'is-long' : ''}`}>
-        {SYMBOLS[entry.name] ?? '?'}
+      <span className={`sym ${(symbolOf(entry.name) ?? '').length > 6 ? 'is-long' : ''}`}>
+        {symbolOf(entry.name) ?? '?'}
       </span>
       <span className="name">
         {t(`components.${entry.name}`)}

@@ -4,7 +4,7 @@
 import type { BackwardGraph, BackwardTrace } from '../engine/backward-graph';
 import type { GraphJSON } from '../engine/graph';
 import { translateValueName } from '../i18n';
-import { SYMBOLS } from './graph-geometry';
+import { symbolOf } from './graph-geometry';
 import {
   backwardTeachingSegments,
   gradientEdgeKey,
@@ -80,7 +80,7 @@ export default function GradientView({
       if (Array.isArray(v)) return `[${v.length}]`;
       return String(Number(Number(v).toPrecision(4)));
     }
-    return SYMBOLS[n.component] ?? t(`components.${n.component}`);
+    return symbolOf(n.component) ?? t(`components.${n.component}`);
   };
   const source = (id: string) => graph.edges.find((e) => e.to.node === id)?.from.node;
   const value = (kind: 'forward' | 'gradient', id: string) => {
@@ -112,7 +112,7 @@ export default function GradientView({
     if (consumer.component === 'output') return '';
     if (composite(consumer.component))
       return t('gradView.expanded', {
-        name: SYMBOLS[consumer.component] ?? t(`components.${consumer.component}`),
+        name: symbolOf(consumer.component) ?? t(`components.${consumer.component}`),
       });
     if (
       edge.rule === 'backward.rule.mul' &&

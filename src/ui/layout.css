@@ -531,3 +531,90 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* sandbox: my components */
+.my-components-body {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s2);
+}
+.my-components-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.my-component-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+.my-component-row .palette-item {
+  width: 100%;
+}
+.my-component-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.my-component-rename .field {
+  min-width: 0;
+}
+.my-component-menu {
+  padding: var(--s2);
+}
+.my-components-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.canvas-actions {
+  position: absolute;
+  bottom: var(--s4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 0 10px;
+  white-space: nowrap;
+  z-index: 2;
+}
+.canvas-actions .tool-sep {
+  margin: 0 6px 0 8px;
+}
+.pkg-name {
+  display: grid;
+  gap: 2px;
+  margin-bottom: var(--s4);
+}
+.pkg-io {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  margin-bottom: var(--s3);
+}
+.pkg-arrow {
+  align-self: center;
+  padding-top: var(--s4);
+}
+.pkg-ports {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pkg-port {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px;
+}
+.pkg-port-where,
+.pkg-port-error {
+  grid-column: 1 / -1;
+}

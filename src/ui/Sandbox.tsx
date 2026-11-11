@@ -70,7 +70,7 @@ const newId = () => {
   }
 };
 
-const readFile = (file: File) =>
+export const readFile = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ''));
@@ -78,7 +78,7 @@ const readFile = (file: File) =>
     reader.readAsText(file);
   });
 
-function download(name: string, value: unknown) {
+export function download(name: string, value: unknown) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
@@ -976,7 +976,7 @@ function SavesPanel({
 
 /* ---------------------------------------------------------------- dialogs */
 
-function Dialog({
+export function Dialog({
   t,
   title,
   onClose,

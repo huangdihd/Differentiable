@@ -69,6 +69,9 @@ export function graphDiagnostic(
     message += ` ${translate(locale, `training.nonfinite.hint.${hint}`)}`;
   }
   if (!node || !named) return message;
-  const label = parameterName(node) ?? translate(locale, `components.${node.component}`);
+  const label =
+    parameterName(node) ??
+    registry?.get(node.component)?.label ??
+    translate(locale, `components.${node.component}`);
   return `${label}：${message}`;
 }

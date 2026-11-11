@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   computationIdentity,
   expandComponentSubgraph,
+  type GraphEndpoint,
   type GraphJSON,
   type GraphNode,
 } from './engine/graph';
@@ -85,6 +86,8 @@ import { gradientSurfaceInputs, plottedInput } from './ui/function-plot';
 import {
   NODE_W,
   SYMBOLS,
+  nodePorts,
+  symbolOf,
   categoryOf,
   freeSpot,
   layoutGraph,
@@ -103,6 +106,7 @@ import {
   loadLanguage,
   saveSave,
   createThrottledSave,
+  isGraphJSON,
 } from './storage';
 import {
   dismissBackendFallbackDialog,
@@ -125,7 +129,26 @@ import {
   newlyIntroducedComponents,
 } from './ui/new-components';
 import './ui/layout.css';
-import { SandboxScreen, type SandboxEditorSlot } from './ui/Sandbox';
+import { SandboxScreen, download, readFile, type SandboxEditorSlot } from './ui/Sandbox';
+import { MyComponents } from './ui/MyComponents';
+import { PackageDialog, type PackageChoice } from './ui/PackageDialog';
+import {
+  addComponent,
+  applyPackage,
+  componentUsage,
+  exportComponents,
+  findComponent,
+  importComponents,
+  isCustomComponent,
+  libraryOf,
+  parseComponentsFile,
+  planPackage,
+  removeComponent,
+  renameComponent,
+  ungroupInstance,
+  uniqueComponentName,
+  type PackagePlan,
+} from './sandbox/components';
 import SandboxTrain from './ui/SandboxTrain';
 import { isSandboxUnlocked, sandboxSlots } from './sandbox/slots';
 
@@ -648,6 +671,15 @@ function Home({
   );
 }
 
+/** A fresh, never-reused id for a packaged sandbox component. */
+const newComponentId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+};
+
 /** The level a pass leads to: the first one it unlocks. */
 const nextOf = (level: Level) =>
   level.unlock.map((id) => gameLevels.find((l) => l.id === id)).find(Boolean);
@@ -735,12 +767,19 @@ function Editor({
   }, [level.id]);
   const registry = useMemo(
     () => buildPlayerRegistry(gameLevels, progress),
-    [progress.passedSolutions, progress.unlockedComponents],
+    [progress.passedSolutions, progress.unlockedComponents, progress.sandbox?.components],
   );
   const available = availableComponents(level, progress);
   const [state, setState] = useState(() =>
     createEditorState(level, progress.savedGraphs[level.id], available),
   );
+  // Sandbox: packaging, importing or deleting a component changes what can be placed.
+  const library = sandbox ? libraryOf(progress) : [];
+  const availableKey = available.join('\u0000');
+  useEffect(() => {
+    setState((s) => editorReducer(s, { type: 'setAvailable', available }, registry));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableKey]);
   const [diagnostics, setDiagnostics] = useState<WorkerError[]>([]);
   // The 0-1 walkthrough, until the level is passed or skipped. Storage may be unavailable.
   const [coachSkipped, setCoachSkipped] = useState(() => {
@@ -1015,7 +1054,15 @@ function Editor({
       alive = false;
     };
   }, [level]);
-  const t = createTranslator(locale);
+  const baseT = createTranslator(locale);
+  // Sandbox components carry the player's own name rather than a dictionary entry.
+  const t = (key: string, params?: Parameters<typeof baseT>[1]) => {
+    if (key.startsWith('components.')) {
+      const label = registry.get(key.slice('components.'.length))?.label;
+      if (label !== undefined) return label;
+    }
+    return baseT(key, params);
+  };
   const latest = useRef({ progress, onProgress, graph: state.graph });
   latest.current = { progress, onProgress, graph: state.graph };
   const busy = training !== 'idle';
@@ -1123,6 +1170,14 @@ function Editor({
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         command({ type: 'removeNodes' });
+      }
+      // Ctrl/Cmd+G packages the selection; with Shift it ungroups a selected component.
+      if (sandbox && mod && e.key.toLowerCase() === 'g' && !busy) {
+        e.preventDefault();
+        const keys = componentKeys.current;
+        if (e.shiftKey) {
+          if (keys.selectedInstance) keys.ungroup(keys.selectedInstance.id);
+        } else keys.startPackage();
       }
       if (mod && ['z', 'c', 'v'].includes(e.key.toLowerCase())) {
         e.preventDefault();
@@ -1590,6 +1645,94 @@ function Editor({
         editorReducer(st, { type: 'setViewport', viewport: outerView.current }, registry),
       );
   };
+  // Packaging: selected parts become one reusable component in "My components".
+  const [packaging, setPackaging] = useState<{ plan: PackagePlan; name: string }>();
+  const packable = state.graph.nodes.filter(
+    (n) => state.selection.includes(n.id) && !['input', 'output'].includes(n.component),
+  );
+  const selectedInstance =
+    sandbox && state.selection.length === 1
+      ? state.graph.nodes.find(
+          (n) => n.id === state.selection[0] && findComponent(library, n.component),
+        )
+      : undefined;
+  const portShape = (endpoint: GraphEndpoint) => {
+    const node = state.graph.nodes.find((n) => n.id === endpoint.node);
+    // Canvas previews carry each node's first output; other ports stay unknown here.
+    if (!node || nodePorts(node, registry, 'outputs')[0] !== endpoint.port) return undefined;
+    return values[endpoint.node]?.shape;
+  };
+  const startPackage = () => {
+    if (!sandbox || busy || inside.length || !packable.length) return;
+    const plan = planPackage(state.graph, state.selection);
+    if (typeof plan === 'string') {
+      sfx.play('reject');
+      setError({ key: plan, params: {} });
+      return;
+    }
+    setError(undefined);
+    setPackaging({
+      plan,
+      name: uniqueComponentName(t('sandbox.components.defaultName'), library),
+    });
+  };
+  const confirmPackage = (choice: PackageChoice) => {
+    if (!packaging) return;
+    const { plan } = packaging;
+    const shapes: Record<string, number[]> = {};
+    plan.inputs.forEach((port, i) => {
+      const shape = portShape(port.source);
+      if (shape) shapes[choice.inputs[i]] = [...shape];
+    });
+    plan.outputs.forEach((port, i) => {
+      const shape = portShape(port.source);
+      if (shape) shapes[choice.outputs[i]] = [...shape];
+    });
+    const result = applyPackage(state.graph, plan, {
+      id: newComponentId(),
+      name: choice.name,
+      now: Date.now(),
+      inputNames: choice.inputs,
+      outputNames: choice.outputs,
+      shapes,
+    });
+    setPackaging(undefined);
+    latest.current.onProgress(addComponent(latest.current.progress, result.component));
+    command({ type: 'replaceGraph', graph: result.graph, selection: [result.instance] });
+    sfx.play('place');
+  };
+  const ungroup = (id: string) => {
+    if (busy || inside.length) return;
+    const result = ungroupInstance(state.graph, id, library);
+    if (!result) return;
+    command({ type: 'replaceGraph', graph: result.graph, selection: result.ids });
+    sfx.play('place');
+  };
+  const changeLibrary = (change: (p: Progress) => Progress) =>
+    latest.current.onProgress(change(latest.current.progress));
+  const exportLibrary = (ids: string[]) => {
+    const file = exportComponents(library, ids);
+    const single = ids.length === 1 ? library.find((c) => c.id === ids[0])?.name : undefined;
+    download(
+      `${(single ?? t('sandbox.components.fileName')).trim() || 'components'}.components.json`,
+      file,
+    );
+  };
+  const importLibrary = async (file: File) => {
+    const parsed = parseComponentsFile(await readFile(file), isGraphJSON);
+    const result = importComponents(latest.current.progress, parsed, {
+      newId: newComponentId,
+      now: Date.now(),
+    });
+    latest.current.onProgress(result.progress);
+    return t('sandbox.components.imported', {
+      added: result.added,
+      reused: result.reused,
+      count: result.added,
+    });
+  };
+  const componentKeys = useRef({ startPackage, ungroup, selectedInstance });
+  componentKeys.current = { startPackage, ungroup, selectedInstance };
   const inspect = (node: GraphNode) => {
     if (!inside.length) outerView.current = state.viewport;
     const def = registry.get(node.component);
@@ -1768,7 +1911,8 @@ function Editor({
     (name) => !playerComponents.includes(name) && (level.presets ?? []).includes(name),
   );
   const primitives = available.filter(
-    (name) => !playerComponents.includes(name) && !presets.includes(name),
+    (name) =>
+      !playerComponents.includes(name) && !presets.includes(name) && !isCustomComponent(name),
   );
   const outputNodes = state.graph.nodes.filter((node) => node.component === 'output');
   const outputValues = Object.fromEntries(
@@ -1958,6 +2102,22 @@ function Editor({
         )}
         <section className="section component-library">
           <h2 className="label">{t('ui.components')}</h2>
+          {sandbox && (
+            <MyComponents
+              t={t}
+              library={library}
+              disabled={!canEdit}
+              usage={(id) => componentUsage(progress, id)}
+              onPress={startPaletteDrag}
+              onActivate={activatePaletteComponent}
+              onRename={(id, name) =>
+                changeLibrary((p) => renameComponent(p, id, name, Date.now()))
+              }
+              onDelete={(id) => changeLibrary((p) => removeComponent(p, id))}
+              onExport={exportLibrary}
+              onImport={importLibrary}
+            />
+          )}
           <ComponentPalette
             entries={[
               ...primitives.map((name) => ({
@@ -2156,6 +2316,44 @@ function Editor({
             </>
           )}
         </div>
+        {sandbox && canEdit && packable.length > 0 && (
+          <div
+            className="canvas-actions"
+            role="toolbar"
+            aria-label={t('sandbox.components.actions')}
+          >
+            <span className="canvas-actions-count">
+              {t('sandbox.components.selected', { count: packable.length, n: packable.length })}
+            </span>
+            <span className="tool-sep" />
+            <button
+              className="tool-btn tool-wide tool-package"
+              title={t('sandbox.components.packageHelp')}
+              onClick={startPackage}
+            >
+              ⊞ {t('sandbox.components.package')}
+            </button>
+            {selectedInstance && (
+              <>
+                <span className="tool-sep" />
+                <button
+                  className="tool-btn tool-wide"
+                  title={t('sandbox.components.openHelp')}
+                  onClick={() => inspect(selectedInstance)}
+                >
+                  {t('sandbox.components.open')}
+                </button>
+                <button
+                  className="tool-btn tool-wide"
+                  title={t('sandbox.components.ungroupHelp')}
+                  onClick={() => ungroup(selectedInstance.id)}
+                >
+                  ⇱ {t('sandbox.components.ungroup')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {inside.length > 0 && (
           <div className="canvas-crumb">
             <button className="btn" onClick={leaveInside}>
@@ -2874,9 +3072,21 @@ function Editor({
 
       {ghost && (
         <div className="palette-ghost" style={{ left: ghost.x, top: ghost.y }}>
-          <span className="sym">{SYMBOLS[ghost.component] ?? ''}</span>
+          <span className="sym">{symbolOf(ghost.component) ?? ''}</span>
           {t(`components.${ghost.component}`)}
         </div>
+      )}
+
+      {packaging && (
+        <PackageDialog
+          t={t}
+          graph={state.graph}
+          plan={packaging.plan}
+          defaultName={packaging.name}
+          shapeOf={portShape}
+          onCancel={() => setPackaging(undefined)}
+          onConfirm={confirmPackage}
+        />
       )}
 
       {modal && result && (

@@ -42,6 +42,7 @@
   --cat-grad: #6fe3ff;
   --cat-learn: #ffb86b;
   --cat-attn: #ff8fb8;
+  --cat-custom: #ffe08a; /* the player's own packaged components (sandbox) */
   --pos: #ffad5c; /* wires carrying positive values */
   --neg: #7cb6ff; /* wires carrying negative values */
 
@@ -607,6 +608,9 @@ input[type='range'] {
 }
 [data-category='attn'] {
   --cat: var(--cat-attn);
+}
+[data-category='custom'] {
+  --cat: var(--cat-custom);
 }
 .palette-item[data-category] {
   box-shadow: inset 3px 0 0 var(--cat);
@@ -4757,4 +4761,115 @@ input[type='range'] {
   font-size: var(--fs-sm);
   text-align: center;
   padding: 0 var(--s4);
+}
+
+/* ---------- sandbox: my components ---------- */
+.my-components-body {
+  border-top: 1px dashed var(--line);
+}
+.my-components-empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.my-component .palette-item .sym {
+  color: var(--cat-custom);
+}
+.my-component .palette-item .name {
+  color: var(--text);
+}
+.my-component-ports {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.my-component-more {
+  width: 26px;
+  height: auto;
+  align-self: stretch;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: 15px;
+  letter-spacing: 0.05em;
+}
+.my-component-more:hover,
+.my-component.is-open .my-component-more {
+  color: var(--cat-custom);
+  border-color: var(--cat-custom);
+}
+.my-component-menu {
+  border: 1px solid var(--line);
+  border-top: 0;
+  background: color-mix(in srgb, var(--panel-2) 60%, transparent);
+}
+/* A packaged component reads as a stack of parts: a second card peeks out behind it. */
+.node[data-category='custom'] {
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    5px 5px 0 -1px var(--bg),
+    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 55%, transparent);
+}
+.node[data-category='custom'].is-selected {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    5px 5px 0 -1px var(--bg),
+    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent);
+}
+.node[data-category='custom'].is-error {
+  box-shadow:
+    0 0 0 2px var(--bad),
+    5px 5px 0 -1px var(--bg),
+    5px 5px 0 0.5px color-mix(in srgb, var(--bad) 55%, transparent);
+}
+.node[data-category='custom'] .node-sym {
+  color: var(--cat-custom);
+}
+.canvas-actions {
+  background: var(--panel);
+  border: 1px solid var(--cat-custom);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  animation: canvas-actions-in 0.16s ease-out both;
+}
+@keyframes canvas-actions-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-actions {
+    animation: none;
+  }
+}
+.canvas-actions-count {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.tool-btn.tool-package {
+  color: var(--cat-custom);
+}
+.pkg-count {
+  margin-left: 4px;
+  color: var(--faint);
+}
+.pkg-arrow {
+  font-family: var(--mono);
+  color: var(--cat-custom);
+}
+.pkg-port {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.pkg-port-name {
+  font-family: var(--mono);
+}
+.pkg-port-where {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.pkg-port-error {
+  font-size: var(--fs-xs);
+  color: var(--bad);
 }
