@@ -78,6 +78,8 @@ export interface ComponentAttributeDefinition {
 }
 export interface ComponentDefinition {
   name: string;
+  /** Player-given display name (sandbox components); built-ins translate `components.<name>`. */
+  label?: string;
   inputs: readonly string[];
   outputs: readonly string[];
   optionalInputs?: readonly string[];

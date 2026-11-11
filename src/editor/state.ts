@@ -62,7 +62,9 @@ export type EditorCommand =
   | { type: 'insertExpression'; expression: ExpressionGraph; position: Point; to?: GraphEndpoint }
   | { type: 'setViewport'; viewport: Viewport }
   /** Swap in a whole graph (e.g. a sandbox starter model); undoable like any edit. */
-  | { type: 'replaceGraph'; graph: GraphJSON };
+  | { type: 'replaceGraph'; graph: GraphJSON; selection?: string[] }
+  /** The palette changed (e.g. a sandbox component was packaged or deleted); not an edit. */
+  | { type: 'setAvailable'; available: readonly string[] };
 
 const clone = <T>(value: T): T => structuredClone(value);
 /** Copies of a locked loss are ordinary, editable nodes. */
@@ -251,8 +253,15 @@ export function editorReducer(
     }
     case 'beginMove':
       return { ...state, transaction: snapshot(state), error: null };
-    case 'replaceGraph':
-      return commit(state, clone(command.graph), []);
+    case 'replaceGraph': {
+      const graph = clone(command.graph);
+      const selection = (command.selection ?? []).filter((id) =>
+        graph.nodes.some((n) => n.id === id),
+      );
+      return commit(state, graph, selection);
+    }
+    case 'setAvailable':
+      return { ...state, available: [...command.available] };
     case 'cancelMove':
       return state.transaction
         ? { ...state, ...state.transaction, transaction: null, error: null }

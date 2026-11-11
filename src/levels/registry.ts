@@ -4,12 +4,23 @@
 import { ComponentRegistry, createDefaultRegistry, type GraphJSON } from '../engine/graph';
 import type { CircuitLevel, Level, Progress } from '../engine/levels';
 import { configurableModule } from '../engine/parameterized-components';
+import { customComponentName, libraryOf, registerCustomComponents } from '../sandbox/components';
 
 /** Palette and compiler policy: a level cannot use the component it is building. */
 export function availableComponents(level: CircuitLevel, progress: Progress): string[] {
   const excluded = new Set([...(level.forbidden ?? []), ...(level.unlockComponents ?? [])]);
+  // Sandbox slots can also place the player's own packaged components.
+  const custom =
+    level.kind === 'train' && level.sandbox
+      ? libraryOf(progress).map((c) => customComponentName(c.id))
+      : [];
   return [
-    ...new Set([...level.available, ...progress.unlockedComponents, ...(level.presets ?? [])]),
+    ...new Set([
+      ...level.available,
+      ...progress.unlockedComponents,
+      ...(level.presets ?? []),
+      ...custom,
+    ]),
   ].filter((name) => !excluded.has(name));
 }
 
@@ -65,5 +76,5 @@ export function buildPlayerRegistry(
   }
   const registry = new ComponentRegistry();
   for (const definition of definitions.values()) registry.register(configurableModule(definition));
-  return registry;
+  return registerCustomComponents(registry, libraryOf(progress));
 }

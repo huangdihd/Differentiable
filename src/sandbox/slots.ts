@@ -4,6 +4,7 @@
 /** Sandbox saves: local slots of free-play graphs, their data and imported weights. */
 import type { GraphJSON } from '../engine/graph';
 import type { Level, Progress } from '../engine/levels';
+import { isComponentLibrary, type CustomComponent } from './components';
 import { validateRows, type ImportedDataset } from './dataset-import';
 
 import { SANDBOX_BUILTINS, type SandboxBuiltin } from './datasets';
@@ -34,6 +35,8 @@ export interface SandboxSlot {
 
 export interface SandboxSave {
   slots: SandboxSlot[];
+  /** "My components": parts packaged from sandbox graphs; absent until the first one. */
+  components?: CustomComponent[];
 }
 
 export const MAX_SLOTS = 12;
@@ -130,6 +133,8 @@ export function isSandboxSave(
   isGraph: (graph: unknown) => boolean,
 ): value is SandboxSave {
   if (!record(value) || !Array.isArray(value.slots) || value.slots.length > MAX_SLOTS) return false;
+  if (value.components !== undefined && !isComponentLibrary(value.components, isGraph))
+    return false;
   const ids = new Set<string>();
   return value.slots.every((slot) => {
     if (!isSandboxSlot(slot, isGraph) || ids.has(slot.id)) return false;
@@ -141,7 +146,8 @@ export function isSandboxSave(
 export const sandboxSlots = (progress: Progress): SandboxSlot[] => progress.sandbox?.slots ?? [];
 
 function withSlots(progress: Progress, slots: SandboxSlot[]): Progress {
-  return { ...progress, sandbox: { slots } };
+  // The component library rides along untouched.
+  return { ...progress, sandbox: { ...progress.sandbox, slots } };
 }
 
 export function createSlot(
