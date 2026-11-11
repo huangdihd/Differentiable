@@ -604,7 +604,14 @@ function Workspace({
 }) {
   const levelId = sandboxLevelId(slot.id);
   const dataKey = datasetKey(slot.dataset);
-  const weightsKey = slot.weights ? JSON.stringify(slot.weights).length : 0;
+  // Any change to the weights file (import, clear, a different file) resyncs the worker.
+  const weightsKey = useMemo(() => {
+    if (!slot.weights) return 0;
+    const text = JSON.stringify(slot.weights);
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = (Math.imul(h, 31) + text.charCodeAt(i)) | 0;
+    return `${text.length}:${h >>> 0}`;
+  }, [slot.weights]);
   const level = useMemo<TrainLevel | Error>(() => {
     try {
       return buildSandboxLevel(slot.id, slot.dataset);

@@ -7,6 +7,7 @@ import { initialProgress } from '../engine/levels';
 import { WorkerRuntime } from '../worker/runtime';
 import type { Command, ReplyData, WorkerResponse } from '../worker/protocol';
 import { gameLevels } from '../levels/catalog';
+import { buildSandboxLevel } from './level';
 import { exportWeights, parseWeights, sandboxLevelId } from './slots';
 
 const edge = (from: string, to: string, port: string) => ({
@@ -79,4 +80,54 @@ it('trains a sandbox slot and round-trips its weights through a file', async () 
   await send({ type: 'setSandbox', sandbox: { slotId: 'a', dataset, weights: file } });
   const seeded = (await send({ type: 'trainStep', levelId, graph })) as ReplyData['trainStep'];
   expect(seeded.parameters.w.before[0]).toBeCloseTo(5);
+});
+
+it('previews sandbox nodes with the latest trained, reset or imported parameters', async () => {
+  const messages: WorkerResponse[] = [];
+  const runtime = new WorkerRuntime(
+    (m) => messages.push(structuredClone(m)),
+    gameLevels,
+    initialProgress([]),
+  );
+  runtimes.push(runtime);
+  let requestId = 0;
+  const send = async (command: Command) => {
+    await runtime.handle({ ...command, requestId: ++requestId, revision: 0 });
+    const last = messages.at(-1)!;
+    if (last.type !== 'reply') throw new Error(JSON.stringify(last));
+    return last.data;
+  };
+  const levelId = sandboxLevelId('a');
+  const dataset = { kind: 'builtin' as const, id: 'noisy-line' as const };
+  const inputs = Object.fromEntries(
+    Object.entries(buildSandboxLevel('a', dataset).interface.inputs).map(([name, shape]) => [
+      name,
+      new Array<number>(shape.reduce((n, d) => n * d, 1)).fill(0),
+    ]),
+  );
+  const probeW = async () =>
+    (
+      (await send({
+        type: 'probe',
+        levelId,
+        graph,
+        endpoint: { node: 'w', port: 'out' },
+        inputs,
+      })) as ReplyData['probe']
+    ).values[0];
+  await send({ type: 'init', backend: 'cpu' });
+  await send({ type: 'setSandbox', sandbox: { slotId: 'a', dataset } });
+  expect(await probeW()).toBeCloseTo(2);
+  const first = (await send({ type: 'trainStep', levelId, graph })) as ReplyData['trainStep'];
+  expect(first.parameters.w.after[0]).not.toBeCloseTo(2);
+  expect(await probeW()).toBeCloseTo(first.parameters.w.after[0]);
+  const second = (await send({ type: 'trainStep', levelId, graph })) as ReplyData['trainStep'];
+  expect(await probeW()).toBeCloseTo(second.parameters.w.after[0]);
+  await send({ type: 'trainReset' });
+  expect(await probeW()).toBeCloseTo(2);
+  const file = parseWeights(JSON.stringify(exportWeights({ w: { shape: [], values: [5] } })));
+  await send({ type: 'setSandbox', sandbox: { slotId: 'a', dataset, weights: file } });
+  expect(await probeW()).toBeCloseTo(5);
+  await send({ type: 'setSandbox', sandbox: { slotId: 'a', dataset } });
+  expect(await probeW()).toBeCloseTo(2);
 });

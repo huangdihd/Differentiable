@@ -772,6 +772,8 @@ function Editor({
   }>();
   const [previousBest, setPreviousBest] = useState<LevelResult['metrics']>();
   const [training, setTraining] = useState<'idle' | 'running' | 'paused'>('idle');
+  // Sandbox node previews run on the trained parameters: bump whenever those change.
+  const [paramsRevision, setParamsRevision] = useState(0);
   const [report, setReport] = useState<TrainingReport>();
   const [losses, setLosses] = useState<number[]>([]);
   // Single-step training, replayed on the canvas: forward, then backward, then the update.
@@ -1197,8 +1199,11 @@ function Editor({
     lossLandscape;
 
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
+  // A paused sandbox run can still be inspected: previews read its live parameters.
+  const previewBlocked = busy && !(sandbox && training === 'paused');
+  const previewKey = sandbox ? `${training}|${paramsRevision}` : '';
   useEffect(() => {
-    if (!probing || busy || 'invalid' in parsedInputs) {
+    if (!probing || previewBlocked || 'invalid' in parsedInputs) {
       setValues({});
       setProbeErrors([]);
       return;
@@ -1265,7 +1270,7 @@ function Editor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [computationKey, parsedInputs, diagnostics, busy, locale, visualPlot]);
+  }, [computationKey, parsedInputs, diagnostics, previewBlocked, previewKey, locale, visualPlot]);
 
   const PHASE_MS = 1100;
   const stepOnce = async () => {
@@ -1288,6 +1293,13 @@ function Editor({
         setStepFlow({ trace, phase });
         if (phase !== 'update') await new Promise((done) => setTimeout(done, PHASE_MS));
       }
+      if (sandbox) {
+        // The step's trace is the model before its update; let the previews show the result.
+        await new Promise((done) => setTimeout(done, PHASE_MS));
+        if (token !== stepToken.current) return;
+        setStepFlow(undefined);
+        setParamsRevision((n) => n + 1);
+      }
     } catch (e) {
       fail(e);
     }
@@ -1299,7 +1311,10 @@ function Editor({
     setLosses([]);
     setReport(undefined);
     stepGraph.current = undefined;
-    void client.current?.trainReset().catch(fail);
+    void client.current
+      ?.trainReset()
+      .then(() => setParamsRevision((n) => n + 1))
+      .catch(fail);
   };
   const saveTraining = (settings: {
     learningRate?: number;

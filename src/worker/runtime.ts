@@ -89,6 +89,33 @@ export class WorkerRuntime {
       Object.entries(weights.parameters).map(([id, p]) => [id, T.tensor(p.values, p.shape)]),
     );
   }
+  /**
+   * What a sandbox node preview should run with: the live (paused) run, else the last trained
+   * snapshot (continuous run or single steps), else the slot's imported weights. Undefined means
+   * the seeded initialisation training would start from. Fresh tensors the caller must dispose.
+   */
+  private async previewParameters(
+    level: TrainLevel,
+    graph: GraphJSON,
+  ): Promise<Map<string, T.Tensor> | undefined> {
+    if (!level.sandbox) return undefined;
+    const key = this.generationKey(level.id, graph);
+    const run = this.run;
+    if (run && this.generationKey(run.level.id, run.request.graph) === key) {
+      const live = new Map<string, T.Tensor>();
+      for (const [id, value] of run.plan.parameters)
+        live.set(id, T.tensor(new Float32Array(await value.read()), [...value.shape]));
+      return live;
+    }
+    if (this.generationParameters?.key === key)
+      return new Map(
+        [...this.generationParameters.values].map(([id, p]) => [
+          id,
+          T.tensor(new Float32Array(p.data), [...p.shape]),
+        ]),
+      );
+    return this.sandboxParameters(level);
+  }
   // A single CPU snapshot: latest successful continuous completion/stop or step wins.
   // Never borrow tensors owned by a training plan, which release() will dispose.
   private generationParameters?: {
@@ -755,6 +782,15 @@ export class WorkerRuntime {
           ? groups.find((g) => JSON.stringify(g) === JSON.stringify(request.shapes))
           : level.interface.inputs;
       if (!shapes) throw new Error('worker.invalid_request');
+      // Sandbox previews show the model as trained so far, not a fresh initialisation.
+      let previewParameters =
+        request.type === 'probe' && level.kind === 'train'
+          ? await this.previewParameters(level, request.graph)
+          : undefined;
+      const disposePreview = () => {
+        previewParameters?.forEach((t) => t.dispose());
+        previewParameters = undefined;
+      };
       let plan: GraphPlan;
       try {
         plan = compileGraph(graph, {
@@ -765,7 +801,7 @@ export class WorkerRuntime {
           parameters:
             request.type === 'start' && level.kind === 'train'
               ? this.sandboxParameters(level)
-              : undefined,
+              : previewParameters,
         });
         if (
           request.type !== 'probe' &&
@@ -787,6 +823,7 @@ export class WorkerRuntime {
           throw new Error(dependency);
         }
       } catch (error) {
+        disposePreview();
         if (request.type !== 'compile') throw error;
         this.reply(request, {
           outputShapes: {},
@@ -811,7 +848,25 @@ export class WorkerRuntime {
               if (!request.inputs[name]) throw new Error('worker.missing_input');
               inputs[name] = T.tensor(request.inputs[name], shape);
             }
-            outputs = plan.execute(inputs);
+            try {
+              outputs = plan.execute(inputs);
+            } catch (error) {
+              // Imported weights that no longer fit the graph: preview the seeded model instead.
+              if (
+                !previewParameters ||
+                (error as { key?: string })?.key !== 'parameter_shape_mismatch'
+              )
+                throw error;
+              plan.dispose();
+              disposePreview();
+              plan = compileGraph(graph, {
+                registry: this.registry,
+                inputShapes: shapes,
+                availableComponents: level.available,
+                random: new Random(level.kind === 'train' ? level.seed : 1),
+              });
+              outputs = plan.execute(inputs);
+            }
             const value = outputs[probeName];
             this.reply(request, { shape: value.shape, values: Array.from(await value.read()) });
           } finally {
@@ -843,13 +898,7 @@ export class WorkerRuntime {
                 evaluationBatch,
                 evaluationModel:
                   runLevel.resample && evaluationBatch
-                    ? trainingEvaluationModel(
-                        runLevel,
-                        graph,
-                        plan,
-                        evaluationBatch,
-                        this.registry,
-                      )
+                    ? trainingEvaluationModel(runLevel, graph, plan, evaluationBatch, this.registry)
                     : undefined,
                 evaluationReports: runLevel.resample,
                 lossOutput: runLevel.lossOutput,
@@ -901,6 +950,7 @@ export class WorkerRuntime {
         throw plan.diagnose(error, graph);
       } finally {
         if (!retained) plan.dispose();
+        disposePreview();
       }
     } catch (error) {
       this.emit({
