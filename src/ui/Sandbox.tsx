@@ -215,29 +215,33 @@ function SlotList({
                   : t('sandbox.slot.newHint')}
               </span>
             </button>
-            {sorted.map((slot) => (
+            {sorted.map((slot, i) => (
               <div key={slot.id} className="sandbox-slot">
                 <button
-                  className="level-card is-passed"
+                  className="level-card is-playable"
                   disabled={!ready}
                   onClick={() => onOpen(slot.id)}
                 >
-                  <span className="level-id">{datasetLabel(t, slot.dataset)}</span>
+                  <span className="level-id">∞{i + 1}</span>
                   <span className="level-card-title">{slot.name}</span>
                   <span className="level-state">
+                    {datasetLabel(t, slot.dataset)} ·{' '}
                     {t('sandbox.slot.updated', {
                       date: new Date(slot.updatedAt).toLocaleString(),
                     })}
                   </span>
                 </button>
                 <button
-                  className="btn btn-danger"
+                  type="button"
+                  className="icon-btn sandbox-slot-delete"
+                  aria-label={t('sandbox.slot.delete')}
+                  title={t('sandbox.slot.delete')}
                   onClick={() => {
                     if (window.confirm(t('sandbox.slot.deleteConfirm', { name: slot.name })))
                       onDelete(slot.id);
                   }}
                 >
-                  {t('sandbox.slot.delete')}
+                  ×
                 </button>
               </div>
             ))}
@@ -311,70 +315,76 @@ function OpenSlot({
 
   const panel = (
     <div className="sandbox-panel">
-      <label className="label" htmlFor="sandbox-name">
-        {t('sandbox.slot.name')}
-      </label>
-      <input
-        id="sandbox-name"
-        className="field"
-        value={slot.name}
-        maxLength={60}
-        onChange={(e) => change({ name: e.target.value })}
-      />
-      <label className="label" htmlFor="sandbox-dataset">
-        {t('sandbox.dataset.label')}
-      </label>
-      <select
-        id="sandbox-dataset"
-        className="field"
-        value={slot.dataset.kind === 'builtin' ? slot.dataset.id : '__imported'}
-        onChange={(e) => {
-          if (e.target.value === '__import') setImporting(true);
-          else if (e.target.value !== '__imported')
-            change({
-              dataset: {
-                kind: 'builtin',
-                id: e.target.value as (typeof SANDBOX_BUILTINS)[number],
-              },
-            });
-        }}
-      >
-        {SANDBOX_BUILTINS.map((id) => (
-          <option key={id} value={id}>
-            {t(`datasets.${id}.name`)}
-          </option>
-        ))}
-        {slot.dataset.kind === 'imported' && (
-          <option value="__imported">{datasetLabel(t, slot.dataset)}</option>
-        )}
-        <option value="__import">{t('sandbox.dataset.importOption')}</option>
-      </select>
-      <p className="hint">{t('sandbox.dataset.localOnly')}</p>
-      <div className="sandbox-weights">
-        <span className="label">{t('sandbox.weights.label')}</span>
-        <button
-          className="btn"
-          onClick={() => {
-            setMessage(undefined);
-            client.current
-              ?.exportWeights(levelId, slot.graph ?? { version: 1, nodes: [], edges: [] })
-              .then(({ parameters }) => {
-                download(`${slot.name || 'sandbox'}.weights.json`, exportWeights(parameters));
-                setMessage(t('sandbox.weights.exported'));
-              })
-              .catch((error) => setMessage(errorText(t, error)));
+      <div className="sandbox-panel-block">
+        <label className="label" htmlFor="sandbox-name">
+          {t('sandbox.slot.name')}
+        </label>
+        <input
+          id="sandbox-name"
+          className="field"
+          value={slot.name}
+          maxLength={60}
+          onChange={(e) => change({ name: e.target.value })}
+        />
+      </div>
+      <div className="sandbox-panel-block">
+        <label className="label" htmlFor="sandbox-dataset">
+          {t('sandbox.dataset.label')}
+        </label>
+        <select
+          id="sandbox-dataset"
+          className="field"
+          value={slot.dataset.kind === 'builtin' ? slot.dataset.id : '__imported'}
+          onChange={(e) => {
+            if (e.target.value === '__import') setImporting(true);
+            else if (e.target.value !== '__imported')
+              change({
+                dataset: {
+                  kind: 'builtin',
+                  id: e.target.value as (typeof SANDBOX_BUILTINS)[number],
+                },
+              });
           }}
         >
-          {t('sandbox.weights.export')}
-        </button>
-        <button className="btn" onClick={() => weightsInput.current?.click()}>
-          {t('sandbox.weights.import')}
-        </button>
-        {slot.weights && (
-          <button className="btn" onClick={() => change({ weights: undefined })}>
-            {t('sandbox.weights.clear')}
+          {SANDBOX_BUILTINS.map((id) => (
+            <option key={id} value={id}>
+              {t(`datasets.${id}.name`)}
+            </option>
+          ))}
+          {slot.dataset.kind === 'imported' && (
+            <option value="__imported">{datasetLabel(t, slot.dataset)}</option>
+          )}
+          <option value="__import">{t('sandbox.dataset.importOption')}</option>
+        </select>
+        <p className="hint">{t('sandbox.dataset.localOnly')}</p>
+      </div>
+      <div className="sandbox-panel-block">
+        <span className="label">{t('sandbox.weights.label')}</span>
+        <div className="btn-row">
+          <button
+            className="btn"
+            onClick={() => {
+              setMessage(undefined);
+              client.current
+                ?.exportWeights(levelId, slot.graph ?? { version: 1, nodes: [], edges: [] })
+                .then(({ parameters }) => {
+                  download(`${slot.name || 'sandbox'}.weights.json`, exportWeights(parameters));
+                  setMessage(t('sandbox.weights.exported'));
+                })
+                .catch((error) => setMessage(errorText(t, error)));
+            }}
+          >
+            {t('sandbox.weights.export')}
           </button>
-        )}
+          <button className="btn" onClick={() => weightsInput.current?.click()}>
+            {t('sandbox.weights.import')}
+          </button>
+          {slot.weights && (
+            <button className="btn" onClick={() => change({ weights: undefined })}>
+              {t('sandbox.weights.clear')}
+            </button>
+          )}
+        </div>
         <input
           ref={weightsInput}
           type="file"
@@ -406,9 +416,11 @@ function OpenSlot({
           {message}
         </p>
       )}
-      <button className="btn" onClick={onBack}>
-        {t('sandbox.backToSlots')}
-      </button>
+      <div className="btn-row">
+        <button className="btn" onClick={onBack}>
+          {t('sandbox.backToSlots')}
+        </button>
+      </div>
     </div>
   );
 

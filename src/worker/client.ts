@@ -170,24 +170,41 @@ export class WorkerClient {
     graph: GraphJSON,
     learningRate?: number,
     optimizer?: OptimizerOptions['kind'],
+    steps?: number,
   ) {
-    return this.send<'evaluate'>({ type: 'evaluate', levelId, graph, learningRate, optimizer });
+    return this.send<'evaluate'>({
+      type: 'evaluate',
+      levelId,
+      graph,
+      learningRate,
+      optimizer,
+      steps,
+    });
   }
   start(
     levelId: string,
     graph: GraphJSON,
     learningRate?: number,
     optimizer?: OptimizerOptions['kind'],
+    steps?: number,
   ) {
-    return this.send<'start'>({ type: 'start', levelId, graph, learningRate, optimizer });
+    return this.send<'start'>({ type: 'start', levelId, graph, learningRate, optimizer, steps });
   }
   trainStep(
     levelId: string,
     graph: GraphJSON,
     learningRate?: number,
     optimizer?: OptimizerOptions['kind'],
+    steps?: number,
   ) {
-    return this.send<'trainStep'>({ type: 'trainStep', levelId, graph, learningRate, optimizer });
+    return this.send<'trainStep'>({
+      type: 'trainStep',
+      levelId,
+      graph,
+      learningRate,
+      optimizer,
+      steps,
+    });
   }
   /** Returns the filtered prompt plus length sampled characters. Padding is context-only.
    * Uses the latest successful start/stop or trainStep parameters for this graph/revision.

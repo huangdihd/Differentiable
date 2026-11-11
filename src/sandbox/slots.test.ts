@@ -15,7 +15,8 @@ import {
   sandboxSlots,
   updateSlot,
 } from './slots';
-import { buildSandboxLevel, sandboxComponents } from './level';
+import { buildSandboxLevel, SANDBOX_STEPS, sandboxComponents } from './level';
+import { trainingSteps } from '../engine/levels';
 import { fromEditorProgress } from '../ui/Sandbox';
 
 describe('sandbox unlock', () => {
@@ -71,6 +72,15 @@ describe('sandbox slots', () => {
       t: [[2], [4], [6]],
     });
     expect(imported.interface.inputs).toEqual({ x: [3], t: [3] });
+  });
+  it('lets the player pick a step budget (default 500)', () => {
+    const level = buildSandboxLevel('a', { kind: 'builtin', id: 'noisy-line' });
+    expect(level.steps).toBe(SANDBOX_STEPS);
+    expect(level.tunable?.steps).toEqual({ min: 1, max: 100_000, default: SANDBOX_STEPS });
+    expect(trainingSteps(level)).toBe(SANDBOX_STEPS);
+    expect(trainingSteps(level, 2000)).toBe(2000);
+    expect(trainingSteps(level, 0)).toBe(1);
+    expect(trainingSteps(level, 999_999)).toBe(100_000);
   });
 });
 

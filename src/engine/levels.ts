@@ -124,6 +124,8 @@ export interface TrainLevel extends LevelMetadata {
   tunable?: {
     learningRate: { min: number; max: number; default: number };
     optimizer?: readonly OptimizerOptions['kind'][];
+    /** Sandbox (and similar free runs): player-chosen step budget for the next train. */
+    steps?: { min: number; max: number; default: number };
   };
   /** Opt in to a fresh seeded minibatch each update; requires evaluationDataset. */
   resample?: boolean;
@@ -269,6 +271,14 @@ export function trainingOptimizer(
     ? requested
     : (allowed?.[0] ?? level.optimizer.kind);
 }
+/** Only declared step tunables can override the level's training budget. */
+export function trainingSteps(level: TrainLevel, requested?: number): number {
+  const range = level.tunable?.steps;
+  if (!range) return level.steps;
+  const raw =
+    requested !== undefined && Number.isFinite(requested) ? Math.round(requested) : range.default;
+  return Math.min(range.max, Math.max(range.min, raw));
+}
 /** Fixed batches remain caller-owned; factory batches are owned by TrainingSession. */
 export function trainingBatchSource(level: TrainLevel): TrainingBatchSource {
   if (!level.resample) return level.dataset(new Random(level.seed));
@@ -319,6 +329,7 @@ export async function evaluateLevel(
     registry?: ComponentRegistry;
     learningRate?: number;
     optimizer?: OptimizerOptions['kind'];
+    steps?: number;
     onReport?: (report: TrainingReport) => void;
     signal?: AbortSignal;
     /** Tests of the held-out-data defence turn off the structural anti-cheat check. */
@@ -383,10 +394,12 @@ export async function evaluateLevel(
         );
         const initial = await session.evaluate();
         const checkDiverged = (report: TrainingReport) => {
+          if (level.sandbox) return;
           if (level.tunable && (!Number.isFinite(report.loss) || report.loss > initial.loss * 1000))
             throw new Error('levels.train_diverged');
         };
-        result.training = await session.run(level.steps, {
+        const steps = trainingSteps(level, options.steps);
+        result.training = await session.run(steps, {
           ...options,
           reportEvery: level.resample ? (level.evaluationEvery ?? 50) : 1,
           // Report first so the player sees the loss blow up before the run stops.
@@ -397,38 +410,41 @@ export async function evaluateLevel(
         });
         checkDiverged(result.training);
         // Ending above where it started is also overshooting, just more slowly.
-        if (level.tunable && result.training.loss > initial.loss)
+        if (!level.sandbox && level.tunable && result.training.loss > initial.loss)
           throw new Error('levels.train_diverged');
-        result.passed =
-          result.training.loss < level.threshold.loss &&
-          (level.threshold.accuracy === undefined ||
-            result.training.accuracy! >= level.threshold.accuracy);
-        if (
-          result.training.loss < level.threshold.loss &&
-          level.threshold.accuracy !== undefined &&
-          (result.training.accuracy ?? -Infinity) < level.threshold.accuracy
-        ) {
-          result.errorKey = 'levels.train_accuracy';
-          result.error = { key: result.errorKey, params: { accuracy: result.training.accuracy } };
-        } else if (!result.passed && level.tunable) {
-          result.errorKey = 'levels.train_slow';
-          result.error = { key: result.errorKey, params: { loss: result.training.loss } };
+        // Sandbox has no pass line: train for the steps (or stop) and never grade a win.
+        if (!level.sandbox) {
+          result.passed =
+            result.training.loss < level.threshold.loss &&
+            (level.threshold.accuracy === undefined ||
+              result.training.accuracy! >= level.threshold.accuracy);
+          if (
+            result.training.loss < level.threshold.loss &&
+            level.threshold.accuracy !== undefined &&
+            (result.training.accuracy ?? -Infinity) < level.threshold.accuracy
+          ) {
+            result.errorKey = 'levels.train_accuracy';
+            result.error = { key: result.errorKey, params: { accuracy: result.training.accuracy } };
+          } else if (!result.passed && level.tunable) {
+            result.errorKey = 'levels.train_slow';
+            result.error = { key: result.errorKey, params: { loss: result.training.loss } };
+          }
+          result.tests.push({
+            id: 'evaluation',
+            ...(result.errorKey
+              ? { errorKey: result.errorKey, errorParams: result.error?.params }
+              : {}),
+            passed: result.passed,
+            actual: [
+              result.training.loss,
+              ...(result.training.accuracy === undefined ? [] : [result.training.accuracy]),
+            ],
+            expected: [
+              level.threshold.loss,
+              ...(level.threshold.accuracy === undefined ? [] : [level.threshold.accuracy]),
+            ],
+          });
         }
-        result.tests.push({
-          id: 'evaluation',
-          ...(result.errorKey
-            ? { errorKey: result.errorKey, errorParams: result.error?.params }
-            : {}),
-          passed: result.passed,
-          actual: [
-            result.training.loss,
-            ...(result.training.accuracy === undefined ? [] : [result.training.accuracy]),
-          ],
-          expected: [
-            level.threshold.loss,
-            ...(level.threshold.accuracy === undefined ? [] : [level.threshold.accuracy]),
-          ],
-        });
       } finally {
         session?.dispose();
         const tensors = new Set([
@@ -587,7 +603,10 @@ export interface Progress {
   savedGraphs: Record<string, GraphJSON>;
   passedSolutions: Record<string, GraphJSON>;
   bestScores: Record<string, GraphMetrics>;
-  trainingSettings?: Record<string, { learningRate: number; optimizer?: 'sgd' | 'adam' }>;
+  trainingSettings?: Record<
+    string,
+    { learningRate: number; optimizer?: 'sgd' | 'adam'; steps?: number }
+  >;
   /** Local sandbox slots (storage v11+); absent until the player creates one. */
   sandbox?: SandboxSave;
 }

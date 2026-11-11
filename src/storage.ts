@@ -104,7 +104,11 @@ export function isProgress(value: unknown): value is Progress {
             settings.learningRate > 0 &&
             (settings.optimizer === undefined ||
               settings.optimizer === 'sgd' ||
-              settings.optimizer === 'adam'),
+              settings.optimizer === 'adam') &&
+            (settings.steps === undefined ||
+              (typeof settings.steps === 'number' &&
+                Number.isSafeInteger(settings.steps) &&
+                settings.steps >= 1)),
         ))
     )
       return false;

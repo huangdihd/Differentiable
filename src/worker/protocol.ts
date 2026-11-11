@@ -48,6 +48,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'start';
@@ -55,6 +56,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'trainStep';
@@ -62,6 +64,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'generate';

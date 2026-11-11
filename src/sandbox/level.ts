@@ -84,6 +84,7 @@ export function buildSandboxLevel(slotId: string, dataset: SandboxDataset): Trai
     tunable: {
       learningRate: { min: 0.0001, max: 1, default: 0.01 },
       optimizer: ['sgd', 'adam'],
+      steps: { min: 1, max: 100_000, default: SANDBOX_STEPS },
     },
     lossOutput: 'loss',
     dataset: build,

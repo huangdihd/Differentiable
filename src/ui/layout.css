@@ -143,7 +143,8 @@
   margin: 40px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  /* CH 0–7 plus sandbox chapter; keep one row on wide home. */
+  grid-template-columns: repeat(9, minmax(0, 1fr));
 }
 .road-chapter {
   display: grid;

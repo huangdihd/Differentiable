@@ -33,7 +33,7 @@ export interface SandboxSlot {
   updatedAt: number;
   dataset: SandboxDataset;
   graph?: GraphJSON;
-  training?: { learningRate: number; optimizer?: 'sgd' | 'adam' };
+  training?: { learningRate: number; optimizer?: 'sgd' | 'adam'; steps?: number };
   /** Imported weights; training starts from them where paths and shapes match. */
   weights?: WeightsFile;
 }
@@ -123,7 +123,11 @@ export function isSandboxSlot(
         value.training.learningRate > 0 &&
         (value.training.optimizer === undefined ||
           value.training.optimizer === 'sgd' ||
-          value.training.optimizer === 'adam')))
+          value.training.optimizer === 'adam') &&
+        (value.training.steps === undefined ||
+          (typeof value.training.steps === 'number' &&
+            Number.isSafeInteger(value.training.steps) &&
+            value.training.steps >= 1))))
   );
 }
 

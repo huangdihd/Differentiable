@@ -2145,7 +2145,8 @@ input[type='range'] {
     0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
   transition: box-shadow 0.3s;
 }
-.lr-control {
+.lr-control,
+.steps-control {
   display: grid;
   gap: var(--s1);
 }
@@ -2154,13 +2155,18 @@ input[type='range'] {
   justify-content: space-between;
   align-items: baseline;
 }
-.lr-control output {
+.lr-control output,
+.steps-control output {
   font-family: var(--mono);
   color: var(--accent);
 }
 .lr-control input[type='range'] {
   width: 100%;
   accent-color: var(--accent);
+}
+.steps-control input[type='number'] {
+  width: 100%;
+  font-family: var(--mono);
 }
 .lr-scale {
   display: flex;
@@ -4161,4 +4167,66 @@ input[type='range'] {
 .seq-try-expected {
   font-size: 11px;
   color: var(--muted);
+}
+
+/* sandbox chapter: no pass meter */
+.road-chapter.is-sandbox .road-count {
+  visibility: hidden;
+}
+
+/* sandbox slots / editor tools — reuse panel + level-card language */
+.sandbox-slot {
+  position: relative;
+  min-width: 0;
+}
+.sandbox-slot .level-card {
+  width: 100%;
+  padding-right: 28px;
+}
+.sandbox-slot-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+.sandbox-panel {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s3) 0;
+  padding: var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.sandbox-panel-block {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.sandbox-panel .label {
+  margin-bottom: 0;
+}
+.sandbox-panel .hint {
+  margin: 0;
+}
+.sandbox-map {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  margin: var(--s2) 0;
+}
+.sandbox-map th,
+.sandbox-map td {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+  font-family: var(--mono);
+}
+.sandbox-map th {
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--panel-2);
+}
+.sandbox-import .btn-row,
+.sandbox-import > p {
+  margin-top: var(--s3);
 }

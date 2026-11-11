@@ -20,7 +20,14 @@ import {
 import { componentOperators, parseExpression } from './engine/expression';
 import { levelTracker } from './analytics';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
-import { CHAPTERS, catalog, entryFor, gameLevels, resumeEntry } from './levels/catalog';
+import {
+  CHAPTERS,
+  SANDBOX_CHAPTER,
+  catalog,
+  entryFor,
+  gameLevels,
+  resumeEntry,
+} from './levels/catalog';
 import {
   connectionError,
   createEditorState,
@@ -406,51 +413,6 @@ export default function App() {
   );
 }
 
-/** The sandbox sits beside the chapters, closed until every level on the road is passed. */
-function SandboxEntry({
-  t,
-  progress,
-  ready,
-  onOpen,
-}: {
-  t: T;
-  progress: Progress;
-  ready: boolean;
-  onOpen: () => void;
-}) {
-  const unlocked = isSandboxUnlocked(
-    progress,
-    catalog.map((e) => e.level),
-  );
-  const count = sandboxSlots(progress).length;
-  return (
-    <section className="chapter sandbox-entry">
-      <header className="chapter-head">
-        <span className="road-n">∞</span>
-        <h2>{t('sandbox.title')}</h2>
-        <p className="muted">{t('sandbox.lead')}</p>
-      </header>
-      <div className="chapter-levels">
-        <button
-          className={`level-card ${unlocked ? 'is-playable' : 'is-locked'}`}
-          disabled={!ready || !unlocked}
-          onClick={onOpen}
-        >
-          <span className="level-id">∞</span>
-          <span className="level-card-title">{t('sandbox.title')}</span>
-          <span className="level-state">
-            {unlocked
-              ? count
-                ? t('sandbox.slotCount', { n: count })
-                : t('sandbox.open')
-              : t('sandbox.lockedHint')}
-          </span>
-        </button>
-      </div>
-    </section>
-  );
-}
-
 /** Phones get a notice instead of the editor: wiring needs a pointer and room for three panels. */
 function isPhone() {
   if (typeof navigator === 'undefined') return false;
@@ -497,7 +459,15 @@ function Home({
   const fresh = progress.passed.length === 0;
   // Where the player left off: the first unlocked, unpassed level in road order.
   const next = resumeEntry(catalog, progress);
-  const [chapter, setChapter] = useState<number>(next?.chapter ?? catalog.at(-1)!.chapter);
+  const sandboxUnlocked = isSandboxUnlocked(
+    progress,
+    catalog.map((e) => e.level),
+  );
+  const sandboxCount = sandboxSlots(progress).length;
+  // All-clear lands on the sandbox chapter; otherwise resume or the last story chapter.
+  const [chapter, setChapter] = useState<number>(
+    next?.chapter ?? (sandboxUnlocked ? SANDBOX_CHAPTER : catalog.at(-1)!.chapter),
+  );
   const entries = catalog.filter((e) => e.chapter === chapter);
   return (
     <main className="home blueprint-bg">
@@ -520,9 +490,13 @@ function Home({
               <span aria-hidden="true">→</span>
             </button>
           ) : (
-            <span className="home-done-badge" role="status">
-              {t('home.allDone')}
-            </span>
+            <button className="continue" disabled={!ready || !sandboxUnlocked} onClick={onOpenSandbox}>
+              <span className="continue-label">{t('home.sandboxMode')}</span>
+              <span className="continue-level">
+                <span className="level-id">∞</span> {t('sandbox.title')}
+              </span>
+              <span aria-hidden="true">→</span>
+            </button>
           )}
         </section>
         {revoked.length > 0 && (
@@ -551,26 +525,30 @@ function Home({
         )}
         <ol className="road">
           {CHAPTERS.map((n) => {
-            const levels = catalog.filter((e) => e.chapter === n);
-            const passed = levels.filter((e) => progress.passed.includes(e.level.id)).length;
-            const open = levels.some((e) => progress.unlocked.includes(e.level.id));
+            const isSandbox = n === SANDBOX_CHAPTER;
+            const levels = isSandbox ? null : catalog.filter((e) => e.chapter === n);
+            const passed = isSandbox
+              ? 0
+              : levels!.filter((e) => progress.passed.includes(e.level.id)).length;
+            const total = isSandbox ? 0 : levels!.length;
+            const open = isSandbox
+              ? true
+              : levels!.some((e) => progress.unlocked.includes(e.level.id));
             return (
               <li key={n}>
                 <button
-                  className={`road-chapter ${open ? 'is-open' : ''} ${n === chapter ? 'is-selected' : ''} ${passed > 0 && passed === levels.length ? 'is-done' : ''}`}
+                  className={`road-chapter ${open ? 'is-open' : ''} ${n === chapter ? 'is-selected' : ''} ${!isSandbox && passed > 0 && passed === total ? 'is-done' : ''} ${isSandbox ? 'is-sandbox' : ''}`}
                   aria-pressed={n === chapter}
                   onClick={() => setChapter(n)}
                 >
                   <span
                     className="road-track"
-                    style={
-                      { '--done': levels.length ? passed / levels.length : 0 } as CSSProperties
-                    }
+                    style={{ '--done': total ? passed / total : 0 } as CSSProperties}
                   />
-                  <span className="road-n">CH {n}</span>
+                  <span className="road-n">{isSandbox ? '∞' : `CH ${n}`}</span>
                   <span className="road-name">{t(`chapter.${n}`)}</span>
                   <span className="road-count">
-                    {levels.length ? `${passed}/${levels.length}` : t('ui.comingSoon')}
+                    {isSandbox ? null : total ? `${passed}/${total}` : t('ui.comingSoon')}
                   </span>
                 </button>
               </li>
@@ -579,11 +557,29 @@ function Home({
         </ol>
         <section className="chapter">
           <header className="chapter-head">
-            <span className="road-n">CH {chapter}</span>
+            <span className="road-n">{chapter === SANDBOX_CHAPTER ? '∞' : `CH ${chapter}`}</span>
             <h2>{t(`chapter.${chapter}`)}</h2>
             <p className="muted">{t(`chapter.${chapter}.desc`)}</p>
           </header>
-          {entries.length === 0 ? (
+          {chapter === SANDBOX_CHAPTER ? (
+            <div className="chapter-levels">
+              <button
+                className={`level-card${sandboxUnlocked ? ' is-playable' : ''}`}
+                disabled={!ready || !sandboxUnlocked}
+                onClick={onOpenSandbox}
+              >
+                <span className="level-id">∞</span>
+                <span className="level-card-title">{t('sandbox.title')}</span>
+                <span className="level-state">
+                  {sandboxUnlocked
+                    ? sandboxCount
+                      ? t('sandbox.slotCount', { n: sandboxCount })
+                      : t('sandbox.open')
+                    : t('sandbox.lockedHint')}
+                </span>
+              </button>
+            </div>
+          ) : entries.length === 0 ? (
             <p className="road-soon">{t('ui.comingSoon')}</p>
           ) : (
             <div className="chapter-levels">
@@ -616,7 +612,6 @@ function Home({
             </div>
           )}
         </section>
-        <SandboxEntry t={t} progress={progress} ready={ready} onOpen={onOpenSandbox} />
         <footer className="home-foot">
           <p>
             <span className="tag demo-tag">DEMO</span> {t('home.demoNote')}
@@ -791,6 +786,12 @@ function Editor({
       ? savedOptimizer
       : optimizers[0]
     : undefined;
+  const stepsTunable = level.kind === 'train' ? level.tunable?.steps : undefined;
+  const trainSteps = stepsTunable
+    ? (progress.trainingSettings?.[level.id]?.steps ?? stepsTunable.default)
+    : level.kind === 'train'
+      ? level.steps
+      : undefined;
   // Language-model levels can write: a prompt, a temperature and what came out.
   const [gen, setGen] = useState<{
     prompt: string;
@@ -1287,7 +1288,11 @@ function Editor({
     stepGraph.current = undefined;
     void client.current?.trainReset().catch(fail);
   };
-  const saveTraining = (settings: { learningRate?: number; optimizer?: 'sgd' | 'adam' }) =>
+  const saveTraining = (settings: {
+    learningRate?: number;
+    optimizer?: 'sgd' | 'adam';
+    steps?: number;
+  }) =>
     latest.current.onProgress({
       ...latest.current.progress,
       trainingSettings: {
@@ -1295,11 +1300,21 @@ function Editor({
         [level.id]: {
           learningRate: learningRate ?? 0.01,
           ...(optimizer ? { optimizer } : {}),
+          ...(trainSteps !== undefined ? { steps: trainSteps } : {}),
           ...settings,
         },
       },
     });
   const setLearningRate = (lr: number) => saveTraining({ learningRate: lr });
+  const setTrainSteps = (steps: number) => {
+    if (!stepsTunable) return;
+    const next = Math.min(
+      stepsTunable.max,
+      Math.max(stepsTunable.min, Math.round(steps) || stepsTunable.default),
+    );
+    if (next === trainSteps) return;
+    saveTraining({ steps: next });
+  };
   // A different optimizer starts a fresh session in the worker; start the chart over too.
   const setOptimizer = (kind: 'sgd' | 'adam') => {
     if (kind === optimizer) return;
@@ -1345,9 +1360,21 @@ function Editor({
       const p = edge && forward[edge.from.node];
       return p && p.size === plotBase.x.length ? { ...plotBase, p: p.values } : plotBase;
     }
+    // Curriculum outputs [N,C] probs; sandbox wires those into cross_entropy → loss.
     const out = state.graph.nodes.find((n) => n.component === 'output');
     const source = out && state.graph.edges.find((e) => e.to.node === out.id)?.from.node;
-    const y = (out && forward[out.id]) ?? (source ? forward[source] : undefined);
+    const ce = state.graph.edges.find(
+      (e) =>
+        e.to.port === 'p' &&
+        state.graph.nodes.find((n) => n.id === e.to.node)?.component === 'cross_entropy',
+    );
+    const direct = (out && forward[out.id]) ?? (source ? forward[source] : undefined);
+    const y =
+      direct && direct.shape.length === 2
+        ? direct
+        : ce
+          ? forward[ce.from.node]
+          : undefined;
     const n = plotBase.points.length;
     if (!y || y.size !== y.values.length || y.shape.length !== 2 || y.shape[0] !== n)
       return plotBase;
@@ -1563,7 +1590,7 @@ function Editor({
         stepToken.current++;
         setStepFlow(undefined);
         setTraining('running');
-        await client.current?.start(level.id, state.graph, learningRate, optimizer);
+        await client.current?.start(level.id, state.graph, learningRate, optimizer, trainSteps);
       } else {
         setRunning(true);
         const r = await client.current?.evaluate(level.id, state.graph);
@@ -2369,7 +2396,7 @@ function Editor({
                 t={t}
                 optimizer={optimizer ?? level.optimizer.kind}
                 learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
-                steps={formatNumber(locale, level.steps)}
+                steps={formatNumber(locale, trainSteps ?? level.steps)}
                 resample={!!level.resample}
                 running={training === 'running'}
               />
@@ -2453,6 +2480,28 @@ function Editor({
                   <span className="lr-scale">
                     <span>{compact(locale, tunable.min)}</span>
                     <span>{compact(locale, tunable.max)}</span>
+                  </span>
+                </label>
+              )}
+              {stepsTunable && trainSteps !== undefined && (
+                <label className="steps-control">
+                  <span className="lr-control-head">
+                    <span className="label">{t('ui.trainSteps')}</span>
+                    <output>{formatNumber(locale, trainSteps)}</output>
+                  </span>
+                  <input
+                    className="field"
+                    type="number"
+                    min={stepsTunable.min}
+                    max={stepsTunable.max}
+                    step={1}
+                    value={trainSteps}
+                    disabled={busy}
+                    onChange={(e) => setTrainSteps(Number(e.target.value))}
+                  />
+                  <span className="lr-scale">
+                    <span>{formatNumber(locale, stepsTunable.min)}</span>
+                    <span>{formatNumber(locale, stepsTunable.max)}</span>
                   </span>
                 </label>
               )}
@@ -2602,7 +2651,7 @@ function Editor({
                 <p className="status">
                   {t('ui.verifying', { n: verify.index + 1, count: verify.result.tests.length })}
                 </p>
-              ) : shown.tests.length === 0 ? null : (
+              ) : sandbox || shown.tests.length === 0 ? null : (
                 <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
                   {shown.passed ? '✓ ' : '✗ '}
                   {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {

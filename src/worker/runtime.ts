@@ -28,6 +28,7 @@ import {
   type Level,
   type LevelResult,
   type TrainLevel,
+  trainingSteps,
 } from '../engine/levels';
 import { Random } from '../engine/random';
 import { TrainingPlotRefresh, sequencePlot, trainingPlot } from './training-plot';
@@ -344,6 +345,8 @@ export class WorkerRuntime {
     if (!run || run.paused) return;
     try {
       const checkDiverged = (report: TrainingReport) => {
+        // Sandbox: keep going even if loss blows up; the player chose free training.
+        if (run.level.sandbox) return;
         if (
           run.level.tunable &&
           (!Number.isFinite(report.loss) || report.loss > run.initialLoss * 1000)
@@ -419,6 +422,17 @@ export class WorkerRuntime {
   }
   private finish(run: Run, report: TrainingReport, completed: boolean) {
     const { threshold } = run.level;
+    // Sandbox has no pass line: keep the training report, never grade a win/fail.
+    if (run.level.sandbox) {
+      Object.assign(run.result, { training: report, passed: false, tests: [] });
+      this.emit({
+        type: 'result',
+        requestId: run.request.requestId,
+        revision: run.request.revision,
+        result: run.result,
+      });
+      return;
+    }
     const passed =
       completed &&
       report.loss < threshold.loss &&
@@ -431,7 +445,7 @@ export class WorkerRuntime {
     ) {
       run.result.errorKey = 'levels.train_accuracy';
       run.result.error = { key: run.result.errorKey, params: { accuracy: report.accuracy } };
-    } else if (completed && !passed && run.level.tunable && !run.level.sandbox) {
+    } else if (completed && !passed && run.level.tunable) {
       // Ending above where it started is also overshooting, just more slowly.
       const key = report.loss > run.initialLoss ? 'levels.train_diverged' : 'levels.train_slow';
       run.result.errorKey = key;
@@ -598,6 +612,7 @@ export class WorkerRuntime {
           registry: this.registry,
           learningRate: request.learningRate,
           optimizer: request.optimizer,
+          steps: request.steps,
         });
         if (result.error)
           result.error = workerError(
@@ -805,40 +820,51 @@ export class WorkerRuntime {
           }
         } else if (request.type === 'start') {
           if (level.kind !== 'train') throw new Error('worker.not_training_level');
-          if (!Number.isSafeInteger(level.steps) || level.steps < 1)
-            throw new Error('training.steps');
+          const steps = trainingSteps(level, request.steps);
+          if (!Number.isSafeInteger(steps) || steps < 1) throw new Error('training.steps');
           const learningRate = trainingLearningRate(level, request.learningRate);
           const kind = trainingOptimizer(level, request.optimizer);
+          const runLevel = { ...level, steps };
           this.release();
           const metrics = graphMetrics(graph, this.registry);
           const batches: TrainingBatch[] = [];
           try {
-            const batch = trainingBatchSource(level);
+            const batch = trainingBatchSource(runLevel);
             if (typeof batch !== 'function') batches.push(batch);
-            const evaluationBatch = level.evaluationDataset?.(new Random(level.seed + 1));
+            const evaluationBatch = runLevel.evaluationDataset?.(new Random(runLevel.seed + 1));
             if (evaluationBatch) batches.push(evaluationBatch);
             const session = new TrainingSession(
               plan,
               batch,
               crossEntropy,
-              { ...level.optimizer, kind, learningRate },
-              level.interface.output,
+              { ...runLevel.optimizer, kind, learningRate },
+              runLevel.interface.output,
               {
                 evaluationBatch,
                 evaluationModel:
-                  level.resample && evaluationBatch
-                    ? trainingEvaluationModel(level, graph, plan, evaluationBatch, this.registry)
+                  runLevel.resample && evaluationBatch
+                    ? trainingEvaluationModel(
+                        runLevel,
+                        graph,
+                        plan,
+                        evaluationBatch,
+                        this.registry,
+                      )
                     : undefined,
-                evaluationReports: level.resample,
-                lossOutput: level.lossOutput,
-                accuracy: level.threshold.accuracy !== undefined,
+                evaluationReports: runLevel.resample,
+                lossOutput: runLevel.lossOutput,
+                accuracy: runLevel.threshold.accuracy !== undefined,
               },
             );
             let initialLoss: number;
             try {
-              initialLoss = level.tunable ? (await session.evaluate()).loss : Infinity;
+              initialLoss = runLevel.tunable ? (await session.evaluate()).loss : Infinity;
             } catch (error) {
-              if (level.tunable && error instanceof Error && error.message === 'training.nonfinite')
+              if (
+                runLevel.tunable &&
+                error instanceof Error &&
+                error.message === 'training.nonfinite'
+              )
                 initialLoss = Infinity;
               else {
                 session.dispose();
@@ -849,13 +875,13 @@ export class WorkerRuntime {
               plotRefresh: new TrainingPlotRefresh(),
               initialLoss,
               request,
-              level,
+              level: runLevel,
               plan,
               session,
               batches,
               paused: false,
               result: {
-                levelId: level.id,
+                levelId: runLevel.id,
                 passed: false,
                 tests: [],
                 metrics,
