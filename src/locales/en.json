@@ -54,7 +54,7 @@
   "storage.retry_save": "Retry saving",
   "storage.progress_load_failed": "Saved progress could not be loaded. Automatic saving is disabled to avoid overwriting it. Do not reset progress or clear browser data.",
   "storage.export_raw_save": "Export raw save",
-  "storage.export_raw_save_hint": "Your original save is still in this browser. Exporting does not change or overwrite it. Please send us the exported file so we can investigate.",
+  "storage.export_raw_save_hint": "Your original save is still in this browser. Exporting does not change or overwrite it. Please send the exported file to our Discord (discord.gg/j4AD6xc5JZ) #feedback-bugs channel or QQ group 1130870192, and we will help investigate and recover it.",
   "storage.copy_raw_save": "Copy to clipboard",
   "storage.export_raw_save_copied": "Copied to the clipboard.",
   "storage.copy_raw_save_failed": "Could not copy to the clipboard. Use export instead.",

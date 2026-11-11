@@ -54,7 +54,7 @@
   "storage.retry_save": "重试保存",
   "storage.progress_load_failed": "存档读取或迁移失败。已停止自动保存，避免覆盖原记录。请勿重置进度或清除浏览器数据。",
   "storage.export_raw_save": "导出原始存档",
-  "storage.export_raw_save_hint": "原存档仍保留在此浏览器中，导出不会改动或覆盖它。请将导出的文件发给我们以便排查。",
+  "storage.export_raw_save_hint": "原存档仍保留在此浏览器中，导出不会改动或覆盖它。请把导出的文件发到 QQ 群 1130870192，或 Discord（discord.gg/j4AD6xc5JZ）的 #feedback-bugs 频道，我们来帮你排查和恢复。",
   "storage.copy_raw_save": "复制到剪贴板",
   "storage.export_raw_save_copied": "已复制到剪贴板。",
   "storage.copy_raw_save_failed": "无法复制到剪贴板，请改用导出。",
