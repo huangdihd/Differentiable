@@ -16,6 +16,10 @@ import { browserLocale, isLocale, type Locale } from './i18n';
 export const STORAGE_VERSION = 10;
 export const STORAGE_KEY = 'differentiable.progress';
 export const LANGUAGE_KEY = 'differentiable.language';
+/** Package version reported in raw-save diagnostics. Keep in sync with package.json. */
+export const APP_VERSION = '0.1.0';
+/** Extra localStorage keys historically read while migrating progress. None besides STORAGE_KEY. */
+export const LEGACY_PROGRESS_KEYS: readonly string[] = [];
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -125,6 +129,386 @@ export function isProgress(value: unknown): value is Progress {
     );
   } catch {
     return false;
+  }
+}
+export type InvalidField = { path: string; reason: string };
+const FORBIDDEN_KEYS = ['__proto__', 'prototype', 'constructor'];
+const SCORE_KEYS = ['topNodes', 'expandedPrimitives', 'parameterCount'] as const;
+function fieldPath(base: string, part: string | number): string {
+  if (typeof part === 'number') return `${base}[${part}]`;
+  if (/^[A-Za-z_$][\w$]*$/.test(part)) return base ? `${base}.${part}` : part;
+  const token = `[${JSON.stringify(part)}]`;
+  return base ? `${base}${token}` : token;
+}
+function prefixPath(prefix: string, path: string): string {
+  if (!path) return prefix;
+  return path.startsWith('[') ? `${prefix}${path}` : `${prefix}.${path}`;
+}
+function explainJsonDataInvalid(
+  value: unknown,
+  path: string,
+  active = new Set<object>(),
+): InvalidField | null {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return null;
+  if (typeof value === 'number')
+    return Number.isFinite(value) ? null : { path, reason: 'number must be finite' };
+  if (typeof value !== 'object') return { path, reason: `unsupported type ${typeof value}` };
+  if (active.has(value)) return { path, reason: 'cyclic reference' };
+  active.add(value);
+  try {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        const issue = explainJsonDataInvalid(value[i], fieldPath(path, i), active);
+        if (issue) return issue;
+      }
+      return null;
+    }
+    if (!record(value)) return { path, reason: 'not a plain object' };
+    for (const [key, item] of Object.entries(value)) {
+      const next = fieldPath(path, key);
+      if (FORBIDDEN_KEYS.includes(key)) return { path: next, reason: 'forbidden key' };
+      const issue = explainJsonDataInvalid(item, next, active);
+      if (issue) return issue;
+    }
+    return null;
+  } finally {
+    active.delete(value);
+  }
+}
+function explainStringsInvalid(value: unknown, path: string): InvalidField | null {
+  if (!Array.isArray(value)) return { path, reason: 'must be an array of unique nonempty strings' };
+  const seen = new Set<string>();
+  for (let i = 0; i < value.length; i++) {
+    const item = value[i];
+    const itemPath = fieldPath(path, i);
+    if (typeof item !== 'string') return { path: itemPath, reason: 'must be a string' };
+    if (item.length === 0) return { path: itemPath, reason: 'must be nonempty' };
+    if (seen.has(item)) return { path: itemPath, reason: 'duplicate value' };
+    seen.add(item);
+  }
+  return null;
+}
+function explainGraphJSONInvalid(value: unknown, path: string): InvalidField | null {
+  try {
+    if (!record(value)) return { path, reason: 'not a plain object' };
+    if (value.version !== 1) return { path: fieldPath(path, 'version'), reason: 'must be 1' };
+    if (!Array.isArray(value.nodes))
+      return { path: fieldPath(path, 'nodes'), reason: 'must be an array' };
+    if (!Array.isArray(value.edges))
+      return { path: fieldPath(path, 'edges'), reason: 'must be an array' };
+    const jsonIssue = explainJsonDataInvalid(value, path);
+    if (jsonIssue) return jsonIssue;
+    const ids = new Set<string>();
+    for (let i = 0; i < value.nodes.length; i++) {
+      const node = value.nodes[i];
+      const nodePath = fieldPath(fieldPath(path, 'nodes'), i);
+      if (!record(node)) return { path: nodePath, reason: 'not a plain object' };
+      if (!text(node.id))
+        return { path: fieldPath(nodePath, 'id'), reason: 'must be a nonempty string' };
+      if (!text(node.component))
+        return { path: fieldPath(nodePath, 'component'), reason: 'must be a nonempty string' };
+      if (ids.has(node.id)) return { path: fieldPath(nodePath, 'id'), reason: 'duplicate node id' };
+      if (node.attrs !== undefined && !record(node.attrs))
+        return {
+          path: fieldPath(nodePath, 'attrs'),
+          reason: 'must be a plain object when present',
+        };
+      if (node.ui !== undefined && !record(node.ui))
+        return { path: fieldPath(nodePath, 'ui'), reason: 'must be a plain object when present' };
+      ids.add(node.id);
+    }
+    const explainEndpoint = (item: unknown, endpointPath: string): InvalidField | null => {
+      if (!record(item)) return { path: endpointPath, reason: 'not a plain object' };
+      if (!text(item.node))
+        return { path: fieldPath(endpointPath, 'node'), reason: 'must be a nonempty string' };
+      if (!ids.has(item.node))
+        return {
+          path: fieldPath(endpointPath, 'node'),
+          reason: `node ${JSON.stringify(item.node)} does not exist`,
+        };
+      if (!text(item.port))
+        return { path: fieldPath(endpointPath, 'port'), reason: 'must be a nonempty string' };
+      return null;
+    };
+    for (let i = 0; i < value.edges.length; i++) {
+      const edge = value.edges[i];
+      const edgePath = fieldPath(fieldPath(path, 'edges'), i);
+      if (!record(edge)) return { path: edgePath, reason: 'not a plain object' };
+      const from = explainEndpoint(edge.from, fieldPath(edgePath, 'from'));
+      if (from) return from;
+      const to = explainEndpoint(edge.to, fieldPath(edgePath, 'to'));
+      if (to) return to;
+    }
+    return null;
+  } catch (cause) {
+    return {
+      path,
+      reason: `validation threw: ${cause instanceof Error ? cause.message : String(cause)}`,
+    };
+  }
+}
+/** Non-throwing diagnostic that mirrors `isProgress`. Returns the first failing field and reason. */
+export function explainProgressInvalid(value: unknown): InvalidField | null {
+  try {
+    if (!record(value)) return { path: '', reason: 'not a plain object' };
+    const jsonIssue = explainJsonDataInvalid(value, '');
+    if (jsonIssue) return jsonIssue;
+    for (const key of ['unlocked', 'unlockedComponents', 'passed'] as const) {
+      const issue = explainStringsInvalid(value[key], key);
+      if (issue) return issue;
+    }
+    for (const key of ['savedGraphs', 'passedSolutions', 'bestScores'] as const) {
+      if (!record(value[key])) return { path: key, reason: 'must be a plain object' };
+    }
+    if (value.trainingSettings !== undefined) {
+      if (!record(value.trainingSettings))
+        return { path: 'trainingSettings', reason: 'must be a plain object when present' };
+      for (const [id, settings] of Object.entries(value.trainingSettings)) {
+        const settingsPath = fieldPath('trainingSettings', id);
+        if (!text(id)) return { path: settingsPath, reason: 'level id must be a nonempty string' };
+        if (!record(settings)) return { path: settingsPath, reason: 'must be a plain object' };
+        if (
+          typeof settings.learningRate !== 'number' ||
+          !Number.isFinite(settings.learningRate) ||
+          settings.learningRate <= 0
+        )
+          return {
+            path: fieldPath(settingsPath, 'learningRate'),
+            reason: 'must be a finite number greater than 0',
+          };
+        if (
+          settings.optimizer !== undefined &&
+          settings.optimizer !== 'sgd' &&
+          settings.optimizer !== 'adam'
+        )
+          return {
+            path: fieldPath(settingsPath, 'optimizer'),
+            reason: 'must be "sgd" or "adam" when present',
+          };
+      }
+    }
+    const unlocked = value.unlocked as string[];
+    const passed = value.passed as string[];
+    for (let i = 0; i < passed.length; i++) {
+      if (!unlocked.includes(passed[i]))
+        return {
+          path: fieldPath('passed', i),
+          reason: `${JSON.stringify(passed[i])} is not in unlocked`,
+        };
+    }
+    for (const [id, graph] of Object.entries(value.savedGraphs as Record<string, unknown>)) {
+      const issue = explainGraphJSONInvalid(graph, fieldPath('savedGraphs', id));
+      if (issue) return issue;
+    }
+    for (const [id, graph] of Object.entries(value.passedSolutions as Record<string, unknown>)) {
+      const solutionPath = fieldPath('passedSolutions', id);
+      if (!passed.includes(id)) return { path: solutionPath, reason: 'level is not in passed' };
+      const issue = explainGraphJSONInvalid(graph, solutionPath);
+      if (issue) return issue;
+    }
+    for (const [id, score] of Object.entries(value.bestScores as Record<string, unknown>)) {
+      const scorePath = fieldPath('bestScores', id);
+      if (!record(score)) return { path: scorePath, reason: 'must be a plain object' };
+      for (const key of SCORE_KEYS) {
+        const n = score[key];
+        if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0)
+          return { path: fieldPath(scorePath, key), reason: 'must be a safe integer >= 0' };
+      }
+    }
+    return null;
+  } catch (cause) {
+    return {
+      path: '',
+      reason: `validation threw: ${cause instanceof Error ? cause.message : String(cause)}`,
+    };
+  }
+}
+function supportedEnvelopeVersion(version: unknown): boolean {
+  return (
+    version === 1 ||
+    version === 2 ||
+    version === 3 ||
+    version === 4 ||
+    version === 5 ||
+    version === 6 ||
+    version === 7 ||
+    version === 8 ||
+    version === 9 ||
+    version === STORAGE_VERSION
+  );
+}
+/** Diagnose a raw stored envelope; used only for export diagnostics, never writes storage. */
+export function explainStoredProgress(raw: string | null): InvalidField | null {
+  if (raw === null) return { path: '', reason: 'no value stored for this key' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    return {
+      path: '',
+      reason: `JSON.parse failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+    };
+  }
+  if (!record(parsed)) return { path: '', reason: 'envelope is not a plain object' };
+  if (!supportedEnvelopeVersion(parsed.version))
+    return { path: 'version', reason: `unsupported envelope version ${String(parsed.version)}` };
+  if (parsed.version === 1) {
+    if (!record(parsed.progress)) return { path: 'progress', reason: 'not a plain object' };
+    const candidate = {
+      ...parsed.progress,
+      passedSolutions:
+        parsed.progress.passedSolutions === undefined ? {} : parsed.progress.passedSolutions,
+    };
+    const issue = explainProgressInvalid(candidate);
+    return issue ? { path: prefixPath('progress', issue.path), reason: issue.reason } : null;
+  }
+  const issue = explainProgressInvalid(parsed.progress);
+  return issue ? { path: prefixPath('progress', issue.path), reason: issue.reason } : null;
+}
+export type ProgressSaveExport = {
+  exportedAt: string;
+  appVersion: string;
+  commit: string | null;
+  userAgent: string | null;
+  storageKey: string;
+  raw: string | null;
+  legacy: Record<string, string | null>;
+  error: { message: string; causeChain: string[]; validation: InvalidField | null };
+};
+export function errorCauseChain(error: unknown): string[] {
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    if (current instanceof Error) {
+      messages.push(current.message);
+      current = current.cause;
+    } else {
+      messages.push(String(current));
+      break;
+    }
+  }
+  return messages;
+}
+function uniqueMessages(messages: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
+    if (seen.has(message)) return false;
+    seen.add(message);
+    return true;
+  });
+}
+function readStorageItem(
+  storage: StorageLike | undefined,
+  key: string,
+): { value: string | null } | { error: unknown } {
+  try {
+    return { value: storage?.getItem(key) ?? null };
+  } catch (error) {
+    return { error };
+  }
+}
+function userAgentOf(): string | null {
+  try {
+    const agent = globalThis.navigator?.userAgent;
+    return typeof agent === 'string' && agent.length ? agent : null;
+  } catch {
+    return null;
+  }
+}
+export function progressSaveExportFilename(at: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `differentiable-save-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}.json`;
+}
+/** Read-only snapshot of the raw progress key, any legacy keys, and a validation diagnostic. */
+export function collectProgressSaveExport(
+  source: StorageSource = browserStorage,
+  loadError?: unknown,
+  options: {
+    now?: Date;
+    userAgent?: string | null;
+    appVersion?: string;
+    commit?: string | null;
+  } = {},
+): ProgressSaveExport {
+  const at = options.now ?? new Date();
+  const accessErrors: unknown[] = [];
+  let storage: StorageLike | undefined;
+  try {
+    storage = source();
+  } catch (error) {
+    accessErrors.push(error);
+  }
+  const rawResult =
+    storage === undefined && accessErrors.length
+      ? ({ error: accessErrors[0] } as const)
+      : readStorageItem(storage, STORAGE_KEY);
+  let raw: string | null = null;
+  if ('error' in rawResult) {
+    if (!accessErrors.includes(rawResult.error)) accessErrors.push(rawResult.error);
+  } else {
+    raw = rawResult.value;
+  }
+  const legacy: Record<string, string | null> = {};
+  for (const key of LEGACY_PROGRESS_KEYS) {
+    const item = readStorageItem(storage, key);
+    if ('error' in item) {
+      accessErrors.push(item.error);
+      legacy[key] = null;
+    } else legacy[key] = item.value;
+  }
+  const accessReason =
+    accessErrors.length > 0
+      ? `localStorage access failed: ${
+          accessErrors[0] instanceof Error ? accessErrors[0].message : String(accessErrors[0])
+        }`
+      : undefined;
+  const validation =
+    accessReason && raw === null
+      ? { path: STORAGE_KEY, reason: accessReason }
+      : explainStoredProgress(raw);
+  const causeChain = uniqueMessages([
+    ...errorCauseChain(loadError),
+    ...accessErrors.flatMap((error) => errorCauseChain(error)),
+  ]);
+  const message =
+    (loadError instanceof Error && loadError.message) ||
+    accessReason ||
+    validation?.reason ||
+    'progress save export';
+  return {
+    exportedAt: at.toISOString(),
+    appVersion: options.appVersion ?? APP_VERSION,
+    commit: options.commit ?? null,
+    userAgent: options.userAgent !== undefined ? options.userAgent : userAgentOf(),
+    storageKey: STORAGE_KEY,
+    raw,
+    legacy,
+    error: { message, causeChain, validation },
+  };
+}
+export function serializeProgressSaveExport(payload: ProgressSaveExport): string {
+  return JSON.stringify(payload, null, 2);
+}
+export function downloadProgressSaveExport(
+  payload: ProgressSaveExport,
+  filename = progressSaveExportFilename(),
+): void {
+  const text = serializeProgressSaveExport(payload);
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(url);
   }
 }
 /** Preserve the expression tool earned before chapter 1 gained extra lessons. */

@@ -89,12 +89,16 @@ import TensorTransformView, { tensorTransformKind } from './ui/TensorTransformVi
 import { Coach } from './ui/Coach';
 import {
   STORAGE_VERSION,
+  collectProgressSaveExport,
   createInitialProgress,
+  downloadProgressSaveExport,
   isAutodiffUnlocked,
   isExpressionUnlocked,
   loadProgressWithMigration,
   loadLanguage,
+  progressSaveExportFilename,
   saveSave,
+  serializeProgressSaveExport,
   createThrottledSave,
 } from './storage';
 import {
@@ -147,6 +151,8 @@ export default function App() {
   };
   const [backend, setBackend] = useState<'pending' | 'cpu' | 'webgpu'>('pending');
   const [failure, setFailure] = useState<WorkerError>();
+  const [progressLoadError, setProgressLoadError] = useState<unknown>();
+  const [saveExportNotice, setSaveExportNotice] = useState<'copied' | 'copy_failed' | null>(null);
   const [fallback, setFallback] = useState(false);
   const [fallbackDialog, setFallbackDialog] = useState(false);
   const [revoked, setRevoked] = useState<string[]>([]);
@@ -161,9 +167,10 @@ export default function App() {
     setLoaded(false);
     saver.cancel();
     loadProgressWithMigration(gameLevels, undefined, setRevoked, () => active)
-      .catch(() => {
+      .catch((error: unknown) => {
         if (active) {
           saver.cancel();
+          setProgressLoadError(error);
           setFailure({ key: 'storage.progress_load_failed', params: {} });
         }
         return undefined;
@@ -214,6 +221,19 @@ export default function App() {
   const [phone, setPhone] = useState(isPhone);
   const progress = (p: Progress) => setSave((s) => ({ ...s, progress: p }));
   const entry = level && entryFor(level);
+  const exportRawProgress = () => {
+    const payload = collectProgressSaveExport(undefined, progressLoadError);
+    downloadProgressSaveExport(payload, progressSaveExportFilename());
+  };
+  const copyRawProgress = async () => {
+    try {
+      const payload = collectProgressSaveExport(undefined, progressLoadError);
+      await navigator.clipboard.writeText(serializeProgressSaveExport(payload));
+      setSaveExportNotice('copied');
+    } catch {
+      setSaveExportNotice('copy_failed');
+    }
+  };
   if (phone)
     return (
       <main className="phone-gate blueprint-bg">
@@ -297,13 +317,35 @@ export default function App() {
       )}
       {!loaded ? (
         <main className="home blueprint-bg">
-          <div className="home-inner" role="status">
-            {t(
-              failure?.key === 'storage.progress_load_failed'
-                ? 'storage.progress_load_failed'
-                : 'storage.progress_loading',
-            )}
-          </div>
+          {failure?.key === 'storage.progress_load_failed' ? (
+            <div className="home-inner">
+              <div className="status status-fail progress-load-failed" role="alert">
+                <p>{t('storage.progress_load_failed')}</p>
+                <p className="progress-load-failed-hint">{t('storage.export_raw_save_hint')}</p>
+                <div className="btn-row">
+                  <button type="button" className="btn btn-primary" onClick={exportRawProgress}>
+                    {t('storage.export_raw_save')}
+                  </button>
+                  <button type="button" className="btn" onClick={() => void copyRawProgress()}>
+                    {t('storage.copy_raw_save')}
+                  </button>
+                </div>
+                {saveExportNotice && (
+                  <p className="progress-load-failed-hint">
+                    {t(
+                      saveExportNotice === 'copied'
+                        ? 'storage.export_raw_save_copied'
+                        : 'storage.copy_raw_save_failed',
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="home-inner" role="status">
+              {t('storage.progress_loading')}
+            </div>
+          )}
         </main>
       ) : showPlayerComparison &&
         level?.id === 'time-rnn' &&
