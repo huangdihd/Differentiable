@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DatasetImportError,
   MAX_ROWS,
+  guessMapping,
   importedShapes,
+  mappingFromRoles,
   mapCsv,
   oneHot,
   parseCsv,
@@ -95,5 +97,25 @@ describe('parseJsonDataset', () => {
     ['{"modality":"points","x":[[1]],"t":[[1]]}', 'sandbox.import.error.pointsShape'],
   ])('rejects %s', (text, expected) => {
     expect(key(() => parseJsonDataset(text, 'j'))).toBe(expected);
+  });
+});
+
+describe('guessMapping', () => {
+  it('treats a named text label column as one-hot classes and skips other text', () => {
+    const table = parseCsv('id,a,b,label\nr1,1,2,cat\nr2,3,4,dog\nr3,5,6,cat\n');
+    expect(guessMapping(table)).toEqual({ roles: ['skip', 'x', 'x', 't'], oneHot: true });
+  });
+  it('reads a few whole-number targets as classes and a continuous one as regression', () => {
+    const classes = parseCsv('x1,x2,y\n0,1,0\n1,0,1\n1,1,0\n0,0,1\n2,2,1\n');
+    expect(guessMapping(classes).oneHot).toBe(true);
+    const curve = parseCsv('x,t\n0,0.1\n1,0.9\n2,2.2\n3,2.8\n');
+    expect(guessMapping(curve)).toEqual({ roles: ['x', 't'], oneHot: false });
+  });
+  it('falls back to the last column and maps roles to indices', () => {
+    const table = parseCsv('a,b,c\n1,2,3.5\n4,5,6.5\n');
+    const { roles, oneHot: classes } = guessMapping(table);
+    expect(roles).toEqual(['x', 'x', 't']);
+    expect(mappingFromRoles(roles, classes)).toEqual({ x: [0, 1], t: [2], oneHot: false });
+    expect(mappingFromRoles(['t', 'x', 't'], true)).toEqual({ x: [1], t: [0, 2], oneHot: false });
   });
 });

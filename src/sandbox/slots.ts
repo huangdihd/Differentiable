@@ -6,15 +6,9 @@ import type { GraphJSON } from '../engine/graph';
 import type { Level, Progress } from '../engine/levels';
 import { validateRows, type ImportedDataset } from './dataset-import';
 
-/** Built-in datasets the sandbox can train on (ids from src/datasets). */
-export const SANDBOX_BUILTINS = [
-  'noisy-line',
-  'two-blobs',
-  'small-and-large',
-  'rings',
-  'xor-table',
-] as const;
-export type SandboxBuiltin = (typeof SANDBOX_BUILTINS)[number];
+import { SANDBOX_BUILTINS, type SandboxBuiltin } from './datasets';
+
+export { SANDBOX_BUILTINS, type SandboxBuiltin };
 
 export type SandboxDataset =
   { kind: 'builtin'; id: SandboxBuiltin } | ({ kind: 'imported' } & ImportedDataset);
@@ -187,6 +181,32 @@ export function updateSlot(
       return next;
     }),
   );
+}
+
+/** A copy placed right after the original: same data, graph, settings and weights. */
+export function duplicateSlot(
+  progress: Progress,
+  id: string,
+  options: { id: string; name: string; now: number },
+): Progress {
+  const slots = sandboxSlots(progress);
+  const index = slots.findIndex((s) => s.id === id);
+  if (index < 0 || slots.length >= MAX_SLOTS || slots.some((s) => s.id === options.id))
+    return progress;
+  const copy: SandboxSlot = {
+    ...structuredClone(slots[index]),
+    id: options.id,
+    name: options.name,
+    createdAt: options.now,
+    updatedAt: options.now,
+  };
+  return withSlots(progress, [...slots.slice(0, index + 1), copy, ...slots.slice(index + 1)]);
+}
+
+/** A name not yet taken: "base", then "base 2", "base 3", … */
+export function uniqueName(base: string, taken: readonly string[]): string {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n++) if (!taken.includes(`${base} ${n}`)) return `${base} ${n}`;
 }
 
 export function removeSlot(progress: Progress, id: string): Progress {

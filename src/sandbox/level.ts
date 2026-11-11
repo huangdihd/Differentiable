@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 /** The sandbox as a training "level" with no pass condition, built the same way in UI and worker. */
-import { datasets, type Dataset } from '../datasets';
+import type { Dataset } from '../datasets';
 import type { TrainLevel } from '../engine/levels';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
 import type { TrainingBatch } from '../engine/training';
 import { gameLevels } from '../levels/catalog';
 import { importedShapes } from './dataset-import';
+import { SANDBOX_SEED, builtinSource } from './datasets';
 import { sandboxLevelId, type SandboxDataset } from './slots';
 
-export const SANDBOX_SEED = 7001;
+export { SANDBOX_SEED };
 export const SANDBOX_STEPS = 500;
 
 /** Every component any level offers or earns: the sandbox opens only after all of them. */
@@ -47,9 +48,8 @@ function sandboxData(dataset: SandboxDataset): {
   card: Dataset;
 } {
   if (dataset.kind === 'builtin') {
-    const source = datasets.find((d) => d.id === dataset.id);
-    if (!source?.build) throw new Error('sandbox.dataset_unknown');
-    const build = (random: Random) => asInputs(source.build!(random));
+    const source = builtinSource(dataset.id);
+    const build = (random: Random) => asInputs(source.build(random));
     return { build, card: { id: source.id, modality: source.modality, build } };
   }
   const shapes = importedShapes(dataset);
@@ -80,10 +80,10 @@ export function buildSandboxLevel(slotId: string, dataset: SandboxDataset): Trai
     unlock: [],
     seed: SANDBOX_SEED,
     steps: SANDBOX_STEPS,
-    optimizer: { kind: 'adam', learningRate: 0.01 },
+    optimizer: { kind: 'adam', learningRate: 0.03 },
     tunable: {
-      learningRate: { min: 0.0001, max: 1, default: 0.01 },
-      optimizer: ['sgd', 'adam'],
+      learningRate: { min: 0.0001, max: 1, default: 0.03 },
+      optimizer: ['adam', 'sgd'],
       steps: { min: 1, max: 100_000, default: SANDBOX_STEPS },
     },
     lossOutput: 'loss',

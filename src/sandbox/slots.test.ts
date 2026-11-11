@@ -7,17 +7,19 @@ import { catalog } from '../levels/catalog';
 import {
   MAX_SLOTS,
   createSlot,
+  duplicateSlot,
   exportWeights,
   isSandboxSave,
   isSandboxUnlocked,
   parseWeights,
   removeSlot,
   sandboxSlots,
+  uniqueName,
   updateSlot,
 } from './slots';
 import { buildSandboxLevel, SANDBOX_STEPS, sandboxComponents } from './level';
 import { trainingSteps } from '../engine/levels';
-import { fromEditorProgress } from '../ui/Sandbox';
+import { fromEditorProgress } from './editor-progress';
 
 describe('sandbox unlock', () => {
   const levels = catalog.map((e) => e.level);
@@ -37,6 +39,24 @@ describe('sandbox unlock', () => {
 });
 
 describe('sandbox slots', () => {
+  it('duplicates a slot right after the original with a fresh id and name', () => {
+    let p = createInitialProgress();
+    p = createSlot(p, { id: 'a', name: 'A', now: 1, dataset: { kind: 'builtin', id: 'rings' } });
+    p = createSlot(p, { id: 'b', name: 'B', now: 2 });
+    p = updateSlot(p, 'a', { training: { learningRate: 0.1, steps: 900 } }, 3);
+    p = duplicateSlot(p, 'a', { id: 'c', name: 'A 2', now: 4 });
+    expect(sandboxSlots(p).map((s) => s.id)).toEqual(['a', 'c', 'b']);
+    expect(sandboxSlots(p)[1]).toMatchObject({
+      name: 'A 2',
+      createdAt: 4,
+      dataset: { kind: 'builtin', id: 'rings' },
+      training: { learningRate: 0.1, steps: 900 },
+    });
+    expect(duplicateSlot(p, 'missing', { id: 'd', name: 'D', now: 5 })).toBe(p);
+    expect(uniqueName('A', ['A', 'A 2'])).toBe('A 3');
+    expect(uniqueName('Z', ['A'])).toBe('Z');
+  });
+
   it('create, update, remove and cap', () => {
     let p = createInitialProgress();
     p = createSlot(p, { id: 'a', name: 'A', now: 1 });

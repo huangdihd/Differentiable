@@ -248,3 +248,58 @@ export function importedShapes(data: Pick<ImportedDataset, 'x' | 't'>): {
   const vector = data.x[0].length === 1 && data.t[0].length === 1;
   return vector ? { x: [n], t: [n] } : { x: [n, data.x[0].length], t: [n, data.t[0].length] };
 }
+
+/** What each CSV column holds: drives the mapping guess and the preview badges. */
+export interface ColumnInfo {
+  numeric: boolean;
+  /** Distinct values (as written), capped at MAX_CLASSES + 1. */
+  distinct: number;
+  integers: boolean;
+}
+
+export function columnInfo(table: CsvTable): ColumnInfo[] {
+  return table.header.map((_, c) => {
+    const seen = new Set<string>();
+    let numeric = true,
+      integers = true;
+    for (const row of table.rows) {
+      const cell = row[c];
+      const value = cell === '' ? NaN : Number(cell);
+      if (!Number.isFinite(value)) numeric = integers = false;
+      else if (!Number.isInteger(value)) integers = false;
+      if (seen.size <= MAX_CLASSES) seen.add(cell);
+    }
+    return { numeric, distinct: seen.size, integers };
+  });
+}
+
+export type ColumnRole = 'x' | 't' | 'skip';
+
+const TARGET_NAMES =
+  /^(t|y|target|targets|label|labels|class|classes|category|output|答案|标签|类别|目标|输出)$/i;
+
+/**
+ * A first guess the player can change: the column named like a target (or else the last one)
+ * is t, every other numeric column is x. A text target, or a few whole-number values, reads
+ * as class labels and becomes one-hot.
+ */
+export function guessMapping(table: CsvTable): { roles: ColumnRole[]; oneHot: boolean } {
+  const info = columnInfo(table);
+  const named = table.header.findIndex((h) => TARGET_NAMES.test(h.trim()));
+  const target = named >= 0 ? named : table.header.length - 1;
+  const t = info[target];
+  const fewValues =
+    t.distinct >= 2 && t.distinct <= Math.min(10, Math.max(2, table.rows.length / 2));
+  const oneHot =
+    (!t.numeric && t.distinct >= 2 && t.distinct <= MAX_CLASSES) || (t.integers && fewValues);
+  return {
+    roles: info.map((column, c) => (c === target ? 't' : column.numeric ? 'x' : 'skip')),
+    oneHot,
+  };
+}
+
+export function mappingFromRoles(roles: readonly ColumnRole[], oneHot: boolean): CsvMapping {
+  const x = roles.flatMap((role, c) => (role === 'x' ? [c] : []));
+  const t = roles.flatMap((role, c) => (role === 't' ? [c] : []));
+  return { x, t, oneHot: oneHot && t.length === 1 };
+}
