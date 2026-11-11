@@ -1273,7 +1273,7 @@
   "sandbox.canvas.starter": "放入示例模型",
   "sandbox.canvas.starterHint": "按这份数据放一个能直接训练的小网络，之后随便拆改；Ctrl+Z 可撤销。",
   "sandbox.train.controls": "训练控制",
-  "sandbox.train.run": "训练 {n} 步",
+  "sandbox.train.run": "训练",
   "sandbox.train.step": "单步",
   "sandbox.train.reset": "重置参数",
   "sandbox.train.resetHelp": "把参数改回初始值，清空损失曲线。",

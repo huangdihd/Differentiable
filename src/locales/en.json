@@ -1280,7 +1280,7 @@
   "sandbox.canvas.starter": "Add a starter model",
   "sandbox.canvas.starterHint": "Places a small network that trains on this data right away. Take it apart as you like; Ctrl+Z undoes it.",
   "sandbox.train.controls": "Training controls",
-  "sandbox.train.run": "Train {n} steps",
+  "sandbox.train.run": "Train",
   "sandbox.train.step": "One step",
   "sandbox.train.reset": "Reset parameters",
   "sandbox.train.resetHelp": "Put the parameters back to their starting values and clear the loss curve.",

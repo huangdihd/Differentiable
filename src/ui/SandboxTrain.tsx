@@ -59,7 +59,7 @@ export default function SandboxTrain(props: SandboxTrainProps) {
           </button>
         ) : (
           <button className="btn btn-primary sb-run" disabled={locked} onClick={props.onRun}>
-            ▶ {t('sandbox.train.run', { n: formatNumber(locale, steps) })}
+            ▶ {t('sandbox.train.run')}
           </button>
         )}
         {busy ? (
