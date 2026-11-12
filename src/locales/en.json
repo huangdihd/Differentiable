@@ -1431,5 +1431,6 @@
   "sandbox.charts.collapse": "Collapse",
   "sandbox.charts.expand": "Expand",
   "sandbox.inspector.title": "Selected part",
-  "sandbox.inspector.close": "Close (clears the selection)"
+  "sandbox.inspector.close": "Close (clears the selection)",
+  "sandbox.inspector.dragHelp": "Drag the title bar to move · double-click to put it back top-right"
 }

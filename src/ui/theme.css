@@ -91,6 +91,13 @@ body,
   margin: 0;
   height: 100%;
 }
+/* A sideways trackpad swipe or Shift+wheel must never slide the interface: no page-level
+   horizontal scroll, and no rubber-band or swipe-to-go-back overscroll from inner panels. */
+html,
+body {
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
 body {
   background: var(--bg);
   color: var(--text);
@@ -5021,6 +5028,7 @@ input[type='range'] {
   box-shadow: 0 14px 36px rgba(4, 16, 36, 0.45);
 }
 .sb-inspector-head {
+  cursor: grab;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel-2) 55%, var(--panel));
 }
@@ -5028,4 +5036,13 @@ input[type='range'] {
   width: 26px;
   height: 26px;
   font-size: 16px;
+}
+.sb-inspector.is-dragging {
+  box-shadow: 0 18px 44px rgba(4, 16, 36, 0.55);
+}
+.sb-inspector.is-dragging .sb-inspector-head {
+  cursor: grabbing;
+}
+.sb-inspector-head:hover .label {
+  color: var(--text);
 }

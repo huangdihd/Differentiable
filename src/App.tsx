@@ -131,6 +131,7 @@ import {
 import './ui/layout.css';
 import { SandboxScreen, download, readFile, type SandboxEditorSlot } from './ui/Sandbox';
 import { MyComponents } from './ui/MyComponents';
+import FloatingInspector from './ui/FloatingInspector';
 import { PackageDialog, type PackageChoice } from './ui/PackageDialog';
 import SelectHint, { readSelectHintSeen, writeSelectHintSeen } from './ui/SelectHint';
 import {
@@ -2348,7 +2349,7 @@ function Editor({
         <p className="hint help">{t(sandbox ? 'sandbox.help' : 'ui.help')}</p>
       </aside>
 
-      <section className={`canvas-wrap${inspectorOpen ? ' has-inspector' : ''}`}>
+      <section className="canvas-wrap">
         <Canvas
           ref={canvas}
           registry={registry}
@@ -2595,20 +2596,9 @@ function Editor({
           untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>
         )}
         {inspectorOpen && (
-          <aside className="sb-inspector" aria-label={t('sandbox.inspector.title')}>
-            <header className="sb-inspector-head">
-              <h2 className="label">{t('sandbox.inspector.title')}</h2>
-              <button
-                className="icon-btn sb-inspector-close"
-                aria-label={t('sandbox.close')}
-                title={t('sandbox.inspector.close')}
-                onClick={closeInspector}
-              >
-                ×
-              </button>
-            </header>
-            <div className="sb-inspector-body">{inspector}</div>
-          </aside>
+          <FloatingInspector t={t} onClose={closeInspector}>
+            {inspector}
+          </FloatingInspector>
         )}
       </section>
 

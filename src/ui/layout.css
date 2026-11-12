@@ -13,6 +13,17 @@
 .app > main {
   grid-row: 3;
   min-height: 0;
+  min-width: 0;
+}
+.app,
+.app > main {
+  overflow-x: clip;
+}
+.panel,
+.app > main,
+.sb-strip,
+.sb-inspector-body {
+  overscroll-behavior-x: none;
 }
 
 /* ---------- editor ---------- */
@@ -727,8 +738,8 @@
 }
 .sb-inspector {
   position: absolute;
-  top: var(--s3);
-  right: var(--s3);
+  top: 12px;
+  right: 12px;
   z-index: 3;
   width: min(320px, calc(100% - 2 * var(--s3)));
   max-height: calc(100% - 2 * var(--s3));
@@ -736,6 +747,8 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 .sb-inspector-head {
+  touch-action: none;
+  user-select: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -750,17 +763,10 @@
   overscroll-behavior: contain;
   padding: var(--s3) var(--s3) var(--s4);
 }
-/* Bottom overlays centre on the canvas left of the inspector rather than slide under it. */
-.canvas-wrap.has-inspector .canvas-actions {
-  left: calc(50% - 166px);
-}
-.canvas-wrap.has-inspector .canvas-select-hint {
-  right: calc(332px + var(--s4));
-}
 /* The floating panel's own header already names it. */
 .sb-inspector .selected-io > .label:first-child {
   display: none;
 }
-.sb-inspector-body > :last-child {
+.sb-inspector-content > :last-child {
   margin-bottom: 0;
 }

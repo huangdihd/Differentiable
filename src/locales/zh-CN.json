@@ -1419,5 +1419,6 @@
   "sandbox.charts.collapse": "收起",
   "sandbox.charts.expand": "展开",
   "sandbox.inspector.title": "所选元件",
-  "sandbox.inspector.close": "关闭（取消选择）"
+  "sandbox.inspector.close": "关闭（取消选择）",
+  "sandbox.inspector.dragHelp": "拖动标题栏移动 · 双击放回右上角"
 }
