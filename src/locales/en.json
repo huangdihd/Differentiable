@@ -1270,7 +1270,6 @@
   "sandbox.slot.created": "Created",
   "sandbox.slot.saved": "Last saved",
   "sandbox.slot.parts": "Parts",
-  "sandbox.tab.train": "Train",
   "sandbox.tab.data": "Data",
   "sandbox.tab.saves": "Save",
   "sandbox.task.regression": "Regression",
@@ -1432,5 +1431,5 @@
   "sandbox.charts.collapse": "Collapse",
   "sandbox.charts.expand": "Expand",
   "sandbox.inspector.title": "Selected part",
-  "sandbox.inspector.empty": "Click a part on the canvas to see its inputs, outputs and settings here."
+  "sandbox.inspector.close": "Close (clears the selection)"
 }

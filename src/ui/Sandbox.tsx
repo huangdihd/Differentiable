@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 /**
- * Sandbox mode: a hub of local saves, and the editor with three tabs beside the canvas —
- * training, data and saves. Nothing leaves the browser; files are read with FileReader and
- * written as downloads.
+ * Sandbox mode: a hub of local saves, and the editor: a toolbar row with training controls and
+ * the data and saves dialogs, the canvas, and the chart strip under it. Nothing leaves the
+ * browser; files are read with FileReader and written as downloads.
  */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { GraphJSON } from '../engine/graph';
@@ -49,19 +49,16 @@ import DataPlot from './DataPlot';
 
 type T = (key: string, params?: Readonly<Record<string, string | number>>) => string;
 
-export type SandboxTab = 'train' | 'data' | 'saves';
+export type SandboxDialogKind = 'data' | 'saves';
 
-/** What the sandbox hands the Editor: the panels around the canvas and a starter model. */
+/** What the sandbox hands the Editor: the toolbar head, its dialogs and a starter model. */
 export interface SandboxEditorSlot {
-  header: ReactNode;
-  /** Prototype layouts: back, name and save state for the toolbar row above the canvas. */
+  /** Back, name and save state for the toolbar row above the canvas. */
   barHead: ReactNode;
   /** Short label of the slot's task (regression / classification) for the data button. */
   taskLabel: string;
-  dataPanel: ReactNode;
-  savesPanel: ReactNode;
-  tab: SandboxTab;
-  onTab: (tab: SandboxTab) => void;
+  /** Opens the data or saves dialog over the editor. */
+  openDialog: (kind: SandboxDialogKind) => void;
   view: 'fit' | 'boundary' | 'none';
   starter: () => GraphJSON;
 }
@@ -162,7 +159,6 @@ export function SandboxScreen({
   }) => ReactNode;
 }) {
   const [open, setOpen] = useState<string>();
-  const [tab, setTab] = useState<SandboxTab>('train');
   const slots = sandboxSlots(progress);
   const slot = slots.find((s) => s.id === open);
   const create = (dataset: SandboxDataset) => {
@@ -178,7 +174,6 @@ export function SandboxScreen({
         dataset,
       }),
     );
-    setTab('train');
     setOpen(id);
   };
   const duplicate = (id: string) => {
@@ -205,10 +200,7 @@ export function SandboxScreen({
         slots={slots}
         ready={ready}
         onExit={onExit}
-        onOpen={(id) => {
-          setTab('train');
-          setOpen(id);
-        }}
+        onOpen={(id) => setOpen(id)}
         onCreate={create}
         onRename={(id, name) => onProgress((p) => updateSlot(p, id, { name }, Date.now()))}
         onDuplicate={duplicate}
@@ -224,8 +216,6 @@ export function SandboxScreen({
       progress={progress}
       onProgress={onProgress}
       client={client}
-      tab={tab}
-      onTab={setTab}
       onBack={() => setOpen(undefined)}
       onDuplicate={() => duplicate(slot.id)}
       onDelete={() => {
@@ -585,8 +575,6 @@ function Workspace({
   progress,
   onProgress,
   client,
-  tab,
-  onTab,
   onBack,
   onDuplicate,
   onDelete,
@@ -599,8 +587,6 @@ function Workspace({
   progress: Progress;
   onProgress: (update: (current: Progress) => Progress) => void;
   client: React.RefObject<WorkerClient | null>;
-  tab: SandboxTab;
-  onTab: (tab: SandboxTab) => void;
   onBack: () => void;
   onDuplicate: () => string;
   onDelete: () => void;
@@ -627,7 +613,8 @@ function Workspace({
   const syncKey = `${slot.id}|${dataKey}|${weightsKey}`;
   const [synced, setSynced] = useState<string>();
   const [syncError, setSyncError] = useState<string>();
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState<'data'>();
+  const [dialog, setDialog] = useState<SandboxDialogKind>();
   const current = useRef(slot);
   current.current = slot;
   useEffect(() => {
@@ -652,32 +639,6 @@ function Workspace({
   const change = (update: Partial<Omit<SandboxSlot, 'id' | 'createdAt'>>) =>
     onProgress((p) => updateSlot(p, slot.id, update, Date.now()));
   const task = datasetTask(slot.dataset);
-
-  const header = (
-    <div className="section sb-head">
-      <button className="sb-back" onClick={onBack}>
-        ← {t('sandbox.allSlots')}
-      </button>
-      <label className="sb-name">
-        <span className="level-id">∞ {t('sandbox.title')}</span>
-        <input
-          className="sb-name-input"
-          value={slot.name}
-          maxLength={40}
-          placeholder={t('sandbox.slot.untitled')}
-          aria-label={t('sandbox.slot.name')}
-          onChange={(e) => change({ name: e.target.value })}
-        />
-      </label>
-      <p className="sb-saved">
-        <span aria-hidden="true">✓</span>{' '}
-        {t('sandbox.autosaved', { time: clockTime(locale, slot.updatedAt) })}
-      </p>
-      <p className="sb-head-data">
-        <span className="tag">{t(`sandbox.task.${task}`)}</span> {datasetLabel(t, slot.dataset)}
-      </p>
-    </div>
-  );
 
   const barHead = (
     <div className="sb-bar-head">
@@ -708,7 +669,11 @@ function Workspace({
       t={t}
       slot={slot}
       onPick={(dataset) => change({ dataset })}
-      onImport={() => setImporting(true)}
+      onImport={() => {
+        // One dialog at a time: the importer replaces the data dialog, and Cancel returns to it.
+        setDialog(undefined);
+        setImporting('data');
+      }}
     />
   );
   const savesPanel = (
@@ -725,16 +690,30 @@ function Workspace({
     />
   );
 
-  const dialogs = importing && (
+  const dialogs = importing ? (
     <ImportDialog
       t={t}
       locale={locale}
-      onCancel={() => setImporting(false)}
+      onCancel={() => {
+        setImporting(undefined);
+        setDialog('data');
+      }}
       onConfirm={(data) => {
-        setImporting(false);
+        setImporting(undefined);
         change({ dataset: { kind: 'imported', ...data } });
       }}
     />
+  ) : (
+    dialog && (
+      <Dialog
+        t={t}
+        title={t(dialog === 'data' ? 'sandbox.dialog.data' : 'sandbox.dialog.saves')}
+        onClose={() => setDialog(undefined)}
+        medium
+      >
+        {dialog === 'data' ? dataPanel : savesPanel}
+      </Dialog>
+    )
   );
 
   if (level instanceof Error || syncError)
@@ -782,13 +761,9 @@ function Workspace({
         progress: editorProgress(progress, slot, levelId),
         onProgress: (next) => onProgress(() => fromEditorProgress(next, slot.id, Date.now())),
         sandbox: {
-          header,
           barHead,
           taskLabel: t(`sandbox.task.${task}`),
-          dataPanel,
-          savesPanel,
-          tab,
-          onTab,
+          openDialog: setDialog,
           view,
           starter: () => starterGraph(shapes, task, datasetStarter(slot.dataset)),
         },

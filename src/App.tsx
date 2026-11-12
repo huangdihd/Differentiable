@@ -129,13 +129,7 @@ import {
   newlyIntroducedComponents,
 } from './ui/new-components';
 import './ui/layout.css';
-import {
-  Dialog as SandboxDialog,
-  SandboxScreen,
-  download,
-  readFile,
-  type SandboxEditorSlot,
-} from './ui/Sandbox';
+import { SandboxScreen, download, readFile, type SandboxEditorSlot } from './ui/Sandbox';
 import { MyComponents } from './ui/MyComponents';
 import { PackageDialog, type PackageChoice } from './ui/PackageDialog';
 import SelectHint, { readSelectHintSeen, writeSelectHintSeen } from './ui/SelectHint';
@@ -156,7 +150,7 @@ import {
   uniqueComponentName,
   type PackagePlan,
 } from './sandbox/components';
-import SandboxTrain, {
+import {
   SandboxCharts,
   SandboxSettings,
   SandboxTransport,
@@ -683,17 +677,21 @@ function Home({
   );
 }
 
-/** Dev-only switch between the sandbox layout prototypes; anything else keeps the shipped one. */
-function readSandboxLayout(): 'a' | 'b' | undefined {
+const CHARTS_OPEN_KEY = 'differentiable.sandbox.chartsOpen';
+const readChartsOpen = () => {
   try {
-    const value =
-      new URLSearchParams(window.location.search).get('sbLayout') ??
-      localStorage.getItem('differentiable.debug.sandboxLayout');
-    return value === 'a' || value === 'b' ? value : undefined;
+    return localStorage.getItem(CHARTS_OPEN_KEY) !== '0';
   } catch {
-    return undefined;
+    return true;
   }
-}
+};
+const writeChartsOpen = (open: boolean) => {
+  try {
+    localStorage.setItem(CHARTS_OPEN_KEY, open ? '1' : '0');
+  } catch {
+    // Just a view preference: the strip opens again next time.
+  }
+};
 
 /** A fresh, never-reused id for a packaged sandbox component. */
 const newComponentId = () => {
@@ -1784,10 +1782,15 @@ function Editor({
       writeSelectHintSeen();
     }
   }, [sandbox, selectHintSeen, state.selection.length]);
-  // Layout prototypes (dev only): localStorage `differentiable.debug.sandboxLayout` or `?sbLayout=`.
-  const [sbLayout] = useState(() => (sandbox ? readSandboxLayout() : undefined));
-  const [sbDialog, setSbDialog] = useState<'data' | 'saves'>();
-  const [sbChartsOpen, setSbChartsOpen] = useState(true);
+  // Sandbox: the chart strip under the canvas remembers whether it was folded away.
+  const [sbChartsOpen, setSbChartsOpen] = useState(readChartsOpen);
+  const toggleCharts = () =>
+    setSbChartsOpen((open) => {
+      writeChartsOpen(!open);
+      return !open;
+    });
+  // Errors the player closed the floating inspector on stay hidden until they change.
+  const [dismissedErrors, setDismissedErrors] = useState<string>();
   const componentKeys = useRef({ startPackage, ungroup, selectedInstance });
   componentKeys.current = { startPackage, ungroup, selectedInstance };
   const inspect = (node: GraphNode) => {
@@ -2077,21 +2080,26 @@ function Editor({
           onOptimizer: setOptimizer,
         }
       : undefined;
-  // Prototype layouts only apply to a trainable sandbox slot.
-  const layout = sbTrain ? sbLayout : undefined;
   const hardErrors = errors.filter((e) => !e.node && !e.soft);
+  const hasErrors = !!(error || state.error || hardErrors.length);
+  const errorKey = hasErrors
+    ? JSON.stringify([error ?? null, state.error ?? null, hardErrors.map((e) => e.message)])
+    : '';
+  // Levels always list errors; the sandbox inspector can be closed on them.
+  const showErrors = hasErrors && (!sandbox || errorKey !== dismissedErrors);
   const inspector = (
     <>
-      {(error || state.error) && (
+      {showErrors && (error || state.error) && (
         <p role="alert" className="status status-fail">
           {graphDiagnostic(locale, state.graph, error ?? { key: state.error! }, registry)}
         </p>
       )}
-      {hardErrors.map((e, i) => (
-        <p className="status status-fail" key={i}>
-          {e.message}
-        </p>
-      ))}
+      {showErrors &&
+        hardErrors.map((e, i) => (
+          <p className="status status-fail" key={i}>
+            {e.message}
+          </p>
+        ))}
       {selected && !inside.length && (
         <SelectedNodeIO
           t={t}
@@ -2117,30 +2125,24 @@ function Editor({
       )}
     </>
   );
-  const inspectorOpen = !!(
-    (selected && !inside.length) ||
-    error ||
-    state.error ||
-    hardErrors.length
-  );
-  const layoutClass = layout
-    ? ` sb-layout-${layout}${layout === 'a' && !inspectorOpen ? ' is-inspector-closed' : ''}${
-        layout === 'a' && !sbChartsOpen ? ' is-charts-closed' : ''
-      }`
-    : '';
+  const inspectorOpen = !!sandbox && (!!(selected && !inside.length) || showErrors);
+  const closeInspector = () => {
+    setDismissedErrors(errorKey);
+    if (state.selection.length) command({ type: 'select', ids: [], shift: false });
+  };
 
   return (
-    <main className={`workspace${sandbox ? ' is-sandbox' : ''}${layoutClass}`}>
-      {layout && sandbox && sbTrain && (
+    <main className={`workspace${sandbox ? ' is-sandbox' : ''}`}>
+      {sandbox && sbTrain && (
         <div className="sb-bar" role="toolbar" aria-label={t('sandbox.title')}>
           {sandbox.barHead}
           <span className="spacer" />
-          <SandboxTransport {...sbTrain} inline />
+          <SandboxTransport {...sbTrain} />
           <span className="sb-bar-sep" aria-hidden="true" />
           <button
             className="btn btn-small sb-bar-btn"
             aria-haspopup="dialog"
-            onClick={() => setSbDialog('data')}
+            onClick={() => sandbox.openDialog('data')}
           >
             ▦ {t('sandbox.tab.data')}
             <span className="tag">{sandbox.taskLabel}</span>
@@ -2148,26 +2150,14 @@ function Editor({
           <button
             className="btn btn-small sb-bar-btn"
             aria-haspopup="dialog"
-            onClick={() => setSbDialog('saves')}
+            onClick={() => sandbox.openDialog('saves')}
           >
             ⛁ {t('sandbox.tab.saves')}
           </button>
         </div>
       )}
-      {layout && sandbox && sbDialog && (
-        <SandboxDialog
-          t={t}
-          title={t(sbDialog === 'data' ? 'sandbox.dialog.data' : 'sandbox.dialog.saves')}
-          onClose={() => setSbDialog(undefined)}
-          medium
-        >
-          {sbDialog === 'data' ? sandbox.dataPanel : sandbox.savesPanel}
-        </SandboxDialog>
-      )}
       <aside className="panel panel-left">
-        {sandbox ? (
-          !layout && sandbox.header
-        ) : (
+        {sandbox ? null : (
           <div className="section">
             <div className="level-id">{`LEVEL ${entry.code}`}</div>
             <h1 className="level-title">{t(level.titleKey)}</h1>
@@ -2358,7 +2348,7 @@ function Editor({
         <p className="hint help">{t(sandbox ? 'sandbox.help' : 'ui.help')}</p>
       </aside>
 
-      <section className="canvas-wrap">
+      <section className={`canvas-wrap${inspectorOpen ? ' has-inspector' : ''}`}>
         <Canvas
           ref={canvas}
           registry={registry}
@@ -2604,15 +2594,27 @@ function Editor({
         ) : (
           untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>
         )}
+        {inspectorOpen && (
+          <aside className="sb-inspector" aria-label={t('sandbox.inspector.title')}>
+            <header className="sb-inspector-head">
+              <h2 className="label">{t('sandbox.inspector.title')}</h2>
+              <button
+                className="icon-btn sb-inspector-close"
+                aria-label={t('sandbox.close')}
+                title={t('sandbox.inspector.close')}
+                onClick={closeInspector}
+              >
+                ×
+              </button>
+            </header>
+            <div className="sb-inspector-body">{inspector}</div>
+          </aside>
+        )}
       </section>
 
-      {layout === 'a' && sbTrain && (
+      {sbTrain && (
         <section className={`sb-strip${sbChartsOpen ? '' : ' is-closed'}`}>
-          <button
-            className="sb-strip-head"
-            aria-expanded={sbChartsOpen}
-            onClick={() => setSbChartsOpen((open) => !open)}
-          >
+          <button className="sb-strip-head" aria-expanded={sbChartsOpen} onClick={toggleCharts}>
             <span className="sb-strip-caret" aria-hidden="true">
               {sbChartsOpen ? '▾' : '▸'}
             </span>
@@ -2630,648 +2632,558 @@ function Editor({
             <div className="sb-strip-body">
               <SandboxCharts {...sbTrain} />
               <div className="sb-card sb-card-settings">
-                <SandboxSettings {...sbTrain} titled />
+                <SandboxSettings {...sbTrain} />
               </div>
             </div>
           )}
         </section>
       )}
-      {layout === 'a' ? (
-        inspectorOpen && (
-          <aside
-            className="panel panel-right sb-inspector-panel"
-            aria-label={t('sandbox.inspector.title')}
-          >
-            {inspector}
-          </aside>
-        )
-      ) : layout === 'b' && sbTrain ? (
-        <aside className="panel panel-right sb-split">
-          <div className="sb-split-top" aria-label={t('sandbox.inspector.title')}>
-            {inspectorOpen ? (
-              inspector
-            ) : (
-              <div className="sb-inspector-empty">
-                <h2 className="label">{t('sandbox.inspector.title')}</h2>
-                <p>{t('sandbox.inspector.empty')}</p>
-              </div>
-            )}
-          </div>
-          <div className="sb-split-bottom">
-            {sbTrain.stepPhase && <p className="sb-phase">{sbTrain.stepPhase}</p>}
-            <SandboxCharts {...sbTrain} />
-            <details className="sb-split-settings">
-              <summary>{t('sandbox.train.settings')}</summary>
-              <SandboxSettings {...sbTrain} />
-            </details>
-          </div>
-        </aside>
-      ) : (
+      {sandbox ? null : (
         <aside className="panel panel-right">
           {inspector}
-          {sandbox && level.kind === 'train' ? (
-            <>
-              <div className="sb-tabs" role="tablist" aria-label={t('sandbox.title')}>
-                {(['train', 'data', 'saves'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    role="tab"
-                    id={`sb-tab-${tab}`}
-                    aria-selected={sandbox.tab === tab}
-                    aria-controls="sb-tabpanel"
-                    className={`sb-tab${sandbox.tab === tab ? ' is-on' : ''}`}
-                    onClick={() => sandbox.onTab(tab)}
-                  >
-                    {t(`sandbox.tab.${tab}`)}
-                    {tab === 'train' && training === 'running' && (
-                      <span className="sb-tab-dot" aria-hidden="true" />
-                    )}
-                  </button>
-                ))}
-              </div>
-              <div
-                className="sb-tabpanel"
-                role="tabpanel"
-                id="sb-tabpanel"
-                aria-labelledby={`sb-tab-${sandbox.tab}`}
-              >
-                {sandbox.tab === 'train' ? (
-                  <SandboxTrain {...sbTrain!} />
-                ) : sandbox.tab === 'data' ? (
-                  sandbox.dataPanel
-                ) : (
-                  sandbox.savesPanel
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              {probing && (
-                <section className="section">
-                  <h2 className="label">{t('ui.liveValues')}</h2>
-                  {shapeGroups.length > 1 && (
-                    <div className="case-switch">
-                      <span className="label-inline">{t('ui.shapeGroup')}</span>
-                      <div
-                        className="seg shape-switch"
-                        role="group"
-                        aria-label={t('ui.shapeGroup')}
+          {probing && (
+            <section className="section">
+              <h2 className="label">{t('ui.liveValues')}</h2>
+              {shapeGroups.length > 1 && (
+                <div className="case-switch">
+                  <span className="label-inline">{t('ui.shapeGroup')}</span>
+                  <div className="seg shape-switch" role="group" aria-label={t('ui.shapeGroup')}>
+                    {shapeGroups.map((g, i) => (
+                      <button
+                        key={i}
+                        className={`seg-btn${i === shapeGroup ? ' is-on' : ''}`}
+                        aria-pressed={i === shapeGroup}
+                        disabled={running || busy || !!verify}
+                        title={Object.entries(g.inputs)
+                          .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
+                          .join(', ')}
+                        onClick={() =>
+                          // The all-zero case says little about shapes; start on a lively one.
+                          selectCase(
+                            i,
+                            Math.max(
+                              0,
+                              g.cases.findIndex((c) =>
+                                Object.values(c.inputs).some((v) => v.some((x) => x !== 0)),
+                              ),
+                            ),
+                          )
+                        }
                       >
-                        {shapeGroups.map((g, i) => (
-                          <button
-                            key={i}
-                            className={`seg-btn${i === shapeGroup ? ' is-on' : ''}`}
-                            aria-pressed={i === shapeGroup}
-                            disabled={running || busy || !!verify}
-                            title={Object.entries(g.inputs)
-                              .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
-                              .join(', ')}
-                            onClick={() =>
-                              // The all-zero case says little about shapes; start on a lively one.
-                              selectCase(
-                                i,
-                                Math.max(
-                                  0,
-                                  g.cases.findIndex((c) =>
-                                    Object.values(c.inputs).some((v) => v.some((x) => x !== 0)),
-                                  ),
-                                ),
-                              )
-                            }
-                          >
-                            {Object.values(g.inputs)
-                              .map((shape) => (shape.length ? shape.join('×') : t('ui.scalar')))
-                              .join(' · ')}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {testCases.length > 0 && (
-                    <div className="case-switch">
-                      <span className="label-inline">{t('ui.inputCase')}</span>
-                      {hasTensorInputs && (
-                        <button
-                          className="btn case-step"
-                          aria-label={t('ui.previousCase')}
-                          title={t('ui.previousCase')}
-                          disabled={running || busy || Number(inputCase) <= 0}
-                          onClick={() => selectInputCase(String(Number(inputCase) - 1))}
-                        >
-                          ‹
-                        </button>
-                      )}
-                      <select
-                        className="field"
-                        aria-label={t('ui.inputCase')}
-                        value={inputCase}
-                        disabled={running || busy}
-                        onChange={(e) => selectInputCase(e.target.value)}
-                      >
-                        {!hasTensorInputs && <option value="">{t('ui.customInputs')}</option>}
-                        {testCases.map((c, i) => (
-                          <option key={`${i}:${c.id}`} value={i}>
-                            {t('ui.inputCaseNumber', { n: i + 1 })}
-                          </option>
-                        ))}
-                      </select>
-                      {hasTensorInputs && (
-                        <button
-                          className="btn case-step"
-                          aria-label={t('ui.nextCase')}
-                          title={t('ui.nextCase')}
-                          disabled={running || busy || Number(inputCase) >= testCases.length - 1}
-                          onClick={() => selectInputCase(String(Number(inputCase) + 1))}
-                        >
-                          ›
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {Object.entries(inputs).map(([name, value]) => (
-                    <div
-                      className={`probe-field${inputShapes[name].length > 0 ? ' is-tensor' : ''}`}
-                      key={name}
+                        {Object.values(g.inputs)
+                          .map((shape) => (shape.length ? shape.join('×') : t('ui.scalar')))
+                          .join(' · ')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {testCases.length > 0 && (
+                <div className="case-switch">
+                  <span className="label-inline">{t('ui.inputCase')}</span>
+                  {hasTensorInputs && (
+                    <button
+                      className="btn case-step"
+                      aria-label={t('ui.previousCase')}
+                      title={t('ui.previousCase')}
+                      disabled={running || busy || Number(inputCase) <= 0}
+                      onClick={() => selectInputCase(String(Number(inputCase) - 1))}
                     >
-                      <label htmlFor={`probe-${name}`} className="probe-name">
-                        {name} =
-                      </label>
-                      {inputShapes[name].length > 0 ? (
+                      ‹
+                    </button>
+                  )}
+                  <select
+                    className="field"
+                    aria-label={t('ui.inputCase')}
+                    value={inputCase}
+                    disabled={running || busy}
+                    onChange={(e) => selectInputCase(e.target.value)}
+                  >
+                    {!hasTensorInputs && <option value="">{t('ui.customInputs')}</option>}
+                    {testCases.map((c, i) => (
+                      <option key={`${i}:${c.id}`} value={i}>
+                        {t('ui.inputCaseNumber', { n: i + 1 })}
+                      </option>
+                    ))}
+                  </select>
+                  {hasTensorInputs && (
+                    <button
+                      className="btn case-step"
+                      aria-label={t('ui.nextCase')}
+                      title={t('ui.nextCase')}
+                      disabled={running || busy || Number(inputCase) >= testCases.length - 1}
+                      onClick={() => selectInputCase(String(Number(inputCase) + 1))}
+                    >
+                      ›
+                    </button>
+                  )}
+                </div>
+              )}
+              {Object.entries(inputs).map(([name, value]) => (
+                <div
+                  className={`probe-field${inputShapes[name].length > 0 ? ' is-tensor' : ''}`}
+                  key={name}
+                >
+                  <label htmlFor={`probe-${name}`} className="probe-name">
+                    {name} =
+                  </label>
+                  {inputShapes[name].length > 0 ? (
+                    <TensorGrid
+                      label={name}
+                      shape={inputShapes[name]}
+                      values={value.split(',').map(Number)}
+                      format={(n) => formatValue(locale, n)}
+                    />
+                  ) : (
+                    <input
+                      id={`probe-${name}`}
+                      className="field"
+                      value={value}
+                      aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
+                      spellCheck={false}
+                      disabled={!!verify}
+                      onChange={(e) => changeScalarInput(name, e.target.value)}
+                    />
+                  )}
+                  {inputShapes[name].length > 0 && (
+                    <span className="probe-shape">{shapeText(inputShapes[name], t)}</span>
+                  )}
+                  {inputShapes[name].length === 0 && (
+                    <input
+                      type="range"
+                      className="probe-slider"
+                      aria-label={name}
+                      min={-5}
+                      max={5}
+                      step={0.05}
+                      disabled={!!verify}
+                      value={Number(value) || 0}
+                      onChange={(e) => changeScalarInput(name, e.target.value)}
+                    />
+                  )}
+                </div>
+              ))}
+              {Object.keys(levelOutputShapes(level)).map((name) => {
+                const outputValue = outputValues[name];
+                const actual = outputActuals[name];
+                const target = expected?.[name];
+                const displayName = translateValueName(t, name);
+                return (
+                  <div className="probe-output-group" key={name}>
+                    <div className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}>
+                      <span className="probe-name">{displayName} =</span>
+                      {outputValue?.shape?.length ? (
                         <TensorGrid
-                          label={name}
-                          shape={inputShapes[name]}
-                          values={value.split(',').map(Number)}
+                          label={displayName}
+                          shape={outputValue.shape}
+                          values={actual!.values}
+                          rows={name === level.interface.output ? outputAxes?.rows : undefined}
+                          cols={name === level.interface.output ? outputAxes?.cols : undefined}
+                          off={target && actual ? offIndices(level, actual, target) : undefined}
                           format={(n) => formatValue(locale, n)}
                         />
                       ) : (
-                        <input
-                          id={`probe-${name}`}
-                          className="field"
-                          value={value}
-                          aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
-                          spellCheck={false}
-                          disabled={!!verify}
-                          onChange={(e) => changeScalarInput(name, e.target.value)}
-                        />
-                      )}
-                      {inputShapes[name].length > 0 && (
-                        <span className="probe-shape">{shapeText(inputShapes[name], t)}</span>
-                      )}
-                      {inputShapes[name].length === 0 && (
-                        <input
-                          type="range"
-                          className="probe-slider"
-                          aria-label={name}
-                          min={-5}
-                          max={5}
-                          step={0.05}
-                          disabled={!!verify}
-                          value={Number(value) || 0}
-                          onChange={(e) => changeScalarInput(name, e.target.value)}
-                        />
+                        <span className="mono">{outputValue?.text ?? '—'}</span>
                       )}
                     </div>
-                  ))}
-                  {Object.keys(levelOutputShapes(level)).map((name) => {
-                    const outputValue = outputValues[name];
-                    const actual = outputActuals[name];
-                    const target = expected?.[name];
-                    const displayName = translateValueName(t, name);
-                    return (
-                      <div className="probe-output-group" key={name}>
-                        <div
-                          className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}
-                        >
-                          <span className="probe-name">{displayName} =</span>
-                          {outputValue?.shape?.length ? (
-                            <TensorGrid
-                              label={displayName}
-                              shape={outputValue.shape}
-                              values={actual!.values}
-                              rows={name === level.interface.output ? outputAxes?.rows : undefined}
-                              cols={name === level.interface.output ? outputAxes?.cols : undefined}
-                              off={target && actual ? offIndices(level, actual, target) : undefined}
-                              format={(n) => formatValue(locale, n)}
-                            />
-                          ) : (
-                            <span className="mono">{outputValue?.text ?? '—'}</span>
-                          )}
-                        </div>
-                        {target && (
-                          <div
-                            className={`probe-out probe-expected${target.shape.length ? ' is-tensor' : ''}`}
+                    {target && (
+                      <div
+                        className={`probe-out probe-expected${target.shape.length ? ' is-tensor' : ''}`}
+                      >
+                        <span className="probe-name">
+                          {t('ui.expected')} {displayName} =
+                        </span>
+                        {target.shape.length ? (
+                          <TensorGrid
+                            label={t('ui.expected')}
+                            shape={target.shape}
+                            values={target.values}
+                            rows={name === level.interface.output ? outputAxes?.rows : undefined}
+                            cols={name === level.interface.output ? outputAxes?.cols : undefined}
+                            format={(n) => formatValue(locale, n)}
+                          />
+                        ) : (
+                          <span className="mono" title={fullValues(target.values)}>
+                            {formatValue(locale, target.values[0])}
+                          </span>
+                        )}
+                        {actual && (
+                          <span
+                            className={`probe-verdict ${matchesExpected(level, actual, target) ? 'ok' : 'off'}`}
                           >
-                            <span className="probe-name">
-                              {t('ui.expected')} {displayName} =
-                            </span>
-                            {target.shape.length ? (
-                              <TensorGrid
-                                label={t('ui.expected')}
-                                shape={target.shape}
-                                values={target.values}
-                                rows={
-                                  name === level.interface.output ? outputAxes?.rows : undefined
-                                }
-                                cols={
-                                  name === level.interface.output ? outputAxes?.cols : undefined
-                                }
-                                format={(n) => formatValue(locale, n)}
-                              />
-                            ) : (
-                              <span className="mono" title={fullValues(target.values)}>
-                                {formatValue(locale, target.values[0])}
-                              </span>
-                            )}
-                            {actual && (
-                              <span
-                                className={`probe-verdict ${matchesExpected(level, actual, target) ? 'ok' : 'off'}`}
-                              >
-                                {matchesExpected(level, actual, target) ? '✓' : '≠'}
-                              </span>
-                            )}
-                          </div>
+                            {matchesExpected(level, actual, target) ? '✓' : '≠'}
+                          </span>
                         )}
-                      </div>
-                    );
-                  })}
-                  {level.outputNoteKey && (
-                    <div className="probe-note">
-                      <MathText text={t(level.outputNoteKey)} />
-                    </div>
-                  )}
-                  <p className="hint">
-                    {t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}
-                  </p>
-                </section>
-              )}
-              <section className="section">
-                <div className="section-head">
-                  <h2 className="label">
-                    {t(level.kind === 'train' ? 'ui.training' : 'ui.tests')}
-                  </h2>
-                  {level.kind !== 'train' && (
-                    <span className="label">
-                      {t('ui.partCount', {
-                        count: state.graph.nodes.filter(
-                          (n) => !['input', 'output'].includes(n.component),
-                        ).length,
-                      })}
-                    </span>
-                  )}
-                </div>
-                {level.kind === 'train' && (
-                  <>
-                    <TrainingLoop
-                      t={t}
-                      optimizer={optimizer ?? level.optimizer.kind}
-                      learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
-                      steps={formatNumber(locale, trainSteps ?? level.steps)}
-                      resample={!!level.resample}
-                      running={training === 'running'}
-                    />
-                    {level.data ? (
-                      <DatasetCard
-                        t={t}
-                        data={level.data}
-                        inputs={level.interface.inputs}
-                        plot={plot}
-                      />
-                    ) : (
-                      plot && (
-                        <DataPlot
-                          data={plot}
-                          label={t(
-                            level.sequenceProbe
-                              ? `ui.probe.${level.sequenceProbe}.label`
-                              : 'ui.data',
-                          )}
-                          axisLabels={
-                            level.sequenceProbe
-                              ? {
-                                  x: t(`ui.probe.${level.sequenceProbe}.x`),
-                                  y: t(`ui.probe.${level.sequenceProbe}.y`),
-                                }
-                              : undefined
-                          }
-                        />
-                      )
-                    )}
-                    {level.sequenceProbe && (
-                      <>
-                        <p className="hint">{t(`ui.probe.${level.sequenceProbe}.help`)}</p>
-                        <SequenceTry
-                          key={level.id}
-                          t={t}
-                          kind={level.sequenceProbe}
-                          length={level.interface.inputs.x?.[1] ?? 1}
-                          refreshKey={[
-                            computationKey,
-                            report ? Math.floor(report.step / 25) : -1,
-                            training,
-                          ]}
-                          predict={(rows) => {
-                            const c = client.current;
-                            if (!c) return Promise.reject(new Error('no worker'));
-                            return c.predict(level.id, state.graph, rows);
-                          }}
-                        />
-                      </>
-                    )}
-                    {optimizers && optimizers.length > 1 && (
-                      <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
-                        <span className="label">{t('ui.optimizer')}</span>
-                        <div className="seg">
-                          {optimizers.map((kind) => (
-                            <button
-                              key={kind}
-                              role="radio"
-                              aria-checked={kind === optimizer}
-                              className={`seg-btn${kind === optimizer ? ' is-on' : ''}`}
-                              disabled={busy}
-                              onClick={() => setOptimizer(kind)}
-                            >
-                              {t(`ui.optimizer.${kind}`)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {tunable && learningRate !== undefined && (
-                      <label className="lr-control">
-                        <span className="lr-control-head">
-                          <span className="label">{t('ui.learningRate')}</span>
-                          <output>η = {compact(locale, learningRate)}</output>
-                        </span>
-                        <input
-                          type="range"
-                          min={Math.log10(tunable.min)}
-                          max={Math.log10(tunable.max)}
-                          step={0.01}
-                          value={Math.log10(learningRate)}
-                          disabled={busy}
-                          onChange={(e) =>
-                            setLearningRate(
-                              Number(Number(10 ** Number(e.target.value)).toPrecision(2)),
-                            )
-                          }
-                        />
-                        <span className="lr-scale">
-                          <span>{compact(locale, tunable.min)}</span>
-                          <span>{compact(locale, tunable.max)}</span>
-                        </span>
-                      </label>
-                    )}
-                    {stepsTunable && trainSteps !== undefined && (
-                      <label className="steps-control">
-                        <span className="lr-control-head">
-                          <span className="label">{t('ui.trainSteps')}</span>
-                          <output>{formatNumber(locale, trainSteps)}</output>
-                        </span>
-                        <input
-                          className="field"
-                          type="number"
-                          min={stepsTunable.min}
-                          max={stepsTunable.max}
-                          step={1}
-                          value={trainSteps}
-                          disabled={busy}
-                          onChange={(e) => setTrainSteps(Number(e.target.value))}
-                        />
-                        <span className="lr-scale">
-                          <span>{formatNumber(locale, stepsTunable.min)}</span>
-                          <span>{formatNumber(locale, stepsTunable.max)}</span>
-                        </span>
-                      </label>
-                    )}
-                    <LossChart
-                      losses={losses}
-                      threshold={threshold}
-                      label={t('ui.loss')}
-                      thresholdLabel={t('ui.threshold')}
-                    />
-                    <dl className="kv train-stats">
-                      <dt>{t('ui.steps')}</dt>
-                      <dd>{report ? formatNumber(locale, report.step) : '—'}</dd>
-                      <dt>{t('ui.loss')}</dt>
-                      <dd>{report ? compact(locale, report.loss) : '—'}</dd>
-                      <dt>{t('ui.accuracy')}</dt>
-                      <dd>
-                        {report?.accuracy !== undefined
-                          ? formatNumber(locale, report.accuracy, {
-                              style: 'percent',
-                              maximumFractionDigits: 1,
-                            })
-                          : '—'}
-                      </dd>
-                      <dt>{t('ui.backend')}</dt>
-                      <dd>{t(`backend.${backend}`)}</dd>
-                    </dl>
-                    {level.generates && (
-                      <div className="gen">
-                        <div className="gen-row">
-                          <label className="gen-prompt">
-                            <span className="label">{t('ui.prompt')}</span>
-                            <input
-                              className="field"
-                              value={gen.prompt}
-                              maxLength={40}
-                              spellCheck={false}
-                              onChange={(e) => setGen((g) => ({ ...g, prompt: e.target.value }))}
-                            />
-                          </label>
-                          <label className="gen-temp">
-                            <span className="label">
-                              {t('ui.temperature')} <output>{gen.temperature.toFixed(1)}</output>
-                            </span>
-                            <input
-                              type="range"
-                              min={0.2}
-                              max={2}
-                              step={0.1}
-                              value={gen.temperature}
-                              onChange={(e) =>
-                                setGen((g) => ({ ...g, temperature: Number(e.target.value) }))
-                              }
-                            />
-                          </label>
-                        </div>
-                        <button
-                          className="btn"
-                          disabled={busy || writing || !!inside.length}
-                          onClick={() => void write()}
-                        >
-                          ✎ {t('ui.generate')}
-                        </button>
-                        {gen.text !== undefined && (
-                          <pre className="gen-out" aria-live="polite">
-                            {/* Prompt echo stays tinted; the rest types out character by character. */}
-                            <span className="gen-out-prompt">
-                              {gen.text.slice(0, Math.min(gen.kept ?? 0, gen.visible ?? 0))}
-                            </span>
-                            {gen.text.slice(gen.kept ?? 0, gen.visible ?? 0)}
-                          </pre>
-                        )}
-                        <p className="hint">{t('ui.generateHelp')}</p>
-                      </div>
-                    )}
-                    {stepFlow && (
-                      <p className="step-phase">
-                        <span
-                          className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}
-                        >
-                          {t(`ui.stepPhase.${stepFlow.phase}`, {
-                            loss: compact(locale, stepFlow.trace.loss),
-                          })}
-                        </span>
-                      </p>
-                    )}
-                  </>
-                )}
-                <div className="btn-row">
-                  {verify ? (
-                    <button className="btn btn-primary" onClick={() => (skip.current = true)}>
-                      ⏭ {t('ui.skip')}
-                    </button>
-                  ) : (
-                    <button
-                      className="btn btn-primary"
-                      disabled={busy || running || !!inside.length}
-                      onClick={() => void run()}
-                    >
-                      ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
-                    </button>
-                  )}
-                  {level.kind === 'train' && !busy && (
-                    <>
-                      <button
-                        className="btn"
-                        title={t('ui.stepHelp')}
-                        disabled={running || !!inside.length}
-                        onClick={() => void stepOnce()}
-                      >
-                        ⏯ {t('ui.stepOnce')}
-                      </button>
-                      {losses.length > 0 && (
-                        <button className="btn" onClick={resetSteps}>
-                          ↺ {t('ui.resetParams')}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {busy && (
-                    <>
-                      <button
-                        className="btn"
-                        onClick={() => {
-                          const next = training === 'running' ? 'paused' : 'running';
-                          void (
-                            next === 'paused' ? client.current?.pause() : client.current?.resume()
-                          )
-                            ?.then(() => setTraining(next))
-                            .catch(fail);
-                        }}
-                      >
-                        {t(training === 'running' ? 'ui.pause' : 'ui.resume')}
-                      </button>
-                      <button
-                        className="btn btn-danger"
-                        onClick={() =>
-                          void client.current
-                            ?.stop()
-                            .then(() => setTraining('idle'))
-                            .catch(fail)
-                        }
-                      >
-                        {t('ui.stop')}
-                      </button>
-                    </>
-                  )}
-                </div>
-                {shown && shownTests && (
-                  <div className="results">
-                    {verify ? (
-                      <p className="status">
-                        {t('ui.verifying', {
-                          n: verify.index + 1,
-                          count: verify.result.tests.length,
-                        })}
-                      </p>
-                    ) : sandbox || shown.tests.length === 0 ? null : (
-                      <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
-                        {shown.passed ? '✓ ' : '✗ '}
-                        {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
-                          passed: shown.tests.filter((r) => r.passed).length,
-                          count: shown.tests.length,
-                        })}
-                      </p>
-                    )}
-                    {level.kind !== 'train' && (
-                      <div className="table-scroll">
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>{t('ui.expected')}</th>
-                              <th>{t('ui.actual')}</th>
-                              <th />
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {shownTests.map((r, i) => (
-                              <tr
-                                // Fixed and generated cases can share an id; the row index keeps keys unique.
-                                key={`${i}:${r.id}`}
-                                className={
-                                  verify && i === verify.index
-                                    ? 'is-current'
-                                    : !verify && testCaseLocation(shown.tests, i, shapeGroups)
-                                      ? 'is-pickable'
-                                      : undefined
-                                }
-                                title={
-                                  !verify && testCaseLocation(shown.tests, i, shapeGroups)
-                                    ? t('ui.showCase')
-                                    : undefined
-                                }
-                                onClick={() => {
-                                  const at =
-                                    !verify && testCaseLocation(shown.tests, i, shapeGroups);
-                                  if (at) selectCase(at.group, at.index);
-                                }}
-                              >
-                                <td>{i + 1}</td>
-                                <td title={fullValues(r.expected)}>
-                                  {listText(locale, r.expected, 2)}
-                                </td>
-                                <td
-                                  title={fullValues(r.actual)}
-                                  className={r.errorKey ? 'cell-error' : undefined}
-                                >
-                                  {r.errorKey
-                                    ? graphDiagnostic(locale, state.graph, {
-                                        key: r.errorKey,
-                                        params: r.errorParams,
-                                      })
-                                    : listText(locale, r.actual, 2)}
-                                </td>
-                                <td className={r.passed ? 'ok' : 'err'}>
-                                  {verify && i === verify.index && r.passed
-                                    ? '·'
-                                    : r.passed
-                                      ? '✓'
-                                      : '✗'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
                       </div>
                     )}
                   </div>
-                )}
-              </section>
-            </>
+                );
+              })}
+              {level.outputNoteKey && (
+                <div className="probe-note">
+                  <MathText text={t(level.outputNoteKey)} />
+                </div>
+              )}
+              <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
+            </section>
           )}
+          <section className="section">
+            <div className="section-head">
+              <h2 className="label">{t(level.kind === 'train' ? 'ui.training' : 'ui.tests')}</h2>
+              {level.kind !== 'train' && (
+                <span className="label">
+                  {t('ui.partCount', {
+                    count: state.graph.nodes.filter(
+                      (n) => !['input', 'output'].includes(n.component),
+                    ).length,
+                  })}
+                </span>
+              )}
+            </div>
+            {level.kind === 'train' && (
+              <>
+                <TrainingLoop
+                  t={t}
+                  optimizer={optimizer ?? level.optimizer.kind}
+                  learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
+                  steps={formatNumber(locale, trainSteps ?? level.steps)}
+                  resample={!!level.resample}
+                  running={training === 'running'}
+                />
+                {level.data ? (
+                  <DatasetCard
+                    t={t}
+                    data={level.data}
+                    inputs={level.interface.inputs}
+                    plot={plot}
+                  />
+                ) : (
+                  plot && (
+                    <DataPlot
+                      data={plot}
+                      label={t(
+                        level.sequenceProbe ? `ui.probe.${level.sequenceProbe}.label` : 'ui.data',
+                      )}
+                      axisLabels={
+                        level.sequenceProbe
+                          ? {
+                              x: t(`ui.probe.${level.sequenceProbe}.x`),
+                              y: t(`ui.probe.${level.sequenceProbe}.y`),
+                            }
+                          : undefined
+                      }
+                    />
+                  )
+                )}
+                {level.sequenceProbe && (
+                  <>
+                    <p className="hint">{t(`ui.probe.${level.sequenceProbe}.help`)}</p>
+                    <SequenceTry
+                      key={level.id}
+                      t={t}
+                      kind={level.sequenceProbe}
+                      length={level.interface.inputs.x?.[1] ?? 1}
+                      refreshKey={[
+                        computationKey,
+                        report ? Math.floor(report.step / 25) : -1,
+                        training,
+                      ]}
+                      predict={(rows) => {
+                        const c = client.current;
+                        if (!c) return Promise.reject(new Error('no worker'));
+                        return c.predict(level.id, state.graph, rows);
+                      }}
+                    />
+                  </>
+                )}
+                {optimizers && optimizers.length > 1 && (
+                  <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
+                    <span className="label">{t('ui.optimizer')}</span>
+                    <div className="seg">
+                      {optimizers.map((kind) => (
+                        <button
+                          key={kind}
+                          role="radio"
+                          aria-checked={kind === optimizer}
+                          className={`seg-btn${kind === optimizer ? ' is-on' : ''}`}
+                          disabled={busy}
+                          onClick={() => setOptimizer(kind)}
+                        >
+                          {t(`ui.optimizer.${kind}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {tunable && learningRate !== undefined && (
+                  <label className="lr-control">
+                    <span className="lr-control-head">
+                      <span className="label">{t('ui.learningRate')}</span>
+                      <output>η = {compact(locale, learningRate)}</output>
+                    </span>
+                    <input
+                      type="range"
+                      min={Math.log10(tunable.min)}
+                      max={Math.log10(tunable.max)}
+                      step={0.01}
+                      value={Math.log10(learningRate)}
+                      disabled={busy}
+                      onChange={(e) =>
+                        setLearningRate(Number(Number(10 ** Number(e.target.value)).toPrecision(2)))
+                      }
+                    />
+                    <span className="lr-scale">
+                      <span>{compact(locale, tunable.min)}</span>
+                      <span>{compact(locale, tunable.max)}</span>
+                    </span>
+                  </label>
+                )}
+                {stepsTunable && trainSteps !== undefined && (
+                  <label className="steps-control">
+                    <span className="lr-control-head">
+                      <span className="label">{t('ui.trainSteps')}</span>
+                      <output>{formatNumber(locale, trainSteps)}</output>
+                    </span>
+                    <input
+                      className="field"
+                      type="number"
+                      min={stepsTunable.min}
+                      max={stepsTunable.max}
+                      step={1}
+                      value={trainSteps}
+                      disabled={busy}
+                      onChange={(e) => setTrainSteps(Number(e.target.value))}
+                    />
+                    <span className="lr-scale">
+                      <span>{formatNumber(locale, stepsTunable.min)}</span>
+                      <span>{formatNumber(locale, stepsTunable.max)}</span>
+                    </span>
+                  </label>
+                )}
+                <LossChart
+                  losses={losses}
+                  threshold={threshold}
+                  label={t('ui.loss')}
+                  thresholdLabel={t('ui.threshold')}
+                />
+                <dl className="kv train-stats">
+                  <dt>{t('ui.steps')}</dt>
+                  <dd>{report ? formatNumber(locale, report.step) : '—'}</dd>
+                  <dt>{t('ui.loss')}</dt>
+                  <dd>{report ? compact(locale, report.loss) : '—'}</dd>
+                  <dt>{t('ui.accuracy')}</dt>
+                  <dd>
+                    {report?.accuracy !== undefined
+                      ? formatNumber(locale, report.accuracy, {
+                          style: 'percent',
+                          maximumFractionDigits: 1,
+                        })
+                      : '—'}
+                  </dd>
+                  <dt>{t('ui.backend')}</dt>
+                  <dd>{t(`backend.${backend}`)}</dd>
+                </dl>
+                {level.generates && (
+                  <div className="gen">
+                    <div className="gen-row">
+                      <label className="gen-prompt">
+                        <span className="label">{t('ui.prompt')}</span>
+                        <input
+                          className="field"
+                          value={gen.prompt}
+                          maxLength={40}
+                          spellCheck={false}
+                          onChange={(e) => setGen((g) => ({ ...g, prompt: e.target.value }))}
+                        />
+                      </label>
+                      <label className="gen-temp">
+                        <span className="label">
+                          {t('ui.temperature')} <output>{gen.temperature.toFixed(1)}</output>
+                        </span>
+                        <input
+                          type="range"
+                          min={0.2}
+                          max={2}
+                          step={0.1}
+                          value={gen.temperature}
+                          onChange={(e) =>
+                            setGen((g) => ({ ...g, temperature: Number(e.target.value) }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <button
+                      className="btn"
+                      disabled={busy || writing || !!inside.length}
+                      onClick={() => void write()}
+                    >
+                      ✎ {t('ui.generate')}
+                    </button>
+                    {gen.text !== undefined && (
+                      <pre className="gen-out" aria-live="polite">
+                        {/* Prompt echo stays tinted; the rest types out character by character. */}
+                        <span className="gen-out-prompt">
+                          {gen.text.slice(0, Math.min(gen.kept ?? 0, gen.visible ?? 0))}
+                        </span>
+                        {gen.text.slice(gen.kept ?? 0, gen.visible ?? 0)}
+                      </pre>
+                    )}
+                    <p className="hint">{t('ui.generateHelp')}</p>
+                  </div>
+                )}
+                {stepFlow && (
+                  <p className="step-phase">
+                    <span
+                      className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}
+                    >
+                      {t(`ui.stepPhase.${stepFlow.phase}`, {
+                        loss: compact(locale, stepFlow.trace.loss),
+                      })}
+                    </span>
+                  </p>
+                )}
+              </>
+            )}
+            <div className="btn-row">
+              {verify ? (
+                <button className="btn btn-primary" onClick={() => (skip.current = true)}>
+                  ⏭ {t('ui.skip')}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  disabled={busy || running || !!inside.length}
+                  onClick={() => void run()}
+                >
+                  ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
+                </button>
+              )}
+              {level.kind === 'train' && !busy && (
+                <>
+                  <button
+                    className="btn"
+                    title={t('ui.stepHelp')}
+                    disabled={running || !!inside.length}
+                    onClick={() => void stepOnce()}
+                  >
+                    ⏯ {t('ui.stepOnce')}
+                  </button>
+                  {losses.length > 0 && (
+                    <button className="btn" onClick={resetSteps}>
+                      ↺ {t('ui.resetParams')}
+                    </button>
+                  )}
+                </>
+              )}
+              {busy && (
+                <>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const next = training === 'running' ? 'paused' : 'running';
+                      void (next === 'paused' ? client.current?.pause() : client.current?.resume())
+                        ?.then(() => setTraining(next))
+                        .catch(fail);
+                    }}
+                  >
+                    {t(training === 'running' ? 'ui.pause' : 'ui.resume')}
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() =>
+                      void client.current
+                        ?.stop()
+                        .then(() => setTraining('idle'))
+                        .catch(fail)
+                    }
+                  >
+                    {t('ui.stop')}
+                  </button>
+                </>
+              )}
+            </div>
+            {shown && shownTests && (
+              <div className="results">
+                {verify ? (
+                  <p className="status">
+                    {t('ui.verifying', {
+                      n: verify.index + 1,
+                      count: verify.result.tests.length,
+                    })}
+                  </p>
+                ) : sandbox || shown.tests.length === 0 ? null : (
+                  <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
+                    {shown.passed ? '✓ ' : '✗ '}
+                    {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
+                      passed: shown.tests.filter((r) => r.passed).length,
+                      count: shown.tests.length,
+                    })}
+                  </p>
+                )}
+                {level.kind !== 'train' && (
+                  <div className="table-scroll">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>{t('ui.expected')}</th>
+                          <th>{t('ui.actual')}</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shownTests.map((r, i) => (
+                          <tr
+                            // Fixed and generated cases can share an id; the row index keeps keys unique.
+                            key={`${i}:${r.id}`}
+                            className={
+                              verify && i === verify.index
+                                ? 'is-current'
+                                : !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                  ? 'is-pickable'
+                                  : undefined
+                            }
+                            title={
+                              !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                ? t('ui.showCase')
+                                : undefined
+                            }
+                            onClick={() => {
+                              const at = !verify && testCaseLocation(shown.tests, i, shapeGroups);
+                              if (at) selectCase(at.group, at.index);
+                            }}
+                          >
+                            <td>{i + 1}</td>
+                            <td title={fullValues(r.expected)}>
+                              {listText(locale, r.expected, 2)}
+                            </td>
+                            <td
+                              title={fullValues(r.actual)}
+                              className={r.errorKey ? 'cell-error' : undefined}
+                            >
+                              {r.errorKey
+                                ? graphDiagnostic(locale, state.graph, {
+                                    key: r.errorKey,
+                                    params: r.errorParams,
+                                  })
+                                : listText(locale, r.actual, 2)}
+                            </td>
+                            <td className={r.passed ? 'ok' : 'err'}>
+                              {verify && i === verify.index && r.passed
+                                ? '·'
+                                : r.passed
+                                  ? '✓'
+                                  : '✗'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
         </aside>
       )}
 

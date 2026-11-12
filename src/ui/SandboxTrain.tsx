@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 /**
- * The sandbox's training tab: transport controls, the live picture of what the model does to
- * the data (fit curve or decision boundary), the loss curve and the knobs, top to bottom.
- * No pass line and no verdict: training simply runs for the chosen number of steps.
+ * The sandbox's training pieces: transport controls for the toolbar row, and the live picture of
+ * what the model does to the data (fit curve or decision boundary), the loss curve and the knobs
+ * for the chart strip. No pass line and no verdict: training simply runs for the chosen steps.
  */
 import { useEffect, useMemo, useRef } from 'react';
 import { formatNumber, type Locale } from '../i18n';
@@ -44,19 +44,9 @@ export interface SandboxTrainProps {
   onOptimizer: (kind: 'sgd' | 'adam') => void;
 }
 
-export default function SandboxTrain(props: SandboxTrainProps) {
-  return (
-    <div className="sb-train">
-      <SandboxTransport {...props} />
-      <SandboxCharts {...props} />
-      <SandboxSettings {...props} />
-    </div>
-  );
-}
-
 /** Train / step / reset, the progress bar and the current step phase. */
-export function SandboxTransport(props: SandboxTrainProps & { inline?: boolean }) {
-  const { t, locale, training, locked, losses, report, steps, inline } = props;
+export function SandboxTransport(props: SandboxTrainProps) {
+  const { t, locale, training, locked, losses, report, steps } = props;
   const busy = training !== 'idle';
   const done = report ? Math.min(report.step, steps) : 0;
   const buttons = (
@@ -104,19 +94,11 @@ export function SandboxTransport(props: SandboxTrainProps & { inline?: boolean }
       </span>
     </div>
   );
-  if (inline)
-    return (
-      <div className="sb-bar-train">
-        {buttons}
-        {progress}
-      </div>
-    );
   return (
-    <>
+    <div className="sb-bar-train">
       {buttons}
       {progress}
-      {props.stepPhase && <p className="sb-phase">{props.stepPhase}</p>}
-    </>
+    </div>
   );
 }
 
@@ -172,12 +154,11 @@ export function SandboxCharts(props: SandboxTrainProps) {
 }
 
 /** Optimizer, learning rate and step count. */
-export function SandboxSettings(props: SandboxTrainProps & { titled?: boolean }) {
+export function SandboxSettings(props: SandboxTrainProps) {
   const { t, locale, training, steps, format } = props;
   const busy = training !== 'idle';
   return (
     <section className="sb-settings" aria-label={t('sandbox.train.settings')}>
-      {props.titled && <h3 className="sb-settings-title">{t('sandbox.train.settings')}</h3>}
       <div className="sb-setting">
         <span className="sb-setting-name">{t('ui.optimizer')}</span>
         <div className="seg" role="radiogroup" aria-label={t('ui.optimizer')}>

@@ -1263,7 +1263,6 @@
   "sandbox.slot.created": "创建于",
   "sandbox.slot.saved": "上次保存",
   "sandbox.slot.parts": "元件数",
-  "sandbox.tab.train": "训练",
   "sandbox.tab.data": "数据",
   "sandbox.tab.saves": "存档",
   "sandbox.task.regression": "回归",
@@ -1420,5 +1419,5 @@
   "sandbox.charts.collapse": "收起",
   "sandbox.charts.expand": "展开",
   "sandbox.inspector.title": "所选元件",
-  "sandbox.inspector.empty": "点一下画布上的元件，这里会显示它的输入、输出和可调参数。"
+  "sandbox.inspector.close": "关闭（取消选择）"
 }
