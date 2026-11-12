@@ -1182,9 +1182,11 @@ function Editor({
       } else finish(event.result);
     });
   }, [level, client]);
-  const lastGraph = useRef(state.graph);
   // Dragging only writes `ui`. That must not recompile or probe the graph.
   const computationKey = JSON.stringify(computationIdentity(state.graph));
+  // Passing a level refreshes the registry, which reruns the effect below. Only a real
+  // change to the computation may clear the result, or the win modal closes on arrival.
+  const lastKey = useRef(computationKey);
   useEffect(() => {
     latest.current.onProgress({
       ...latest.current.progress,
@@ -1193,14 +1195,14 @@ function Editor({
   }, [state.graph]);
   useEffect(() => {
     const c = client.current;
-    if (lastGraph.current !== state.graph) {
+    if (lastKey.current !== computationKey) {
       setResult(undefined);
       setModal(false);
       stepToken.current++;
       setStepFlow(undefined);
       setTrainingPlot(undefined);
     }
-    lastGraph.current = state.graph;
+    lastKey.current = computationKey;
     revision.current++;
     void c?.syncProgress(latest.current.progress, revision.current).catch(fail);
     setDiagnostics([]);
