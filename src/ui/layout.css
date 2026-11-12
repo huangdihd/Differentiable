@@ -584,9 +584,10 @@
 .canvas-select-hint {
   position: absolute;
   bottom: var(--s4);
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 2 * var(--s4));
+  left: var(--s4);
+  right: var(--s4);
+  width: fit-content;
+  margin: 0 auto;
   flex-wrap: wrap;
   justify-content: center;
   row-gap: 6px;
