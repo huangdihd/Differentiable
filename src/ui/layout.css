@@ -278,12 +278,22 @@
   padding-bottom: var(--s4);
 }
 .sb-transport {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  display: flex;
   gap: 6px;
 }
+/* Train keeps its full label and takes the spare width; Step/Reset give way and wrap. */
 .sb-transport .btn {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-inline: 10px;
+  line-height: 1.25;
+  text-align: center;
+  word-break: keep-all;
+}
+.sb-transport .sb-run {
+  flex: 1 0 auto;
   white-space: nowrap;
+  padding-inline: 14px;
 }
 .sb-progress {
   display: grid;

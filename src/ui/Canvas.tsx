@@ -855,7 +855,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               top: marquee.box.y,
               width: marquee.box.w,
               height: marquee.box.h,
-              borderWidth: 1.5 / view.zoom,
+              borderWidth: 1 / view.zoom,
             }}
           >
             {marquee.hits.length > 0 && (

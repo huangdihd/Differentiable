@@ -745,9 +745,6 @@ input[type='range'] {
 .node.is-error {
   box-shadow: 0 0 0 2px var(--bad);
 }
-.node.is-io {
-  box-shadow: 0 0 0 1.5px var(--accent);
-}
 .node-head {
   height: 26px;
   display: flex;
@@ -859,42 +856,37 @@ input[type='range'] {
   color: var(--muted);
   pointer-events: none;
 }
-/* Selection: a solid accent ring plus a soft halo and a tinted header, so it never reads as
-   the accent-outlined input/output nodes or as hover. */
-.node:hover:not(.is-selected) {
-  box-shadow:
-    0 0 0 1.5px var(--text),
-    0 0 0 4px rgba(234, 241, 255, 0.08);
+/* Selection: flat and crisp, in the blueprint style. The border turns accent and a thin
+   accent outline sits a small gap outside it; no glow. Idle input/output nodes keep a quieter,
+   lower-contrast accent border so they never read as selected; hover only brightens the border. */
+.node.is-io {
+  box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.55);
 }
-.node.is-io:hover:not(.is-selected) {
-  box-shadow:
-    0 0 0 1.5px var(--accent),
-    0 0 0 4px rgba(255, 209, 102, 0.1);
+.node:hover:not(.is-selected):not(.is-error) {
+  box-shadow: 0 0 0 1.5px var(--text);
+}
+.node.is-io:hover:not(.is-selected):not(.is-error) {
+  box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.85);
 }
 .node.is-selected,
 .node.is-io.is-selected {
   z-index: 1;
-  box-shadow:
-    0 0 0 2px var(--accent),
-    0 0 0 6px rgba(255, 209, 102, 0.2),
-    0 0 26px 6px rgba(255, 209, 102, 0.24);
+  box-shadow: 0 0 0 2px var(--accent);
+  outline: 1.5px solid var(--accent);
+  outline-offset: 4px;
 }
+.node.is-io.is-error,
 .node.is-selected.is-error {
-  box-shadow:
-    0 0 0 2px var(--bad),
-    0 0 0 5px rgba(255, 209, 102, 0.35),
-    0 0 22px 4px rgba(255, 209, 102, 0.2);
+  box-shadow: 0 0 0 2px var(--bad);
 }
 .node.is-selected > .node-head {
   color: var(--accent);
-  box-shadow:
-    inset 4px 0 0 var(--cat, transparent),
-    inset 0 -1px 0 rgba(255, 209, 102, 0.45);
 }
-/* Live marquee preview: nodes inside the box get a dashed outline on top of the selected look. */
-.node.is-marquee-hit {
-  outline: 1px dashed var(--accent);
-  outline-offset: 9px;
+/* Live marquee preview: the same ring as selection, drawn dashed until the mouse is released. */
+.node.is-marquee-hit,
+.node.is-io.is-marquee-hit {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 4px;
 }
 .canvas.is-marquee-mode {
   cursor: crosshair;
@@ -908,8 +900,8 @@ input[type='range'] {
 }
 .selection-box {
   position: absolute;
-  border: 1.5px dashed var(--accent);
-  background: rgba(255, 209, 102, 0.07);
+  border: 1px dashed rgba(255, 209, 102, 0.8);
+  background: rgba(255, 209, 102, 0.04);
   pointer-events: none;
   z-index: 2;
 }
@@ -4920,9 +4912,7 @@ input[type='range'] {
   box-shadow:
     0 0 0 2px var(--accent),
     5px 5px 0 -1px var(--bg),
-    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent),
-    0 0 0 6px rgba(255, 209, 102, 0.2),
-    0 0 26px 6px rgba(255, 209, 102, 0.24);
+    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent);
 }
 .node[data-category='custom'].is-error {
   box-shadow:
