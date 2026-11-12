@@ -1420,5 +1420,8 @@
   "sandbox.charts.expand": "展开",
   "sandbox.inspector.title": "所选元件",
   "sandbox.inspector.close": "关闭（取消选择）",
-  "sandbox.inspector.dragHelp": "拖动标题栏移动 · 双击放回右上角"
+  "sandbox.inspector.dragHelp": "拖动标题栏移动 · 双击放回右上角",
+  "ui.task": "任务",
+  "ui.testsEmpty": "运行测试后，这里会逐条列出期望值和实际值。",
+  "ui.valuesAndTests": "实时数值与测试"
 }

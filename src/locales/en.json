@@ -1432,5 +1432,8 @@
   "sandbox.charts.expand": "Expand",
   "sandbox.inspector.title": "Selected part",
   "sandbox.inspector.close": "Close (clears the selection)",
-  "sandbox.inspector.dragHelp": "Drag the title bar to move · double-click to put it back top-right"
+  "sandbox.inspector.dragHelp": "Drag the title bar to move · double-click to put it back top-right",
+  "ui.task": "Task",
+  "ui.testsEmpty": "Run the tests to see each expected and actual value here.",
+  "ui.valuesAndTests": "Live values & tests"
 }

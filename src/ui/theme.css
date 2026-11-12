@@ -3110,7 +3110,7 @@ input[type='range'] {
 }
 [data-coach='mul'] .palette-item[data-component='mul'],
 [data-coach='const'] .palette-item[data-component='const'],
-[data-coach='run'] .panel-right .btn-primary {
+[data-coach='run'] .ws-run {
   animation: coach-glow 1.4s ease-in-out infinite;
 }
 @keyframes coach-glow {
@@ -3121,7 +3121,7 @@ input[type='range'] {
 @media (prefers-reduced-motion: reduce) {
   [data-coach='mul'] .palette-item[data-component='mul'],
   [data-coach='const'] .palette-item[data-component='const'],
-  [data-coach='run'] .panel-right .btn-primary {
+  [data-coach='run'] .ws-run {
     animation: none;
     box-shadow: 0 0 0 3px var(--accent);
   }
@@ -5045,4 +5045,67 @@ input[type='range'] {
 }
 .sb-inspector-head:hover .label {
   color: var(--text);
+}
+.lv-bar-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.lv-bar-code {
+  white-space: nowrap;
+}
+.lv-bar-passed {
+  border-color: var(--good);
+  color: var(--good);
+  white-space: nowrap;
+}
+.lv-bar-parts {
+  margin: 0;
+  white-space: nowrap;
+}
+.lv-next {
+  border-color: var(--accent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.lv-task {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 40%, var(--panel));
+}
+.lv-task-head {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  cursor: pointer;
+  padding: 8px var(--s3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.lv-task:not(.is-closed) .lv-task-head {
+  border-bottom: 1px solid var(--line);
+}
+.lv-task-head:hover .lv-task-title {
+  color: var(--accent);
+}
+.lv-task-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.lv-card .label {
+  margin-top: 0;
+}
+.lv-empty {
+  margin: 0;
+  padding: var(--s4) var(--s3);
+  border: 1px dashed var(--line);
+  font-size: var(--fs-sm);
+  color: var(--faint);
+  text-align: center;
+}
+.sb-strip-meta.is-pass {
+  color: var(--good);
+}
+.sb-strip-meta.is-fail {
+  color: var(--bad);
 }
