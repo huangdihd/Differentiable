@@ -30,7 +30,6 @@
 
   /* signal */
   --accent: #ffd166;
-  --select: #4da3ff; /* selected node border and the selection box */
   --on-accent: #12305a;
   --good: #8ef0c0;
   --bad: #ff8fa3;
@@ -740,9 +739,6 @@ input[type='range'] {
   background: var(--bg);
   box-shadow: 0 0 0 1.5px var(--ink);
 }
-.node.is-selected {
-  box-shadow: 0 0 0 2px var(--accent);
-}
 .node.is-error {
   box-shadow: 0 0 0 2px var(--bad);
 }
@@ -857,26 +853,30 @@ input[type='range'] {
   color: var(--muted);
   pointer-events: none;
 }
-/* Selection: the node's border simply turns blue, same width, nothing else changes. Idle
-   input/output nodes keep a quieter accent border; hover only brightens the border; an error's
-   red border wins over selection. */
+/* Selection: the header bar fills with the accent (dark text), like the yellow Train button;
+   the border stays as when idle. Idle input/output nodes keep a quieter accent border; hover
+   only brightens the border; an error's red border always shows. */
 .node.is-io {
   box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.55);
 }
-.node:hover:not(.is-selected):not(.is-error) {
+.node:hover:not(.is-error) {
   box-shadow: 0 0 0 1.5px var(--text);
 }
-.node.is-io:hover:not(.is-selected):not(.is-error) {
+.node.is-io:hover:not(.is-error) {
   box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.85);
 }
-/* Nodes inside a live selection box are drawn selected (Canvas sets is-selected on them). */
-.node.is-selected,
-.node.is-io.is-selected {
+/* Nodes inside a live selection box are drawn selected too (Canvas sets is-selected on them). */
+.node.is-selected {
   z-index: 1;
-  box-shadow: 0 0 0 1.5px var(--select);
 }
-.node.is-io.is-error,
-.node.is-selected.is-error {
+.node.is-selected > .node-head {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.node.is-selected > .node-head * {
+  color: var(--on-accent);
+}
+.node.is-io.is-error {
   box-shadow: 0 0 0 2px var(--bad);
 }
 .canvas.is-marquee-mode {
@@ -891,8 +891,8 @@ input[type='range'] {
 }
 .selection-box {
   position: absolute;
-  border: 1px dashed var(--select);
-  background: rgba(77, 163, 255, 0.06);
+  border: 1px dashed rgba(255, 209, 102, 0.75);
+  background: rgba(255, 209, 102, 0.05);
   pointer-events: none;
   z-index: 2;
 }
@@ -910,8 +910,8 @@ input[type='range'] {
   font-family: var(--mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--bg);
-  background: var(--select);
+  color: var(--on-accent);
+  background: var(--accent);
 }
 /* Sandbox canvas hint: how to select and pan. Sits where the selection bar appears. */
 .canvas-select-hint {
@@ -4898,12 +4898,6 @@ input[type='range'] {
     0 0 0 1.5px var(--ink),
     5px 5px 0 -1px var(--bg),
     5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 55%, transparent);
-}
-.node[data-category='custom'].is-selected {
-  box-shadow:
-    0 0 0 1.5px var(--select),
-    5px 5px 0 -1px var(--bg),
-    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent);
 }
 .node[data-category='custom'].is-error {
   box-shadow:
