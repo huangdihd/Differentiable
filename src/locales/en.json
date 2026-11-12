@@ -1362,7 +1362,7 @@
   "datasets.moons.source": "80 points in two interlocking crescents, one class each, with a little noise.",
   "ui.componentCategory.custom": "My components",
   "sandbox.components.title": "My components",
-  "sandbox.components.empty": "Select a few parts on the canvas (Shift-drag to box select) and choose “Package as component”. Packaged components land here, ready to drag onto the canvas again and again.",
+  "sandbox.components.empty": "Select a few parts on the canvas (drag across empty space to box-select) and choose “Package as component”. Packaged components land here, ready to drag onto the canvas again and again.",
   "sandbox.components.dragHint": "Drag onto the canvas for a new instance; every instance has parameters of its own.",
   "sandbox.components.ports": "{inputs} in · {outputs} out",
   "sandbox.components.more": "More for “{name}”",
@@ -1410,5 +1410,18 @@
   "sandbox.components.open": "Look inside",
   "sandbox.components.openHelp": "See the wiring inside, read-only (or double-click it)",
   "sandbox.components.ungroup": "Ungroup",
-  "sandbox.components.ungroupHelp": "Take this component apart into its parts (Ctrl+Shift+G)"
+  "sandbox.components.ungroupHelp": "Take this component apart into its parts (Ctrl+Shift+G)",
+  "sandbox.select.hintLabel": "Canvas controls",
+  "sandbox.select.boxKey": "Drag empty space",
+  "sandbox.select.box": "box-select",
+  "sandbox.select.addKey": "Shift / {mod}-click",
+  "sandbox.select.add": "add or remove",
+  "sandbox.select.allKey": "{mod}+A",
+  "sandbox.select.all": "select all",
+  "sandbox.select.panKey": "Space / right-drag",
+  "sandbox.select.pan": "pan",
+  "sandbox.select.clear": "Clear",
+  "sandbox.select.clearHelp": "Clear the selection (Esc)",
+  "sandbox.select.packageIoOnly": "Input and output nodes can't be packaged; select some parts in between",
+  "sandbox.help": "Drag a part onto the canvas, or just click it\nDrag from a right port to a left port to connect\nDrag a connected input to re-plug it\nClick a wire to delete it · Delete removes the selection\nDouble-click a part you built to look inside\nDrag empty space to box-select · Shift/Ctrl-click to add · Esc clears\nSpace-drag or right-drag to pan · scroll to zoom"
 }

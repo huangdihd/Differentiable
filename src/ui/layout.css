@@ -581,6 +581,17 @@
   white-space: nowrap;
   z-index: 2;
 }
+.canvas-select-hint {
+  position: absolute;
+  bottom: var(--s4);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 2 * var(--s4));
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+  z-index: 2;
+}
 .canvas-actions .tool-sep {
   margin: 0 6px 0 8px;
 }

@@ -132,6 +132,7 @@ import './ui/layout.css';
 import { SandboxScreen, download, readFile, type SandboxEditorSlot } from './ui/Sandbox';
 import { MyComponents } from './ui/MyComponents';
 import { PackageDialog, type PackageChoice } from './ui/PackageDialog';
+import SelectHint, { readSelectHintSeen, writeSelectHintSeen } from './ui/SelectHint';
 import {
   addComponent,
   applyPackage,
@@ -1160,11 +1161,32 @@ function Editor({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input,textarea,select') || inside.length) return;
+      const dialogOpen = !!document.querySelector('[aria-modal="true"]');
       if (e.key === 'Escape') {
         setModal(false);
+        // Esc also drops the canvas selection, unless it is closing a dialog.
+        if (!dialogOpen && !busy)
+          setState((s) =>
+            s.selection.length
+              ? editorReducer(s, { type: 'select', ids: [], shift: false }, registry)
+              : s,
+          );
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      // Ctrl/Cmd+A selects every node on the canvas.
+      if (mod && e.key.toLowerCase() === 'a' && !e.shiftKey && !e.altKey) {
+        if (dialogOpen || busy) return;
+        e.preventDefault();
+        setState((s) =>
+          editorReducer(
+            s,
+            { type: 'select', ids: s.graph.nodes.map((n) => n.id), shift: false },
+            registry,
+          ),
+        );
+        return;
+      }
       // Let the browser copy selected text (descriptions, hints); only copy nodes otherwise.
       if (mod && e.key.toLowerCase() === 'c' && window.getSelection()?.toString()) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1731,6 +1753,14 @@ function Editor({
       count: result.added,
     });
   };
+  // The canvas hint steps back once the player has box- or Shift-selected several parts.
+  const [selectHintSeen, setSelectHintSeen] = useState(readSelectHintSeen);
+  useEffect(() => {
+    if (sandbox && !selectHintSeen && state.selection.length > 1) {
+      setSelectHintSeen(true);
+      writeSelectHintSeen();
+    }
+  }, [sandbox, selectHintSeen, state.selection.length]);
   const componentKeys = useRef({ startPackage, ungroup, selectedInstance });
   componentKeys.current = { startPackage, ungroup, selectedInstance };
   const inspect = (node: GraphNode) => {
@@ -2172,7 +2202,7 @@ function Editor({
             <p className="hint">{t('ui.expressionHelp')}</p>
           </form>
         )}
-        <p className="hint help">{t('ui.help')}</p>
+        <p className="hint help">{t(sandbox ? 'sandbox.help' : 'ui.help')}</p>
       </aside>
 
       <section className="canvas-wrap">
@@ -2185,6 +2215,7 @@ function Editor({
           }
           graph={display}
           selected={inside.length ? [] : state.selection}
+          marqueeOnDrag={!!sandbox && !inside.length}
           readonly={!canEdit}
           t={t}
           errors={inside.length ? [] : errors}
@@ -2316,19 +2347,30 @@ function Editor({
             </>
           )}
         </div>
-        {sandbox && canEdit && packable.length > 0 && (
+        {sandbox && canEdit && state.selection.length === 0 && (
+          <SelectHint t={t} quiet={selectHintSeen} />
+        )}
+        {sandbox && canEdit && state.selection.length > 0 && (
           <div
             className="canvas-actions"
             role="toolbar"
             aria-label={t('sandbox.components.actions')}
           >
             <span className="canvas-actions-count">
-              {t('sandbox.components.selected', { count: packable.length, n: packable.length })}
+              {t('sandbox.components.selected', {
+                count: state.selection.length,
+                n: state.selection.length,
+              })}
             </span>
             <span className="tool-sep" />
             <button
               className="tool-btn tool-wide tool-package"
-              title={t('sandbox.components.packageHelp')}
+              title={
+                packable.length
+                  ? t('sandbox.components.packageHelp')
+                  : t('sandbox.select.packageIoOnly')
+              }
+              disabled={!packable.length}
               onClick={startPackage}
             >
               ⊞ {t('sandbox.components.package')}
@@ -2352,6 +2394,14 @@ function Editor({
                 </button>
               </>
             )}
+            <span className="tool-sep" />
+            <button
+              className="tool-btn tool-wide tool-clear"
+              title={t('sandbox.select.clearHelp')}
+              onClick={() => command({ type: 'select', ids: [], shift: false })}
+            >
+              {t('sandbox.select.clear')}
+            </button>
           </div>
         )}
         {inside.length > 0 && (

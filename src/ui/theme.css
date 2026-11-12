@@ -859,11 +859,117 @@ input[type='range'] {
   color: var(--muted);
   pointer-events: none;
 }
+/* Selection: a solid accent ring plus a soft halo and a tinted header, so it never reads as
+   the accent-outlined input/output nodes or as hover. */
+.node:hover:not(.is-selected) {
+  box-shadow:
+    0 0 0 1.5px var(--text),
+    0 0 0 4px rgba(234, 241, 255, 0.08);
+}
+.node.is-io:hover:not(.is-selected) {
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    0 0 0 4px rgba(255, 209, 102, 0.1);
+}
+.node.is-selected,
+.node.is-io.is-selected {
+  z-index: 1;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px rgba(255, 209, 102, 0.2),
+    0 0 26px 6px rgba(255, 209, 102, 0.24);
+}
+.node.is-selected.is-error {
+  box-shadow:
+    0 0 0 2px var(--bad),
+    0 0 0 5px rgba(255, 209, 102, 0.35),
+    0 0 22px 4px rgba(255, 209, 102, 0.2);
+}
+.node.is-selected > .node-head {
+  color: var(--accent);
+  box-shadow:
+    inset 4px 0 0 var(--cat, transparent),
+    inset 0 -1px 0 rgba(255, 209, 102, 0.45);
+}
+/* Live marquee preview: nodes inside the box get a dashed outline on top of the selected look. */
+.node.is-marquee-hit {
+  outline: 1px dashed var(--accent);
+  outline-offset: 9px;
+}
+.canvas.is-marquee-mode {
+  cursor: crosshair;
+}
+.canvas.is-panning,
+.canvas.is-panning .node {
+  cursor: grabbing;
+}
+.canvas.is-boxing .node {
+  cursor: crosshair;
+}
 .selection-box {
   position: absolute;
-  border: 1px dashed var(--accent);
-  background: rgba(255, 209, 102, 0.06);
+  border: 1.5px dashed var(--accent);
+  background: rgba(255, 209, 102, 0.07);
   pointer-events: none;
+  z-index: 2;
+}
+.selection-box-count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  translate: 50% 50%;
+  transform-origin: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+/* Sandbox canvas hint: how to select and pan. Sits where the selection bar appears. */
+.canvas-select-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: opacity 0.2s ease;
+  animation: canvas-actions-in 0.16s ease-out both;
+}
+.canvas-select-hint.is-quiet {
+  opacity: 0.45;
+}
+.canvas-select-hint.is-quiet:hover {
+  opacity: 1;
+}
+.csh-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.csh-dot {
+  width: 3px;
+  height: 3px;
+  margin-right: 4px;
+  background: var(--faint);
+}
+.canvas-select-hint kbd {
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  padding: 1px 6px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
 }
 
 /* ---------- overlays ---------- */
@@ -4814,7 +4920,9 @@ input[type='range'] {
   box-shadow:
     0 0 0 2px var(--accent),
     5px 5px 0 -1px var(--bg),
-    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent);
+    5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent),
+    0 0 0 6px rgba(255, 209, 102, 0.2),
+    0 0 26px 6px rgba(255, 209, 102, 0.24);
 }
 .node[data-category='custom'].is-error {
   box-shadow:
@@ -4843,7 +4951,25 @@ input[type='range'] {
   }
 }
 .canvas-actions-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.canvas-actions-n {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.tool-btn.tool-clear {
   color: var(--muted);
 }
 .tool-btn.tool-package {

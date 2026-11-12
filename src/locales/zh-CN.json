@@ -1352,7 +1352,7 @@
   "datasets.moons.source": "80 个点，两道互相咬合的月牙，各属一类，带一点噪声。",
   "ui.componentCategory.custom": "我的组件",
   "sandbox.components.title": "我的组件",
-  "sandbox.components.empty": "在画布上选中几个元件（Shift 拖动可框选），点「封装为组件」。封好的组件会出现在这里，可以反复拖到画布上用。",
+  "sandbox.components.empty": "在画布上选中几个元件（在空白处拖动即可框选），点「封装为组件」。封好的组件会出现在这里，可以反复拖到画布上用。",
   "sandbox.components.dragHint": "拖到画布上放一个新实例；每个实例都有自己的一份参数。",
   "sandbox.components.ports": "{inputs} 入 · {outputs} 出",
   "sandbox.components.more": "「{name}」的更多操作",
@@ -1398,5 +1398,18 @@
   "sandbox.components.open": "查看内部",
   "sandbox.components.openHelp": "只读查看组件里面的连线（也可以双击它）",
   "sandbox.components.ungroup": "展开",
-  "sandbox.components.ungroupHelp": "把这个组件拆回原来的元件（Ctrl+Shift+G）"
+  "sandbox.components.ungroupHelp": "把这个组件拆回原来的元件（Ctrl+Shift+G）",
+  "sandbox.select.hintLabel": "画布操作提示",
+  "sandbox.select.boxKey": "拖动空白处",
+  "sandbox.select.box": "框选",
+  "sandbox.select.addKey": "Shift / {mod} + 点击",
+  "sandbox.select.add": "加选或减选",
+  "sandbox.select.allKey": "{mod}+A",
+  "sandbox.select.all": "全选",
+  "sandbox.select.panKey": "空格 / 右键拖动",
+  "sandbox.select.pan": "平移",
+  "sandbox.select.clear": "取消选择",
+  "sandbox.select.clearHelp": "取消选择（Esc）",
+  "sandbox.select.packageIoOnly": "输入和输出节点不能封装，再选几个中间的元件",
+  "sandbox.help": "从元件库拖到画布，或直接点一下\n从右侧端口拖到左侧端口连线\n拖已接好的输入口可以改接\n点连线删除 · Delete 删除选中元件\n双击自己造的元件查看内部\n在空白处拖动框选 · Shift/Ctrl 点击加选 · Esc 取消\n空格或右键拖动平移 · 滚轮缩放"
 }
