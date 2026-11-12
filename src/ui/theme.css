@@ -30,6 +30,7 @@
 
   /* signal */
   --accent: #ffd166;
+  --select: #4da3ff; /* selected node border and the selection box */
   --on-accent: #12305a;
   --good: #8ef0c0;
   --bad: #ff8fa3;
@@ -856,9 +857,9 @@ input[type='range'] {
   color: var(--muted);
   pointer-events: none;
 }
-/* Selection: flat and crisp, in the blueprint style. The border turns accent and a thin
-   accent outline sits a small gap outside it; no glow. Idle input/output nodes keep a quieter,
-   lower-contrast accent border so they never read as selected; hover only brightens the border. */
+/* Selection: the node's border simply turns blue, same width, nothing else changes. Idle
+   input/output nodes keep a quieter accent border; hover only brightens the border; an error's
+   red border wins over selection. */
 .node.is-io {
   box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.55);
 }
@@ -868,25 +869,15 @@ input[type='range'] {
 .node.is-io:hover:not(.is-selected):not(.is-error) {
   box-shadow: 0 0 0 1.5px rgba(255, 209, 102, 0.85);
 }
+/* Nodes inside a live selection box are drawn selected (Canvas sets is-selected on them). */
 .node.is-selected,
 .node.is-io.is-selected {
   z-index: 1;
-  box-shadow: 0 0 0 2px var(--accent);
-  outline: 1.5px solid var(--accent);
-  outline-offset: 4px;
+  box-shadow: 0 0 0 1.5px var(--select);
 }
 .node.is-io.is-error,
 .node.is-selected.is-error {
   box-shadow: 0 0 0 2px var(--bad);
-}
-.node.is-selected > .node-head {
-  color: var(--accent);
-}
-/* Live marquee preview: the same ring as selection, drawn dashed until the mouse is released. */
-.node.is-marquee-hit,
-.node.is-io.is-marquee-hit {
-  outline: 1.5px dashed var(--accent);
-  outline-offset: 4px;
 }
 .canvas.is-marquee-mode {
   cursor: crosshair;
@@ -900,8 +891,8 @@ input[type='range'] {
 }
 .selection-box {
   position: absolute;
-  border: 1px dashed rgba(255, 209, 102, 0.8);
-  background: rgba(255, 209, 102, 0.04);
+  border: 1px dashed var(--select);
+  background: rgba(77, 163, 255, 0.06);
   pointer-events: none;
   z-index: 2;
 }
@@ -919,8 +910,8 @@ input[type='range'] {
   font-family: var(--mono);
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--on-accent);
-  background: var(--accent);
+  color: var(--bg);
+  background: var(--select);
 }
 /* Sandbox canvas hint: how to select and pan. Sits where the selection bar appears. */
 .canvas-select-hint {
@@ -4910,7 +4901,7 @@ input[type='range'] {
 }
 .node[data-category='custom'].is-selected {
   box-shadow:
-    0 0 0 2px var(--accent),
+    0 0 0 1.5px var(--select),
     5px 5px 0 -1px var(--bg),
     5px 5px 0 0.5px color-mix(in srgb, var(--cat-custom) 70%, transparent);
 }
