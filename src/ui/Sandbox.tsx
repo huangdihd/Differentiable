@@ -54,6 +54,10 @@ export type SandboxTab = 'train' | 'data' | 'saves';
 /** What the sandbox hands the Editor: the panels around the canvas and a starter model. */
 export interface SandboxEditorSlot {
   header: ReactNode;
+  /** Prototype layouts: back, name and save state for the toolbar row above the canvas. */
+  barHead: ReactNode;
+  /** Short label of the slot's task (regression / classification) for the data button. */
+  taskLabel: string;
   dataPanel: ReactNode;
   savesPanel: ReactNode;
   tab: SandboxTab;
@@ -675,6 +679,30 @@ function Workspace({
     </div>
   );
 
+  const barHead = (
+    <div className="sb-bar-head">
+      <button className="btn btn-small sb-bar-back" onClick={onBack} title={t('sandbox.allSlots')}>
+        ← {t('sandbox.bar.back')}
+      </button>
+      <span className="sb-bar-mode" aria-hidden="true">
+        ∞
+      </span>
+      <input
+        className="sb-name-input sb-bar-name"
+        value={slot.name}
+        maxLength={40}
+        placeholder={t('sandbox.slot.untitled')}
+        aria-label={t('sandbox.slot.name')}
+        title={t('sandbox.bar.rename')}
+        onChange={(e) => change({ name: e.target.value })}
+      />
+      <span className="sb-saved sb-bar-saved">
+        <span aria-hidden="true">✓</span>{' '}
+        {t('sandbox.autosaved', { time: clockTime(locale, slot.updatedAt) })}
+      </span>
+    </div>
+  );
+
   const dataPanel = (
     <DataPanel
       t={t}
@@ -755,6 +783,8 @@ function Workspace({
         onProgress: (next) => onProgress(() => fromEditorProgress(next, slot.id, Date.now())),
         sandbox: {
           header,
+          barHead,
+          taskLabel: t(`sandbox.task.${task}`),
           dataPanel,
           savesPanel,
           tab,
@@ -981,6 +1011,7 @@ export function Dialog({
   title,
   onClose,
   wide,
+  medium,
   children,
   footer,
 }: {
@@ -988,6 +1019,7 @@ export function Dialog({
   title: string;
   onClose: () => void;
   wide?: boolean;
+  medium?: boolean;
   children: ReactNode;
   footer?: ReactNode;
 }) {
@@ -1000,7 +1032,7 @@ export function Dialog({
   return (
     <div className="modal-back" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <section
-        className={`modal sb-dialog${wide ? ' is-wide' : ''}`}
+        className={`modal sb-dialog${wide ? ' is-wide' : medium ? ' is-medium' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

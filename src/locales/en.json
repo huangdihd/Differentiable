@@ -1423,5 +1423,14 @@
   "sandbox.select.clear": "Clear",
   "sandbox.select.clearHelp": "Clear the selection (Esc)",
   "sandbox.select.packageIoOnly": "Input and output nodes can't be packaged; select some parts in between",
-  "sandbox.help": "Drag a part onto the canvas, or just click it\nDrag from a right port to a left port to connect\nDrag a connected input to re-plug it\nClick a wire to delete it · Delete removes the selection\nDouble-click a part you built to look inside\nDrag empty space to box-select · Shift/Ctrl-click to add · Esc clears\nSpace-drag or right-drag to pan · scroll to zoom"
+  "sandbox.help": "Drag a part onto the canvas, or just click it\nDrag from a right port to a left port to connect\nDrag a connected input to re-plug it\nClick a wire to delete it · Delete removes the selection\nDouble-click a part you built to look inside\nDrag empty space to box-select · Shift/Ctrl-click to add · Esc clears\nSpace-drag or right-drag to pan · scroll to zoom",
+  "sandbox.bar.back": "Back",
+  "sandbox.bar.rename": "Click to rename",
+  "sandbox.dialog.data": "Data",
+  "sandbox.dialog.saves": "Save & weights",
+  "sandbox.charts.title": "Training charts",
+  "sandbox.charts.collapse": "Collapse",
+  "sandbox.charts.expand": "Expand",
+  "sandbox.inspector.title": "Selected part",
+  "sandbox.inspector.empty": "Click a part on the canvas to see its inputs, outputs and settings here."
 }

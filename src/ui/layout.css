@@ -640,3 +640,175 @@
 .pkg-port-error {
   grid-column: 1 / -1;
 }
+
+/* ---------- sandbox layout prototypes (dev toggle: differentiable.debug.sandboxLayout) ---------- */
+.sb-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 7px var(--s4);
+}
+.sb-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sb-bar-name {
+  width: auto;
+  min-width: 6ch;
+  max-width: 300px;
+  field-sizing: content;
+}
+.sb-bar-train {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sb-bar-train .sb-progress {
+  width: 150px;
+}
+.sb-bar .sb-transport .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.sb-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.sb-strip-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(232px, 0.95fr);
+  gap: 10px;
+  height: 212px;
+  padding: 0 10px 10px;
+}
+.sb-strip .sb-card {
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+}
+.sb-strip .sb-card-loss {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.sb-strip .data-plot {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.sb-strip .sb-loss-chart {
+  height: 100%;
+  min-height: 0;
+}
+.sb-strip .sb-card-settings {
+  display: block;
+  overflow: auto;
+}
+.sb-strip .sb-settings {
+  gap: 10px;
+  padding: 0;
+}
+.sb-split {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sb-split-top {
+  flex: 0 1 auto;
+  max-height: 46%;
+  overflow: auto;
+  padding: 14px var(--s4);
+}
+.sb-split-bottom {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--s3);
+  padding: 14px var(--s4) var(--s4);
+}
+.sb-split-settings .sb-settings {
+  padding-top: var(--s3);
+}
+.sb-dialog.is-medium {
+  width: min(560px, calc(100vw - 48px));
+}
+@media (min-width: 1001px) {
+  .workspace.is-sandbox.sb-layout-a,
+  .workspace.is-sandbox.sb-layout-b {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .workspace.is-sandbox.sb-layout-a {
+    grid-template-columns: 256px minmax(320px, 1fr) 320px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .workspace.is-sandbox.sb-layout-a.is-inspector-closed {
+    grid-template-columns: 256px minmax(320px, 1fr);
+  }
+  .sb-layout-a > .sb-bar {
+    grid-row: 1;
+  }
+  .sb-layout-a > .panel-left {
+    grid-row: 2 / 4;
+    grid-column: 1;
+  }
+  .sb-layout-a > .canvas-wrap {
+    grid-row: 2;
+    grid-column: 2;
+  }
+  /* The strip runs under the inspector too, so charts keep their width when a part is picked. */
+  .sb-layout-a > .sb-strip {
+    grid-row: 3;
+    grid-column: 2 / -1;
+    min-width: 0;
+  }
+  .sb-layout-a > .panel-right {
+    grid-row: 2;
+    grid-column: 3;
+  }
+  .workspace.is-sandbox.sb-layout-a > .panel-right {
+    padding-top: 14px;
+  }
+  .workspace.is-sandbox.sb-layout-b > .panel-right {
+    padding: 0;
+  }
+}
+.sb-strip .sb-backend,
+.sb-strip .sb-settings-title {
+  display: none;
+}
+.sb-strip .sb-settings {
+  gap: 8px;
+}
+.sb-strip .sb-setting-wide:last-of-type {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.sb-strip .sb-steps-field {
+  width: 88px;
+  padding-block: 3px;
+}
+.sb-dialog .sb-data .data-plot {
+  max-height: 240px;
+}
+.sb-split .data-plot {
+  max-height: 168px;
+}
+.sb-split .sb-loss-chart {
+  height: 112px;
+}
+.sb-split .sb-loss-empty {
+  height: 96px;
+}
+.sb-dialog .sb-data .sb-picker.is-compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sb-strip .sb-setting-name {
+  white-space: nowrap;
+}

@@ -1411,5 +1411,14 @@
   "sandbox.select.clear": "取消选择",
   "sandbox.select.clearHelp": "取消选择（Esc）",
   "sandbox.select.packageIoOnly": "输入和输出节点不能封装，再选几个中间的元件",
-  "sandbox.help": "从元件库拖到画布，或直接点一下\n从右侧端口拖到左侧端口连线\n拖已接好的输入口可以改接\n点连线删除 · Delete 删除选中元件\n双击自己造的元件查看内部\n在空白处拖动框选 · Shift/Ctrl 点击加选 · Esc 取消\n空格或右键拖动平移 · 滚轮缩放"
+  "sandbox.help": "从元件库拖到画布，或直接点一下\n从右侧端口拖到左侧端口连线\n拖已接好的输入口可以改接\n点连线删除 · Delete 删除选中元件\n双击自己造的元件查看内部\n在空白处拖动框选 · Shift/Ctrl 点击加选 · Esc 取消\n空格或右键拖动平移 · 滚轮缩放",
+  "sandbox.bar.back": "返回",
+  "sandbox.bar.rename": "点击改名",
+  "sandbox.dialog.data": "数据",
+  "sandbox.dialog.saves": "存档与权重",
+  "sandbox.charts.title": "训练曲线",
+  "sandbox.charts.collapse": "收起",
+  "sandbox.charts.expand": "展开",
+  "sandbox.inspector.title": "所选元件",
+  "sandbox.inspector.empty": "点一下画布上的元件，这里会显示它的输入、输出和可调参数。"
 }

@@ -45,57 +45,89 @@ export interface SandboxTrainProps {
 }
 
 export default function SandboxTrain(props: SandboxTrainProps) {
-  const { t, locale, training, locked, losses, report, steps, plot, view, format } = props;
-  const busy = training !== 'idle';
-  const series = useMemo(() => lossSeries(losses), [losses]);
-  const accuracy = view === 'boundary' ? plotAccuracy(plot) : undefined;
-  const done = report ? Math.min(report.step, steps) : 0;
   return (
     <div className="sb-train">
-      <div className="sb-transport" role="group" aria-label={t('sandbox.train.controls')}>
-        {busy ? (
-          <button className="btn btn-primary sb-run" onClick={props.onPauseResume}>
-            {training === 'running' ? `❚❚ ${t('ui.pause')}` : `▶ ${t('ui.resume')}`}
-          </button>
-        ) : (
-          <button className="btn btn-primary sb-run" disabled={locked} onClick={props.onRun}>
-            ▶ {t('sandbox.train.run')}
-          </button>
-        )}
-        {busy ? (
-          <button className="btn btn-danger" onClick={props.onStop}>
-            ■ {t('ui.stop')}
-          </button>
-        ) : (
-          <button className="btn" disabled={locked} title={t('ui.stepHelp')} onClick={props.onStep}>
-            ⏭ {t('sandbox.train.step')}
-          </button>
-        )}
-        <button
-          className="btn"
-          disabled={busy || !losses.length}
-          title={t('sandbox.train.resetHelp')}
-          onClick={props.onReset}
-        >
-          ↺ {t('sandbox.train.reset')}
-        </button>
-      </div>
-      <div className="sb-progress" aria-hidden={!report}>
-        <div className="sb-progress-bar">
-          <span style={{ width: `${steps ? (100 * done) / steps : 0}%` }} />
-        </div>
-        <span className="sb-progress-text">
-          {report
-            ? t('sandbox.train.progress', {
-                step: formatNumber(locale, report.step),
-                total: formatNumber(locale, steps),
-              })
-            : t('sandbox.train.idle')}
-        </span>
-      </div>
-      {props.stepPhase && <p className="sb-phase">{props.stepPhase}</p>}
+      <SandboxTransport {...props} />
+      <SandboxCharts {...props} />
+      <SandboxSettings {...props} />
+    </div>
+  );
+}
 
-      <section className="sb-card" aria-label={t(`sandbox.train.view.${view}`)}>
+/** Train / step / reset, the progress bar and the current step phase. */
+export function SandboxTransport(props: SandboxTrainProps & { inline?: boolean }) {
+  const { t, locale, training, locked, losses, report, steps, inline } = props;
+  const busy = training !== 'idle';
+  const done = report ? Math.min(report.step, steps) : 0;
+  const buttons = (
+    <div className="sb-transport" role="group" aria-label={t('sandbox.train.controls')}>
+      {busy ? (
+        <button className="btn btn-primary sb-run" onClick={props.onPauseResume}>
+          {training === 'running' ? `❚❚ ${t('ui.pause')}` : `▶ ${t('ui.resume')}`}
+        </button>
+      ) : (
+        <button className="btn btn-primary sb-run" disabled={locked} onClick={props.onRun}>
+          ▶ {t('sandbox.train.run')}
+        </button>
+      )}
+      {busy ? (
+        <button className="btn btn-danger" onClick={props.onStop}>
+          ■ {t('ui.stop')}
+        </button>
+      ) : (
+        <button className="btn" disabled={locked} title={t('ui.stepHelp')} onClick={props.onStep}>
+          ⏭ {t('sandbox.train.step')}
+        </button>
+      )}
+      <button
+        className="btn"
+        disabled={busy || !losses.length}
+        title={t('sandbox.train.resetHelp')}
+        onClick={props.onReset}
+      >
+        ↺ {t('sandbox.train.reset')}
+      </button>
+    </div>
+  );
+  const progress = (
+    <div className="sb-progress" aria-hidden={!report}>
+      <div className="sb-progress-bar">
+        <span style={{ width: `${steps ? (100 * done) / steps : 0}%` }} />
+      </div>
+      <span className="sb-progress-text">
+        {report
+          ? t('sandbox.train.progress', {
+              step: formatNumber(locale, report.step),
+              total: formatNumber(locale, steps),
+            })
+          : t('sandbox.train.idle')}
+      </span>
+    </div>
+  );
+  if (inline)
+    return (
+      <div className="sb-bar-train">
+        {buttons}
+        {progress}
+      </div>
+    );
+  return (
+    <>
+      {buttons}
+      {progress}
+      {props.stepPhase && <p className="sb-phase">{props.stepPhase}</p>}
+    </>
+  );
+}
+
+/** The live picture of the model on the data, and the loss curve. */
+export function SandboxCharts(props: SandboxTrainProps) {
+  const { t, locale, losses, report, steps, plot, view, format } = props;
+  const series = useMemo(() => lossSeries(losses), [losses]);
+  const accuracy = view === 'boundary' ? plotAccuracy(plot) : undefined;
+  return (
+    <>
+      <section className="sb-card sb-card-fit" aria-label={t(`sandbox.train.view.${view}`)}>
         <header className="sb-card-head">
           <h3>{t(`sandbox.train.view.${view}`)}</h3>
           {accuracy !== undefined && (
@@ -117,7 +149,7 @@ export default function SandboxTrain(props: SandboxTrainProps) {
         )}
       </section>
 
-      <section className="sb-card" aria-label={t('ui.loss')}>
+      <section className="sb-card sb-card-loss" aria-label={t('ui.loss')}>
         <header className="sb-card-head">
           <h3>{t('ui.loss')}</h3>
           <span className={`sb-metric${series.diverged ? ' is-bad' : ''}`}>
@@ -135,74 +167,82 @@ export default function SandboxTrain(props: SandboxTrainProps) {
           </p>
         )}
       </section>
+    </>
+  );
+}
 
-      <section className="sb-settings" aria-label={t('sandbox.train.settings')}>
-        <div className="sb-setting">
-          <span className="sb-setting-name">{t('ui.optimizer')}</span>
-          <div className="seg" role="radiogroup" aria-label={t('ui.optimizer')}>
-            {(['adam', 'sgd'] as const).map((kind) => (
-              <button
-                key={kind}
-                role="radio"
-                aria-checked={kind === props.optimizer}
-                className={`seg-btn${kind === props.optimizer ? ' is-on' : ''}`}
-                disabled={busy}
-                onClick={() => props.onOptimizer(kind)}
-              >
-                {t(`ui.optimizer.${kind}`)}
-              </button>
-            ))}
-          </div>
+/** Optimizer, learning rate and step count. */
+export function SandboxSettings(props: SandboxTrainProps & { titled?: boolean }) {
+  const { t, locale, training, steps, format } = props;
+  const busy = training !== 'idle';
+  return (
+    <section className="sb-settings" aria-label={t('sandbox.train.settings')}>
+      {props.titled && <h3 className="sb-settings-title">{t('sandbox.train.settings')}</h3>}
+      <div className="sb-setting">
+        <span className="sb-setting-name">{t('ui.optimizer')}</span>
+        <div className="seg" role="radiogroup" aria-label={t('ui.optimizer')}>
+          {(['adam', 'sgd'] as const).map((kind) => (
+            <button
+              key={kind}
+              role="radio"
+              aria-checked={kind === props.optimizer}
+              className={`seg-btn${kind === props.optimizer ? ' is-on' : ''}`}
+              disabled={busy}
+              onClick={() => props.onOptimizer(kind)}
+            >
+              {t(`ui.optimizer.${kind}`)}
+            </button>
+          ))}
         </div>
-        <label className="sb-setting sb-setting-wide">
-          <span className="sb-setting-name">{t('ui.learningRate')}</span>
-          <output className="sb-setting-value">η = {format(props.learningRate)}</output>
-          <input
-            type="range"
-            min={Math.log10(props.learningRateRange.min)}
-            max={Math.log10(props.learningRateRange.max)}
-            step={0.01}
-            value={Math.log10(props.learningRate)}
-            disabled={busy}
-            onChange={(e) =>
-              props.onLearningRate(Number(Number(10 ** Number(e.target.value)).toPrecision(2)))
-            }
-          />
+      </div>
+      <label className="sb-setting sb-setting-wide">
+        <span className="sb-setting-name">{t('ui.learningRate')}</span>
+        <output className="sb-setting-value">η = {format(props.learningRate)}</output>
+        <input
+          type="range"
+          min={Math.log10(props.learningRateRange.min)}
+          max={Math.log10(props.learningRateRange.max)}
+          step={0.01}
+          value={Math.log10(props.learningRate)}
+          disabled={busy}
+          onChange={(e) =>
+            props.onLearningRate(Number(Number(10 ** Number(e.target.value)).toPrecision(2)))
+          }
+        />
+      </label>
+      <div className="sb-setting sb-setting-wide">
+        <label className="sb-setting-name" htmlFor="sb-steps">
+          {t('ui.trainSteps')}
         </label>
-        <div className="sb-setting sb-setting-wide">
-          <label className="sb-setting-name" htmlFor="sb-steps">
-            {t('ui.trainSteps')}
-          </label>
-          <input
-            id="sb-steps"
-            className="field sb-steps-field"
-            type="number"
-            min={props.stepsRange.min}
-            max={props.stepsRange.max}
-            step={1}
-            value={steps}
-            disabled={busy}
-            onChange={(e) => props.onSteps(Number(e.target.value))}
-          />
-          <div className="sb-presets">
-            {STEP_PRESETS.map((n) => (
-              <button
-                key={n}
-                className={`chip${n === steps ? ' is-on' : ''}`}
-                aria-pressed={n === steps}
-                disabled={busy}
-                onClick={() => props.onSteps(n)}
-              >
-                {formatNumber(locale, n)}
-              </button>
-            ))}
-          </div>
+        <input
+          id="sb-steps"
+          className="field sb-steps-field"
+          type="number"
+          min={props.stepsRange.min}
+          max={props.stepsRange.max}
+          step={1}
+          value={steps}
+          disabled={busy}
+          onChange={(e) => props.onSteps(Number(e.target.value))}
+        />
+        <div className="sb-presets">
+          {STEP_PRESETS.map((n) => (
+            <button
+              key={n}
+              className={`chip${n === steps ? ' is-on' : ''}`}
+              aria-pressed={n === steps}
+              disabled={busy}
+              onClick={() => props.onSteps(n)}
+            >
+              {formatNumber(locale, n)}
+            </button>
+          ))}
         </div>
-        <p className="sb-backend">
-          {t('ui.backend')} · {t(`backend.${props.backend}`)}
-        </p>
-      </section>
-    </div>
+      </div>
+      <p className="sb-backend">
+        {t('ui.backend')} · {t(`backend.${props.backend}`)}
+      </p>
+    </section>
   );
 }
 
