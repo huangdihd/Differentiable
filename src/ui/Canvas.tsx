@@ -9,7 +9,7 @@ import { translatePort, translateValueName } from '../i18n';
 import { parameterName } from './parameter-label';
 import {
   NODE_W,
-  SYMBOLS,
+  symbolOf,
   bodyHeight,
   categoryOf,
   graphBounds,
@@ -20,6 +20,15 @@ import {
   type Point,
   movePositions,
 } from './graph-geometry';
+import {
+  isClick,
+  marqueeSelection,
+  nodesInRect,
+  pressNode,
+  rectFromPoints,
+  type NodeRect,
+  type Rect,
+} from './selection';
 
 const IO = ['input', 'output'];
 const BROADCASTING = new Set(['add', 'sub', 'mul', 'div', 'max', 'ge']);
@@ -160,7 +169,13 @@ export interface CanvasProps {
   values: Record<string, NodeValue> | null;
   /** Shapes required by the level for its input and output nodes, by node id. */
   ioShapes?: Record<string, readonly number[]>;
+  /** `additive` toggles `ids` in or out of the selection; otherwise `ids` replaces it. */
   onSelect: (ids: string[], additive: boolean) => void;
+  /**
+   * When true (sandbox), a left drag on empty canvas draws a selection box and panning moves to
+   * Space+drag, middle or right drag. When false (levels), empty drag pans and Shift+drag boxes.
+   */
+  marqueeOnDrag?: boolean;
   onMove: (positions: Record<string, Point>) => void;
   onConnect: (from: GraphEndpoint, to: GraphEndpoint, previous?: GraphEndpoint) => void;
   onDeleteEdge: (index: number) => void;
@@ -189,7 +204,9 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
     setView = p.onViewport;
   const [preview, setPreview] = useState<Record<string, Point>>({});
   const [wire, setWire] = useState<PendingWire>();
-  const [box, setBox] = useState<{ x: number; y: number; w: number; h: number }>();
+  /** The selection box being dragged, the nodes it touches and the selection it would make. */
+  const [marquee, setMarquee] = useState<{ box: Rect; hits: string[]; result: string[] }>();
+  const [panning, setPanning] = useState(false);
   /** Ports that just connected: brief flash, then cleared. Key = `node:port:in|out`. */
   const [flashPorts, setFlashPorts] = useState<ReadonlySet<string>>(() => new Set());
   const flashTimers = useRef<Map<string, number>>(new Map());
@@ -411,7 +428,14 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
   return (
     <div
       ref={root}
-      className="canvas blueprint-bg"
+      className={[
+        'canvas blueprint-bg',
+        p.marqueeOnDrag && 'is-marquee-mode',
+        panning && 'is-panning',
+        marquee && 'is-boxing',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       tabIndex={0}
       style={{
         // The blueprint grid lives in graph space: it pans and scales with the nodes.
@@ -430,56 +454,81 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
         if (e.code === 'Space') space.current = false;
       }}
       onBlur={() => (space.current = false)}
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
-        if (e.button !== 0 && e.button !== 1) return;
+        if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
         const onWorld =
           e.target === e.currentTarget ||
           (e.target as Element).closest('.graph-world') === e.target;
-        if (!onWorld && !space.current && e.button !== 1) return;
+        // Middle/right drag and Space+drag pan from anywhere, nodes included.
+        const panButton = e.button !== 0 || space.current;
+        if (!onWorld && !panButton) return;
         root.current?.focus();
         const sx = e.clientX,
           sy = e.clientY;
-        const a = point(sx, sy);
-        if (e.shiftKey && !space.current && e.button === 0) {
+        const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+        const boxing = !panButton && (p.marqueeOnDrag || additive);
+        if (boxing) {
+          const a = point(sx, sy);
+          const base = p.selected;
+          // Nodes do not move while boxing, so measure them once.
+          const rects: NodeRect[] = p.graph.nodes.map((n) => {
+            const q = pos(n);
+            const el = root.current?.querySelector<HTMLElement>(
+              `[data-node="${CSS.escape(n.id)}"].node`,
+            );
+            return {
+              id: n.id,
+              x: q.x,
+              y: q.y,
+              w: el?.offsetWidth ?? NODE_W,
+              h: el?.offsetHeight ?? 90,
+            };
+          });
+          const measure = (event: PointerEvent) => {
+            const box = rectFromPoints(a, point(event.clientX, event.clientY));
+            const hits = nodesInRect(rects, box);
+            return { box, hits, result: marqueeSelection(base, hits, additive) };
+          };
           track(
             e,
             (event) => {
-              const b = point(event.clientX, event.clientY);
-              setBox({
-                x: Math.min(a.x, b.x),
-                y: Math.min(a.y, b.y),
-                w: Math.abs(a.x - b.x),
-                h: Math.abs(a.y - b.y),
-              });
+              if (isClick(event.clientX - sx, event.clientY - sy)) return setMarquee(undefined);
+              setMarquee(measure(event));
             },
             (event) => {
-              const b = point(event.clientX, event.clientY);
-              const [x0, x1] = [Math.min(a.x, b.x), Math.max(a.x, b.x)];
-              const [y0, y1] = [Math.min(a.y, b.y), Math.max(a.y, b.y)];
-              const ids = p.graph.nodes
-                .filter((n) => {
-                  const q = pos(n);
-                  const h =
-                    root.current?.querySelector<HTMLElement>(
-                      `[data-node="${CSS.escape(n.id)}"].node`,
-                    )?.offsetHeight ?? 90;
-                  return q.x <= x1 && q.x + NODE_W >= x0 && q.y <= y1 && q.y + h >= y0;
-                })
-                .map((n) => n.id);
-              p.onSelect([...new Set([...p.selected, ...ids])], false);
-              setBox(undefined);
+              setMarquee(undefined);
+              if (isClick(event.clientX - sx, event.clientY - sy)) {
+                // A plain click on empty canvas clears; a modifier click keeps the selection.
+                if (!additive) p.onSelect([], false);
+                return;
+              }
+              p.onSelect(measure(event).result, false);
             },
-            () => setBox(undefined),
+            () => setMarquee(undefined),
           );
         } else {
+          let moved = false;
           track(
             e,
-            (event) =>
-              setView({ ...view, x: view.x + event.clientX - sx, y: view.y + event.clientY - sy }),
             (event) => {
-              if (!space.current && e.button === 0 && event.clientX === sx && event.clientY === sy)
+              if (!moved && isClick(event.clientX - sx, event.clientY - sy)) return;
+              if (!moved) setPanning(true);
+              moved = true;
+              setView({ ...view, x: view.x + event.clientX - sx, y: view.y + event.clientY - sy });
+            },
+            (event) => {
+              setPanning(false);
+              // Only a plain left click on empty canvas clears; ending a pan never does.
+              if (
+                !moved &&
+                !space.current &&
+                e.button === 0 &&
+                isClick(event.clientX - sx, event.clientY - sy)
+              )
                 p.onSelect([], false);
             },
+            () => setPanning(false),
           );
         }
       }}
@@ -503,7 +552,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                 <path
                   className="wire-hit"
                   d={d}
-                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.button === 0 && !space.current && e.stopPropagation()}
                   onClick={() => !p.readonly && p.onDeleteEdge(i)}
                 />
                 <path
@@ -563,7 +612,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
           const errors = notes.filter((e) => !e.soft);
           const io = IO.includes(n.component);
           const value = p.values?.[n.id];
-          const name = io ? String(n.attrs?.name ?? '') : (SYMBOLS[n.component] ?? '');
+          const name = io ? String(n.attrs?.name ?? '') : (symbolOf(n.component) ?? '');
           const sym =
             parameterName(n) ??
             (n.component === 'param' && Array.isArray(n.attrs?.shape)
@@ -584,7 +633,8 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               : undefined);
           const classes = [
             'node',
-            p.selected.includes(n.id) && 'is-selected',
+            (marquee ? marquee.result : p.selected).includes(n.id) && 'is-selected',
+            marquee?.hits.includes(n.id) && 'is-marquee-hit',
             errors.length && 'is-error',
             io && 'is-io',
             registry.get(n.component)?.subgraph && 'is-composite',
@@ -602,20 +652,29 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
               style={{ left: a.x, top: a.y, width: NODE_W }}
               onDoubleClick={() => p.onInspect(n)}
               onPointerDown={(e) => {
-                if (space.current || e.button === 1) return;
-                if (e.button !== 0) return;
+                // Space, middle and right presses bubble up to the canvas, which pans.
+                if (space.current || e.button !== 0) return;
                 if ((e.target as HTMLElement).closest('.node-delete')) return;
                 e.stopPropagation();
                 root.current?.focus();
-                if (e.shiftKey || !p.selected.includes(n.id)) p.onSelect([n.id], e.shiftKey);
-                // Shift-click toggles selection only; do not drag the stale selection.
-                if (p.readonly || e.shiftKey) return;
-                const ids = p.selected.includes(n.id) ? p.selected : [n.id];
-                const start = point(e.clientX, e.clientY);
+                const press = pressNode(p.selected, n.id, e.shiftKey || e.ctrlKey || e.metaKey);
+                if (press.select) p.onSelect(press.select, false);
+                // Shift/Ctrl-click toggles selection only; do not drag the stale selection.
+                if (!press.drag.length) return;
+                const ids = press.drag;
+                const sx = e.clientX,
+                  sy = e.clientY;
+                const start = point(sx, sy);
                 let next: Record<string, Point> = {};
                 track(
                   e,
                   (event) => {
+                    if (p.readonly) return;
+                    if (
+                      !Object.keys(next).length &&
+                      isClick(event.clientX - sx, event.clientY - sy)
+                    )
+                      return;
                     const b = point(event.clientX, event.clientY);
                     next = Object.fromEntries(
                       p.graph.nodes
@@ -630,6 +689,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                   () => {
                     setPreview({});
                     if (Object.keys(next).length) p.onMove(movePositions(p.graph, layout, next));
+                    else if (press.onClick) p.onSelect(press.onClick, false);
                   },
                   () => setPreview({}),
                 );
@@ -763,7 +823,7 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
                           .join(' ')}
                         style={{ top: y - 6 }}
                         onPointerDown={(e) => {
-                          if (space.current || e.button === 1) return;
+                          if (space.current || e.button !== 0) return;
                           e.stopPropagation();
                           if (side === 'outputs') startWire(e, { node: n.id, port });
                           else {
@@ -787,11 +847,23 @@ const Canvas = forwardRef<CanvasHandle, CanvasProps>(function Canvas(p, ref) {
             </div>
           );
         })}
-        {box && (
+        {marquee && (
           <div
             className="selection-box"
-            style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
-          />
+            style={{
+              left: marquee.box.x,
+              top: marquee.box.y,
+              width: marquee.box.w,
+              height: marquee.box.h,
+              borderWidth: 1 / view.zoom,
+            }}
+          >
+            {marquee.hits.length > 0 && (
+              <span className="selection-box-count" style={{ scale: String(1 / view.zoom) }}>
+                {marquee.hits.length}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>

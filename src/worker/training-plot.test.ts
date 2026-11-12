@@ -123,6 +123,52 @@ it('maps classification rows to labels and excludes resampled batches', async ()
     batch.targets.dispose();
   }
 });
+it('reads class probabilities from cross_entropy p when the plan output is loss', async () => {
+  const lossGraph: GraphJSON = {
+    version: 1,
+    nodes: [
+      { id: 'x', component: 'input', attrs: { name: 'x', shape: [2, 2] } },
+      { id: 't', component: 'input', attrs: { name: 't', shape: [2, 2] } },
+      { id: 'p', component: 'softmax' },
+      { id: 'ce', component: 'cross_entropy' },
+      { id: 'out', component: 'output', attrs: { name: 'loss' } },
+    ],
+    edges: [
+      { from: { node: 'x', port: 'out' }, to: { node: 'p', port: 'x' } },
+      { from: { node: 'p', port: 'out' }, to: { node: 'ce', port: 'p' } },
+      { from: { node: 't', port: 'out' }, to: { node: 'ce', port: 't' } },
+      { from: { node: 'ce', port: 'out' }, to: { node: 'out', port: 'x' } },
+    ],
+  };
+  const plan = compileGraph(lossGraph, {
+    registry: buildPlayerRegistry(prerequisites, progressState),
+  });
+  // Softmax([0,1]) → class 1; softmax([2,0]) → class 0.
+  const batch = {
+    inputs: {
+      x: tensor([0, 1, 2, 0], [2, 2]),
+      t: tensor([0, 1, 1, 0], [2, 2]),
+    },
+  };
+  try {
+    const plot = await trainingPlot(lossGraph, plan, batch, 'loss');
+    expect(plot).toMatchObject({
+      kind: 'classes',
+      points: [
+        [0, 1],
+        [2, 0],
+      ],
+      label: [1, 0],
+      predicted: [1, 0],
+    });
+    expect(plot?.kind === 'classes' && plot.field).toBeTruthy();
+    const field = plot?.kind === 'classes' ? plot.field : undefined;
+    expect(field?.classes).toHaveLength(field!.nx * field!.ny);
+  } finally {
+    plan.dispose();
+    Object.values(batch.inputs).forEach((t) => t.dispose());
+  }
+});
 it('delivers final trained predictions through progress before result, and serializes stop', async () => {
   const level: TrainLevel = {
     id: 'plot',

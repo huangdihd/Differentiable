@@ -13,6 +13,17 @@
 .app > main {
   grid-row: 3;
   min-height: 0;
+  min-width: 0;
+}
+.app,
+.app > main {
+  overflow-x: clip;
+}
+.panel,
+.app > main,
+.sb-strip,
+.sb-inspector-body {
+  overscroll-behavior-x: none;
 }
 
 /* ---------- editor ---------- */
@@ -158,7 +169,8 @@
   margin: 40px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  /* CH 0–7 plus sandbox chapter; keep one row on wide home. */
+  grid-template-columns: repeat(9, minmax(0, 1fr));
 }
 .road-chapter {
   display: grid;
@@ -267,4 +279,562 @@
 }
 .level-figure .mask-cell.is-sum {
   stroke: var(--accent);
+}
+
+/* ---------- sandbox ---------- */
+/* Sandbox and levels: toolbar row on top, palette on the left, the canvas over a strip of
+   charts / tests; the inspector floats over the canvas. */
+.workspace.ws-a {
+  grid-template-columns: 264px minmax(320px, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.workspace.ws-a > .panel-left {
+  grid-row: 2 / 4;
+  grid-column: 1;
+}
+.workspace.ws-a > .canvas-wrap {
+  grid-row: 2;
+  grid-column: 2;
+}
+.workspace.ws-a > .sb-strip {
+  grid-row: 3;
+  grid-column: 2;
+  min-width: 0;
+}
+.sb-data,
+.sb-saves {
+  display: grid;
+  gap: var(--s3);
+  padding-bottom: var(--s4);
+}
+.sb-transport {
+  display: flex;
+  gap: 6px;
+}
+.sb-progress {
+  display: grid;
+  gap: 5px;
+}
+.sb-card {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  min-width: 0;
+}
+.sb-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.sb-loss-chart {
+  height: 132px;
+}
+.sb-settings {
+  display: grid;
+  gap: 14px;
+  padding: var(--s1) 0 0;
+}
+.sb-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px var(--s3);
+}
+.sb-setting-wide > input[type='range'],
+.sb-presets {
+  grid-column: 1 / -1;
+}
+.sb-steps-field {
+  width: 112px;
+}
+.sb-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sb-confirm {
+  display: grid;
+  gap: var(--s2);
+  padding: 10px var(--s3);
+}
+.sb-canvas-empty {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  width: min(400px, calc(100% - 48px));
+  padding: var(--s5);
+  z-index: 2;
+}
+
+/* hub */
+.sb-hub .home-inner {
+  padding-top: 28px;
+}
+.sb-hub-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--s5);
+  margin: var(--s4) 0 var(--s6);
+}
+.sb-new {
+  flex: none;
+  padding: 10px 18px;
+}
+.sb-section-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--s3);
+}
+.sb-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  margin-top: var(--s4);
+}
+.sb-picker.is-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+  margin-top: 0;
+}
+.sb-picker.is-compact .sb-tile {
+  padding: var(--s2);
+  gap: 4px;
+}
+.sb-tile {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.sb-thumb {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 120 / 72;
+}
+.sb-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+.sb-slot {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+.sb-slot-open {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: var(--s3);
+}
+.sb-slot-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sb-slot-actions,
+.sb-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 var(--s3) var(--s3);
+}
+.sb-rename .field {
+  flex: 1 1 160px;
+  width: auto;
+}
+
+/* dialogs */
+.sb-dialog.is-wide {
+  width: min(880px, calc(100vw - 48px));
+}
+.sb-dialog {
+  max-height: calc(100vh - 64px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.sb-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+.sb-dialog-body {
+  overflow: auto;
+  min-height: 0;
+}
+.sb-drop {
+  display: grid;
+  justify-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: 44px var(--s5);
+}
+.sb-file {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+}
+.sb-file .btn {
+  margin-left: auto;
+}
+.sb-map-scroll {
+  overflow: auto;
+  max-height: 280px;
+}
+.sb-map th {
+  position: sticky;
+  top: 0;
+}
+.sb-col-name {
+  display: block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-col-kind {
+  display: block;
+  margin-bottom: 6px;
+}
+.sb-role {
+  display: inline-flex;
+}
+.sb-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+.sb-result {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: start;
+  margin-top: var(--s4);
+  padding: var(--s3);
+}
+.sb-result.is-bad {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sb-problem {
+  max-width: 560px;
+}
+
+@media (max-width: 1000px) {
+  .workspace.ws-a {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 70vh auto;
+  }
+  .workspace.ws-a > * {
+    grid-row: auto;
+    grid-column: auto;
+  }
+  .sb-slots {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb-result {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* sandbox: my components */
+.my-components-body {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s2);
+}
+.my-components-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.my-component-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+.my-component-row .palette-item {
+  width: 100%;
+}
+.my-component-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.my-component-rename .field {
+  min-width: 0;
+}
+.my-component-menu {
+  padding: var(--s2);
+}
+.my-components-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.canvas-actions {
+  position: absolute;
+  bottom: var(--s4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 0 10px;
+  white-space: nowrap;
+  z-index: 2;
+}
+.canvas-select-hint {
+  position: absolute;
+  bottom: var(--s4);
+  left: var(--s4);
+  right: var(--s4);
+  width: fit-content;
+  margin: 0 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+  row-gap: 6px;
+  z-index: 2;
+}
+.canvas-actions .tool-sep {
+  margin: 0 6px 0 8px;
+}
+.pkg-name {
+  display: grid;
+  gap: 2px;
+  margin-bottom: var(--s4);
+}
+.pkg-io {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+  margin-bottom: var(--s3);
+}
+.pkg-arrow {
+  align-self: center;
+  padding-top: var(--s4);
+}
+.pkg-ports {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pkg-port {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 6px;
+}
+.pkg-port-where,
+.pkg-port-error {
+  grid-column: 1 / -1;
+}
+
+/* ---------- sandbox: toolbar row, chart strip, floating inspector ---------- */
+.sb-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 7px var(--s4);
+}
+.sb-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sb-bar-name {
+  width: auto;
+  min-width: 6ch;
+  max-width: 300px;
+  field-sizing: content;
+}
+.sb-bar-train {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sb-bar-train .sb-progress {
+  width: 150px;
+}
+.sb-bar .sb-transport .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.sb-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.sb-strip-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(232px, 0.95fr);
+  gap: 10px;
+  height: clamp(168px, 24vh, 212px);
+  padding: 0 10px 10px;
+}
+.sb-strip .sb-card {
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
+}
+.sb-strip .sb-card-loss {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.sb-strip .data-plot {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.sb-strip .sb-loss-chart {
+  height: 100%;
+  min-height: 0;
+}
+.sb-strip .sb-card-settings {
+  display: block;
+  overflow: auto;
+}
+.sb-strip .sb-settings {
+  gap: 10px;
+  padding: 0;
+}
+.sb-dialog.is-medium {
+  width: min(560px, calc(100vw - 48px));
+}
+.sb-strip .sb-backend {
+  display: none;
+}
+.sb-strip .sb-settings {
+  gap: 8px;
+}
+.sb-strip .sb-setting-wide:last-of-type {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.sb-strip .sb-steps-field {
+  width: 88px;
+  padding-block: 3px;
+}
+.sb-dialog .sb-data .data-plot {
+  max-height: 240px;
+}
+.sb-dialog .sb-data .sb-picker.is-compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sb-strip .sb-setting-name {
+  white-space: nowrap;
+}
+.sb-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: min(320px, calc(100% - 2 * var(--s3)));
+  max-height: calc(100% - 2 * var(--s3));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sb-inspector-head {
+  touch-action: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: 6px 6px 6px var(--s3);
+}
+.sb-inspector-head .label {
+  margin: 0;
+}
+.sb-inspector-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--s3) var(--s3) var(--s4);
+}
+/* The floating panel's own header already names it. */
+.sb-inspector .selected-io > .label:first-child {
+  display: none;
+}
+.sb-inspector-content > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- levels in the same layout ---------- */
+.lv-bar-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lv-task {
+  display: grid;
+  margin-bottom: var(--s4);
+}
+.lv-task-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+}
+.lv-task-head .level-id {
+  margin-left: auto;
+}
+.lv-task-body {
+  margin: 0;
+  padding: var(--s3);
+}
+.lv-strip-body {
+  display: grid;
+  grid-template-columns: repeat(var(--lv-cols, 2), minmax(0, 1fr));
+  gap: 10px;
+  height: clamp(200px, 30vh, 280px);
+  padding: 0 10px 10px;
+}
+.sb-strip .lv-card {
+  display: block;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.lv-card > .section,
+.lv-card .section {
+  margin: 0;
+}
+.lv-card > * + * {
+  margin-top: var(--s2);
+}
+.lv-card .data-plot {
+  max-height: 180px;
+}
+.lv-card .btn-row {
+  margin-top: var(--s2);
 }

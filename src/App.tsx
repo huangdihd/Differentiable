@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   computationIdentity,
   expandComponentSubgraph,
+  type GraphEndpoint,
   type GraphJSON,
   type GraphNode,
 } from './engine/graph';
@@ -20,7 +21,14 @@ import {
 import { componentOperators, parseExpression } from './engine/expression';
 import { levelTracker } from './analytics';
 import { buildPlayerRegistry, availableComponents } from './levels/registry';
-import { CHAPTERS, catalog, entryFor, gameLevels, resumeEntry } from './levels/catalog';
+import {
+  CHAPTERS,
+  SANDBOX_CHAPTER,
+  catalog,
+  entryFor,
+  gameLevels,
+  resumeEntry,
+} from './levels/catalog';
 import {
   connectionError,
   createEditorState,
@@ -78,6 +86,8 @@ import { gradientSurfaceInputs, plottedInput } from './ui/function-plot';
 import {
   NODE_W,
   SYMBOLS,
+  nodePorts,
+  symbolOf,
   categoryOf,
   freeSpot,
   layoutGraph,
@@ -100,6 +110,7 @@ import {
   saveSave,
   serializeProgressSaveExport,
   createThrottledSave,
+  isGraphJSON,
 } from './storage';
 import {
   dismissBackendFallbackDialog,
@@ -122,6 +133,35 @@ import {
   newlyIntroducedComponents,
 } from './ui/new-components';
 import './ui/layout.css';
+import { SandboxScreen, download, readFile, type SandboxEditorSlot } from './ui/Sandbox';
+import { MyComponents } from './ui/MyComponents';
+import FloatingInspector from './ui/FloatingInspector';
+import { PackageDialog, type PackageChoice } from './ui/PackageDialog';
+import SelectHint, { readSelectHintSeen, writeSelectHintSeen } from './ui/SelectHint';
+import {
+  addComponent,
+  applyPackage,
+  componentUsage,
+  exportComponents,
+  findComponent,
+  importComponents,
+  isCustomComponent,
+  libraryOf,
+  parseComponentsFile,
+  planPackage,
+  removeComponent,
+  renameComponent,
+  ungroupInstance,
+  uniqueComponentName,
+  type PackagePlan,
+} from './sandbox/components';
+import {
+  SandboxCharts,
+  SandboxSettings,
+  SandboxTransport,
+  type SandboxTrainProps,
+} from './ui/SandboxTrain';
+import { isSandboxUnlocked, sandboxSlots } from './sandbox/slots';
 
 type T = ReturnType<typeof createTranslator>;
 
@@ -145,8 +185,10 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [level, setLevel] = useState<Level>();
   const [showPlayerComparison, setShowPlayerComparison] = useState(false);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
   const openLevel = (next?: Level) => {
     setShowPlayerComparison(false);
+    setSandboxOpen(false);
     setLevel(next);
   };
   const [backend, setBackend] = useState<'pending' | 'cpu' | 'webgpu'>('pending');
@@ -257,7 +299,9 @@ export default function App() {
           DEMO
         </span>
         <span className="crumb">
-          {entry ? (
+          {sandboxOpen ? (
+            <b>{t('sandbox.title')}</b>
+          ) : entry ? (
             <>
               {t('ui.chapterNamed', { n: entry.chapter, name: t(`chapter.${entry.chapter}`) })} /{' '}
               <b>
@@ -375,6 +419,36 @@ export default function App() {
           }}
           progress={save.progress}
         />
+      ) : sandboxOpen ? (
+        <SandboxScreen
+          t={t}
+          locale={save.settings.language}
+          progress={save.progress}
+          onProgress={(update) => setSave((s) => ({ ...s, progress: update(s.progress) }))}
+          ready={backend !== 'pending'}
+          client={client}
+          onExit={() => {
+            void client.current?.setSandbox(null).catch(() => undefined);
+            openLevel();
+          }}
+          renderEditor={({ key, level: sandboxLevel, progress: virtual, onProgress, sandbox }) => (
+            <Editor
+              key={key}
+              level={sandboxLevel}
+              progress={virtual}
+              onProgress={onProgress}
+              onExit={() => {
+                void client.current?.setSandbox(null).catch(() => undefined);
+                openLevel();
+              }}
+              locale={save.settings.language}
+              backend={backend}
+              client={client}
+              revision={revision}
+              sandbox={sandbox}
+            />
+          )}
+        />
       ) : level ? (
         <Editor
           key={level.id}
@@ -401,6 +475,10 @@ export default function App() {
           progress={save.progress}
           ready={backend !== 'pending'}
           onOpen={openLevel}
+          onOpenSandbox={() => {
+            openLevel();
+            setSandboxOpen(true);
+          }}
           revoked={revoked}
           onDismissRevoked={() => setRevoked([])}
         />
@@ -440,6 +518,7 @@ function Home({
   progress,
   ready,
   onOpen,
+  onOpenSandbox,
   revoked,
   onDismissRevoked,
 }: {
@@ -447,13 +526,22 @@ function Home({
   progress: Progress;
   ready: boolean;
   onOpen: (level: Level) => void;
+  onOpenSandbox: () => void;
   revoked: string[];
   onDismissRevoked: () => void;
 }) {
   const fresh = progress.passed.length === 0;
   // Where the player left off: the first unlocked, unpassed level in road order.
   const next = resumeEntry(catalog, progress);
-  const [chapter, setChapter] = useState<number>(next?.chapter ?? catalog.at(-1)!.chapter);
+  const sandboxUnlocked = isSandboxUnlocked(
+    progress,
+    catalog.map((e) => e.level),
+  );
+  const sandboxCount = sandboxSlots(progress).length;
+  // All-clear lands on the sandbox chapter; otherwise resume or the last story chapter.
+  const [chapter, setChapter] = useState<number>(
+    next?.chapter ?? (sandboxUnlocked ? SANDBOX_CHAPTER : catalog.at(-1)!.chapter),
+  );
   const entries = catalog.filter((e) => e.chapter === chapter);
   return (
     <main className="home blueprint-bg">
@@ -476,9 +564,17 @@ function Home({
               <span aria-hidden="true">→</span>
             </button>
           ) : (
-            <span className="home-done-badge" role="status">
-              {t('home.allDone')}
-            </span>
+            <button
+              className="continue"
+              disabled={!ready || !sandboxUnlocked}
+              onClick={onOpenSandbox}
+            >
+              <span className="continue-label">{t('home.sandboxMode')}</span>
+              <span className="continue-level">
+                <span className="level-id">∞</span> {t('sandbox.hero')}
+              </span>
+              <span aria-hidden="true">→</span>
+            </button>
           )}
         </section>
         {revoked.length > 0 && (
@@ -507,26 +603,30 @@ function Home({
         )}
         <ol className="road">
           {CHAPTERS.map((n) => {
-            const levels = catalog.filter((e) => e.chapter === n);
-            const passed = levels.filter((e) => progress.passed.includes(e.level.id)).length;
-            const open = levels.some((e) => progress.unlocked.includes(e.level.id));
+            const isSandbox = n === SANDBOX_CHAPTER;
+            const levels = isSandbox ? null : catalog.filter((e) => e.chapter === n);
+            const passed = isSandbox
+              ? 0
+              : levels!.filter((e) => progress.passed.includes(e.level.id)).length;
+            const total = isSandbox ? 0 : levels!.length;
+            const open = isSandbox
+              ? true
+              : levels!.some((e) => progress.unlocked.includes(e.level.id));
             return (
               <li key={n}>
                 <button
-                  className={`road-chapter ${open ? 'is-open' : ''} ${n === chapter ? 'is-selected' : ''} ${passed > 0 && passed === levels.length ? 'is-done' : ''}`}
+                  className={`road-chapter ${open ? 'is-open' : ''} ${n === chapter ? 'is-selected' : ''} ${!isSandbox && passed > 0 && passed === total ? 'is-done' : ''} ${isSandbox ? 'is-sandbox' : ''}`}
                   aria-pressed={n === chapter}
                   onClick={() => setChapter(n)}
                 >
                   <span
                     className="road-track"
-                    style={
-                      { '--done': levels.length ? passed / levels.length : 0 } as CSSProperties
-                    }
+                    style={{ '--done': total ? passed / total : 0 } as CSSProperties}
                   />
-                  <span className="road-n">CH {n}</span>
+                  <span className="road-n">{isSandbox ? '∞' : `CH ${n}`}</span>
                   <span className="road-name">{t(`chapter.${n}`)}</span>
                   <span className="road-count">
-                    {levels.length ? `${passed}/${levels.length}` : t('ui.comingSoon')}
+                    {isSandbox ? null : total ? `${passed}/${total}` : t('ui.comingSoon')}
                   </span>
                 </button>
               </li>
@@ -535,11 +635,29 @@ function Home({
         </ol>
         <section className="chapter">
           <header className="chapter-head">
-            <span className="road-n">CH {chapter}</span>
+            <span className="road-n">{chapter === SANDBOX_CHAPTER ? '∞' : `CH ${chapter}`}</span>
             <h2>{t(`chapter.${chapter}`)}</h2>
             <p className="muted">{t(`chapter.${chapter}.desc`)}</p>
           </header>
-          {entries.length === 0 ? (
+          {chapter === SANDBOX_CHAPTER ? (
+            <div className="chapter-levels">
+              <button
+                className={`level-card${sandboxUnlocked ? ' is-playable' : ''}`}
+                disabled={!ready || !sandboxUnlocked}
+                onClick={onOpenSandbox}
+              >
+                <span className="level-id">∞</span>
+                <span className="level-card-title">{t('sandbox.title')}</span>
+                <span className="level-state">
+                  {sandboxUnlocked
+                    ? sandboxCount
+                      ? t('sandbox.slotCount', { n: sandboxCount, count: sandboxCount })
+                      : t('sandbox.open')
+                    : t('sandbox.lockedHint')}
+                </span>
+              </button>
+            </div>
+          ) : entries.length === 0 ? (
             <p className="road-soon">{t('ui.comingSoon')}</p>
           ) : (
             <div className="chapter-levels">
@@ -602,6 +720,32 @@ function Home({
   );
 }
 
+const CHARTS_OPEN_KEY = 'differentiable.sandbox.chartsOpen';
+const LEVEL_STRIP_OPEN_KEY = 'differentiable.level.stripOpen';
+const readChartsOpen = (key: string) => {
+  try {
+    return localStorage.getItem(key) !== '0';
+  } catch {
+    return true;
+  }
+};
+const writeChartsOpen = (open: boolean, key: string) => {
+  try {
+    localStorage.setItem(key, open ? '1' : '0');
+  } catch {
+    // Just a view preference: the strip opens again next time.
+  }
+};
+
+/** A fresh, never-reused id for a packaged sandbox component. */
+const newComponentId = () => {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+};
+
 /** The level a pass leads to: the first one it unlocks. */
 const nextOf = (level: Level) =>
   level.unlock.map((id) => gameLevels.find((l) => l.id === id)).find(Boolean);
@@ -617,6 +761,8 @@ type EditorProps = {
   backend: string;
   client: React.RefObject<WorkerClient | null>;
   revision: React.RefObject<number>;
+  /** Free play: the sandbox screen supplies the panels around the canvas. */
+  sandbox?: SandboxEditorSlot;
 };
 
 /** Time each test case stays on the canvas during step-through verification. */
@@ -674,22 +820,32 @@ function Editor({
   backend,
   client,
   revision,
+  sandbox,
 }: EditorProps) {
   const entry = entryFor(level);
   const tracker = useRef<ReturnType<typeof levelTracker>>(null);
   useEffect(() => {
+    // Sandbox slots are private free play, not curriculum levels: no analytics.
+    if (sandbox) return;
     const t = levelTracker(level.id, entry.chapter);
     tracker.current = t;
     return () => t.dispose();
   }, [level.id]);
   const registry = useMemo(
     () => buildPlayerRegistry(gameLevels, progress),
-    [progress.passedSolutions, progress.unlockedComponents],
+    [progress.passedSolutions, progress.unlockedComponents, progress.sandbox?.components],
   );
   const available = availableComponents(level, progress);
   const [state, setState] = useState(() =>
     createEditorState(level, progress.savedGraphs[level.id], available),
   );
+  // Sandbox: packaging, importing or deleting a component changes what can be placed.
+  const library = sandbox ? libraryOf(progress) : [];
+  const availableKey = available.join('\u0000');
+  useEffect(() => {
+    setState((s) => editorReducer(s, { type: 'setAvailable', available }, registry));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableKey]);
   const [diagnostics, setDiagnostics] = useState<WorkerError[]>([]);
   // The 0-1 walkthrough, until the level is passed or skipped. Storage may be unavailable.
   const [coachSkipped, setCoachSkipped] = useState(() => {
@@ -721,6 +877,8 @@ function Editor({
   }>();
   const [previousBest, setPreviousBest] = useState<LevelResult['metrics']>();
   const [training, setTraining] = useState<'idle' | 'running' | 'paused'>('idle');
+  // Sandbox node previews run on the trained parameters: bump whenever those change.
+  const [paramsRevision, setParamsRevision] = useState(0);
   const [report, setReport] = useState<TrainingReport>();
   const [losses, setLosses] = useState<number[]>([]);
   // Single-step training, replayed on the canvas: forward, then backward, then the update.
@@ -741,6 +899,12 @@ function Editor({
       ? savedOptimizer
       : optimizers[0]
     : undefined;
+  const stepsTunable = level.kind === 'train' ? level.tunable?.steps : undefined;
+  const trainSteps = stepsTunable
+    ? (progress.trainingSettings?.[level.id]?.steps ?? stepsTunable.default)
+    : level.kind === 'train'
+      ? level.steps
+      : undefined;
   // Language-model levels can write: a prompt, a temperature and what came out.
   const [gen, setGen] = useState<{
     prompt: string;
@@ -873,6 +1037,13 @@ function Editor({
   const [shake, setShake] = useState<{ node: string; tick: number }>();
   const [ghost, setGhost] = useState<{ component: string; x: number; y: number }>();
   const canvas = useRef<CanvasHandle>(null);
+  // A fresh sandbox canvas only holds the data ports, laid out wider than the view: frame them.
+  useEffect(() => {
+    if (!sandbox || state.graph.edges.length) return;
+    const id = requestAnimationFrame(() => canvas.current?.fit());
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level.id]);
   // Every level probes values: training levels show what the initial (seeded) network computes.
   const probing = true;
   // Step-through verification, Turing Complete style: one test case at a time on the canvas.
@@ -949,7 +1120,15 @@ function Editor({
       alive = false;
     };
   }, [level]);
-  const t = createTranslator(locale);
+  const baseT = createTranslator(locale);
+  // Sandbox components carry the player's own name rather than a dictionary entry.
+  const t = (key: string, params?: Parameters<typeof baseT>[1]) => {
+    if (key.startsWith('components.')) {
+      const label = registry.get(key.slice('components.'.length))?.label;
+      if (label !== undefined) return label;
+    }
+    return baseT(key, params);
+  };
   const latest = useRef({ progress, onProgress, graph: state.graph });
   latest.current = { progress, onProgress, graph: state.graph };
   const busy = training !== 'idle';
@@ -1047,16 +1226,45 @@ function Editor({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input,textarea,select') || inside.length) return;
+      const dialogOpen = !!document.querySelector('[aria-modal="true"]');
       if (e.key === 'Escape') {
         setModal(false);
+        // Esc also drops the canvas selection, unless it is closing a dialog.
+        if (!dialogOpen && !busy)
+          setState((s) =>
+            s.selection.length
+              ? editorReducer(s, { type: 'select', ids: [], shift: false }, registry)
+              : s,
+          );
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
+      // Ctrl/Cmd+A selects every node on the canvas.
+      if (mod && e.key.toLowerCase() === 'a' && !e.shiftKey && !e.altKey) {
+        if (dialogOpen || busy) return;
+        e.preventDefault();
+        setState((s) =>
+          editorReducer(
+            s,
+            { type: 'select', ids: s.graph.nodes.map((n) => n.id), shift: false },
+            registry,
+          ),
+        );
+        return;
+      }
       // Let the browser copy selected text (descriptions, hints); only copy nodes otherwise.
       if (mod && e.key.toLowerCase() === 'c' && window.getSelection()?.toString()) return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         command({ type: 'removeNodes' });
+      }
+      // Ctrl/Cmd+G packages the selection; with Shift it ungroups a selected component.
+      if (sandbox && mod && e.key.toLowerCase() === 'g' && !busy) {
+        e.preventDefault();
+        const keys = componentKeys.current;
+        if (e.shiftKey) {
+          if (keys.selectedInstance) keys.ungroup(keys.selectedInstance.id);
+        } else keys.startPackage();
       }
       if (mod && ['z', 'c', 'v'].includes(e.key.toLowerCase())) {
         e.preventDefault();
@@ -1133,8 +1341,11 @@ function Editor({
     lossLandscape;
 
   // Live probe: every node shows its output for the probe inputs, refreshed as the graph changes.
+  // A paused sandbox run can still be inspected: previews read its live parameters.
+  const previewBlocked = busy && !(sandbox && training === 'paused');
+  const previewKey = sandbox ? `${training}|${paramsRevision}` : '';
   useEffect(() => {
-    if (!probing || busy || 'invalid' in parsedInputs) {
+    if (!probing || previewBlocked || 'invalid' in parsedInputs) {
       setValues({});
       setProbeErrors([]);
       return;
@@ -1201,7 +1412,7 @@ function Editor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [computationKey, parsedInputs, diagnostics, busy, locale, visualPlot]);
+  }, [computationKey, parsedInputs, diagnostics, previewBlocked, previewKey, locale, visualPlot]);
 
   const PHASE_MS = 1100;
   const stepOnce = async () => {
@@ -1224,6 +1435,13 @@ function Editor({
         setStepFlow({ trace, phase });
         if (phase !== 'update') await new Promise((done) => setTimeout(done, PHASE_MS));
       }
+      if (sandbox) {
+        // The step's trace is the model before its update; let the previews show the result.
+        await new Promise((done) => setTimeout(done, PHASE_MS));
+        if (token !== stepToken.current) return;
+        setStepFlow(undefined);
+        setParamsRevision((n) => n + 1);
+      }
     } catch (e) {
       fail(e);
     }
@@ -1235,9 +1453,16 @@ function Editor({
     setLosses([]);
     setReport(undefined);
     stepGraph.current = undefined;
-    void client.current?.trainReset().catch(fail);
+    void client.current
+      ?.trainReset()
+      .then(() => setParamsRevision((n) => n + 1))
+      .catch(fail);
   };
-  const saveTraining = (settings: { learningRate?: number; optimizer?: 'sgd' | 'adam' }) =>
+  const saveTraining = (settings: {
+    learningRate?: number;
+    optimizer?: 'sgd' | 'adam';
+    steps?: number;
+  }) =>
     latest.current.onProgress({
       ...latest.current.progress,
       trainingSettings: {
@@ -1245,11 +1470,21 @@ function Editor({
         [level.id]: {
           learningRate: learningRate ?? 0.01,
           ...(optimizer ? { optimizer } : {}),
+          ...(trainSteps !== undefined ? { steps: trainSteps } : {}),
           ...settings,
         },
       },
     });
   const setLearningRate = (lr: number) => saveTraining({ learningRate: lr });
+  const setTrainSteps = (steps: number) => {
+    if (!stepsTunable) return;
+    const next = Math.min(
+      stepsTunable.max,
+      Math.max(stepsTunable.min, Math.round(steps) || stepsTunable.default),
+    );
+    if (next === trainSteps) return;
+    saveTraining({ steps: next });
+  };
   // A different optimizer starts a fresh session in the worker; start the chart over too.
   const setOptimizer = (kind: 'sgd' | 'adam') => {
     if (kind === optimizer) return;
@@ -1295,9 +1530,16 @@ function Editor({
       const p = edge && forward[edge.from.node];
       return p && p.size === plotBase.x.length ? { ...plotBase, p: p.values } : plotBase;
     }
+    // Curriculum outputs [N,C] probs; sandbox wires those into cross_entropy → loss.
     const out = state.graph.nodes.find((n) => n.component === 'output');
     const source = out && state.graph.edges.find((e) => e.to.node === out.id)?.from.node;
-    const y = (out && forward[out.id]) ?? (source ? forward[source] : undefined);
+    const ce = state.graph.edges.find(
+      (e) =>
+        e.to.port === 'p' &&
+        state.graph.nodes.find((n) => n.id === e.to.node)?.component === 'cross_entropy',
+    );
+    const direct = (out && forward[out.id]) ?? (source ? forward[source] : undefined);
+    const y = direct && direct.shape.length === 2 ? direct : ce ? forward[ce.from.node] : undefined;
     const n = plotBase.points.length;
     if (!y || y.size !== y.values.length || y.shape.length !== 2 || y.shape[0] !== n)
       return plotBase;
@@ -1490,6 +1732,119 @@ function Editor({
         editorReducer(st, { type: 'setViewport', viewport: outerView.current }, registry),
       );
   };
+  // Packaging: selected parts become one reusable component in "My components".
+  const [packaging, setPackaging] = useState<{ plan: PackagePlan; name: string }>();
+  const packable = state.graph.nodes.filter(
+    (n) => state.selection.includes(n.id) && !['input', 'output'].includes(n.component),
+  );
+  const selectedInstance =
+    sandbox && state.selection.length === 1
+      ? state.graph.nodes.find(
+          (n) => n.id === state.selection[0] && findComponent(library, n.component),
+        )
+      : undefined;
+  const portShape = (endpoint: GraphEndpoint) => {
+    const node = state.graph.nodes.find((n) => n.id === endpoint.node);
+    // Canvas previews carry each node's first output; other ports stay unknown here.
+    if (!node || nodePorts(node, registry, 'outputs')[0] !== endpoint.port) return undefined;
+    return values[endpoint.node]?.shape;
+  };
+  const startPackage = () => {
+    if (!sandbox || busy || inside.length || !packable.length) return;
+    const plan = planPackage(state.graph, state.selection);
+    if (typeof plan === 'string') {
+      sfx.play('reject');
+      setError({ key: plan, params: {} });
+      return;
+    }
+    setError(undefined);
+    setPackaging({
+      plan,
+      name: uniqueComponentName(t('sandbox.components.defaultName'), library),
+    });
+  };
+  const confirmPackage = (choice: PackageChoice) => {
+    if (!packaging) return;
+    const { plan } = packaging;
+    const shapes: Record<string, number[]> = {};
+    plan.inputs.forEach((port, i) => {
+      const shape = portShape(port.source);
+      if (shape) shapes[choice.inputs[i]] = [...shape];
+    });
+    plan.outputs.forEach((port, i) => {
+      const shape = portShape(port.source);
+      if (shape) shapes[choice.outputs[i]] = [...shape];
+    });
+    const result = applyPackage(state.graph, plan, {
+      id: newComponentId(),
+      name: choice.name,
+      now: Date.now(),
+      inputNames: choice.inputs,
+      outputNames: choice.outputs,
+      shapes,
+    });
+    setPackaging(undefined);
+    latest.current.onProgress(addComponent(latest.current.progress, result.component));
+    command({ type: 'replaceGraph', graph: result.graph, selection: [result.instance] });
+    sfx.play('place');
+  };
+  const ungroup = (id: string) => {
+    if (busy || inside.length) return;
+    const result = ungroupInstance(state.graph, id, library);
+    if (!result) return;
+    command({ type: 'replaceGraph', graph: result.graph, selection: result.ids });
+    sfx.play('place');
+  };
+  const changeLibrary = (change: (p: Progress) => Progress) =>
+    latest.current.onProgress(change(latest.current.progress));
+  const exportLibrary = (ids: string[]) => {
+    const file = exportComponents(library, ids);
+    const single = ids.length === 1 ? library.find((c) => c.id === ids[0])?.name : undefined;
+    download(
+      `${(single ?? t('sandbox.components.fileName')).trim() || 'components'}.components.json`,
+      file,
+    );
+  };
+  const importLibrary = async (file: File) => {
+    const parsed = parseComponentsFile(await readFile(file), isGraphJSON);
+    const result = importComponents(latest.current.progress, parsed, {
+      newId: newComponentId,
+      now: Date.now(),
+    });
+    latest.current.onProgress(result.progress);
+    return t('sandbox.components.imported', {
+      added: result.added,
+      reused: result.reused,
+      count: result.added,
+    });
+  };
+  // The canvas hint steps back once the player has box- or Shift-selected several parts.
+  const [selectHintSeen, setSelectHintSeen] = useState(readSelectHintSeen);
+  useEffect(() => {
+    if (sandbox && !selectHintSeen && state.selection.length > 1) {
+      setSelectHintSeen(true);
+      writeSelectHintSeen();
+    }
+  }, [sandbox, selectHintSeen, state.selection.length]);
+  // Sandbox: the chart strip under the canvas remembers whether it was folded away.
+  const [sbChartsOpen, setSbChartsOpen] = useState(() => readChartsOpen(CHARTS_OPEN_KEY));
+  const toggleCharts = () =>
+    setSbChartsOpen((open) => {
+      writeChartsOpen(!open, CHARTS_OPEN_KEY);
+      return !open;
+    });
+  // Levels: the task card on the left and the tests/training strip under the canvas can fold away.
+  const [taskOpen, setTaskOpen] = useState(true);
+  const [lvStripOpen, setLvStripOpen] = useState(() => readChartsOpen(LEVEL_STRIP_OPEN_KEY));
+  const toggleLevelStrip = () =>
+    setLvStripOpen((open) => {
+      writeChartsOpen(!open, LEVEL_STRIP_OPEN_KEY);
+      return !open;
+    });
+  // Errors the player closed the floating inspector on stay hidden until they change.
+  const [dismissedErrors, setDismissedErrors] = useState<string>();
+  const componentKeys = useRef({ startPackage, ungroup, selectedInstance });
+  componentKeys.current = { startPackage, ungroup, selectedInstance };
   const inspect = (node: GraphNode) => {
     if (!inside.length) outerView.current = state.viewport;
     const def = registry.get(node.component);
@@ -1513,7 +1868,7 @@ function Editor({
         stepToken.current++;
         setStepFlow(undefined);
         setTraining('running');
-        await client.current?.start(level.id, state.graph, learningRate, optimizer);
+        await client.current?.start(level.id, state.graph, learningRate, optimizer, trainSteps);
       } else {
         setRunning(true);
         const r = await client.current?.evaluate(level.id, state.graph);
@@ -1668,7 +2023,8 @@ function Editor({
     (name) => !playerComponents.includes(name) && (level.presets ?? []).includes(name),
   );
   const primitives = available.filter(
-    (name) => !playerComponents.includes(name) && !presets.includes(name),
+    (name) =>
+      !playerComponents.includes(name) && !presets.includes(name) && !isCustomComponent(name),
   );
   const outputNodes = state.graph.nodes.filter((node) => node.component === 'output');
   const outputValues = Object.fromEntries(
@@ -1701,7 +2057,11 @@ function Editor({
     !state.graph.edges.length &&
     !state.past.length &&
     state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
-  const threshold = level.kind === 'train' ? level.threshold.loss : undefined;
+  // Sandbox: nothing wired yet (history or not), so the starter offer stays until the first wire.
+  const bare =
+    !state.graph.edges.length &&
+    state.graph.nodes.every((n) => ['input', 'output'].includes(n.component));
+  const threshold = level.kind === 'train' && !sandbox ? level.threshold.loss : undefined;
   // The expression box is a tool you earn at the end of chapter 1; early levels are about wiring.
   const expressionUnlocked = isExpressionUnlocked(progress, gameLevels);
   // Not on levels up to and including the one that teaches backprop by hand: no spoilers.
@@ -1730,126 +2090,391 @@ function Editor({
   );
   const shown = verify ? verify.result : result;
   const shownTests = verify ? verify.result.tests.slice(0, verify.index + 1) : result?.tests;
+  const sbTrain: SandboxTrainProps | undefined =
+    sandbox && level.kind === 'train'
+      ? {
+          t,
+          locale,
+          backend,
+          training,
+          locked: running || !!inside.length,
+          losses,
+          report,
+          steps: trainSteps ?? level.steps,
+          stepsRange: stepsTunable ?? { min: 1, max: level.steps },
+          learningRate: learningRate ?? level.optimizer.learningRate,
+          learningRateRange: tunable ?? { min: 0.0001, max: 1 },
+          optimizer: optimizer ?? level.optimizer.kind,
+          plot,
+          view: sandbox.view,
+          stepPhase: stepFlow
+            ? t(`ui.stepPhase.${stepFlow.phase}`, {
+                loss: compact(locale, stepFlow.trace.loss),
+              })
+            : undefined,
+          format: (v) => compact(locale, v),
+          onRun: () => void run(),
+          onPauseResume: () => {
+            const next = training === 'running' ? 'paused' : 'running';
+            void (next === 'paused' ? client.current?.pause() : client.current?.resume())
+              ?.then(() => setTraining(next))
+              .catch(fail);
+          },
+          onStop: () =>
+            void client.current
+              ?.stop()
+              .then(() => setTraining('idle'))
+              .catch(fail),
+          onStep: () => void stepOnce(),
+          onReset: resetSteps,
+          onSteps: setTrainSteps,
+          onLearningRate: setLearningRate,
+          onOptimizer: setOptimizer,
+        }
+      : undefined;
+  const hardErrors = errors.filter((e) => !e.node && !e.soft);
+  const hasErrors = !!(error || state.error || hardErrors.length);
+  const errorKey = hasErrors
+    ? JSON.stringify([error ?? null, state.error ?? null, hardErrors.map((e) => e.message)])
+    : '';
+  // Levels always list errors; the sandbox inspector can be closed on them.
+  const showErrors = hasErrors && errorKey !== dismissedErrors;
+  const inspector = (
+    <>
+      {showErrors && (error || state.error) && (
+        <p role="alert" className="status status-fail">
+          {graphDiagnostic(locale, state.graph, error ?? { key: state.error! }, registry)}
+        </p>
+      )}
+      {showErrors &&
+        hardErrors.map((e, i) => (
+          <p className="status status-fail" key={i}>
+            {e.message}
+          </p>
+        ))}
+      {selected && !inside.length && (
+        <SelectedNodeIO
+          t={t}
+          locale={locale}
+          node={selected}
+          ports={selectedPorts}
+          probes={selectedProbes}
+          errors={errors}
+        />
+      )}
+      {selected && canEdit && (
+        <Properties
+          key={selected.id}
+          node={selected}
+          connectedInputs={state.graph.edges
+            .filter((edge) => edge.to.node === selected.id)
+            .map((edge) => edge.to.port)}
+          wiredDimValues={reshapeWiredDimValues}
+          definition={registry.get(selected.component)}
+          t={t}
+          onChange={(attrs) => command({ type: 'setAttrs', id: selected.id, attrs, replace: true })}
+        />
+      )}
+    </>
+  );
+  const inspectorOpen = !!(selected && !inside.length) || showErrors;
+  const levelPassed = progress.passed.includes(level.id);
+  const lvTrainCols =
+    level.kind === 'train'
+      ? 2 + (level.data || plot || level.sequenceProbe ? 1 : 0) + (level.generates ? 1 : 0)
+      : 1;
+  const closeInspector = () => {
+    setDismissedErrors(errorKey);
+    if (state.selection.length) command({ type: 'select', ids: [], shift: false });
+  };
 
   return (
-    <main className="workspace">
-      <aside className="panel panel-left">
-        <div className="section">
-          <div className="level-id">LEVEL {entry.code}</div>
-          <h1 className="level-title">{t(level.titleKey)}</h1>
-          <div className="level-desc">
-            <MathText text={t(level.descriptionKey)} />
-          </div>
-          <LevelFigure levelId={level.id} t={t} />
-          <TemporalBenchmarkEvidence levelId={level.id} locale={locale} t={t} />
-          {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
-          {lossLandscape && (
-            <LossLandscapePlot
-              key={level.id}
-              t={t}
-              levelId={level.id}
-              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
-              actual={outputActual}
-              onPick={(changes) =>
-                changeScalarInputs(
-                  Object.fromEntries(
-                    Object.entries(changes).map(([name, value]) => [name, String(value)]),
-                  ),
-                )
-              }
-            />
-          )}
-          {plotInput && level.kind !== 'train' && (
-            <FunctionPlot
-              key={level.id}
-              t={t}
-              level={level}
-              input={plotInput}
-              x={'invalid' in parsedInputs ? undefined : parsedInputs[plotInput]?.[0]}
-              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
-              actual={outputActual?.values[0]}
-              onPick={(x) => changeScalarInput(plotInput, String(x))}
-            />
-          )}
-          {surfaceInputs && level.kind !== 'train' && (
-            <GradientSurfacePlot
-              key={level.id}
-              t={t}
-              level={level}
-              names={surfaceInputs}
-              inputs={'invalid' in parsedInputs ? {} : parsedInputs}
-              actual={outputActuals}
-              onPick={(next) =>
-                changeScalarInputs(
-                  Object.fromEntries(
-                    Object.entries(next).map(([name, value]) => [name, String(value)]),
-                  ),
-                )
-              }
-            />
-          )}
-          {transformKind && transformInput && (
-            <TensorTransformView
-              kind={transformKind}
-              values={transformInput}
-              targets={transformTargets}
-              shape={inputShapes[transformInputName] ?? []}
-              t={t}
-              format={(value) => compact(locale, value)}
-            />
-          )}
-          {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
-            <div className="hint hint-open" key={key}>
-              <span className="hint-n">{i + 1}</span>
-              <div className="hint-text">
-                <MathText text={t(key)} />
-              </div>
-            </div>
-          ))}
-          {hintsShown < (level.hintsKeys?.length ?? 0) && (
-            <button className="hint-toggle" onClick={() => setHintsShown((n) => n + 1)}>
-              {t('ui.showHint', { n: hintsShown + 1 })}
+    <main className={`workspace ws-a${sandbox ? ' is-sandbox' : ''}`}>
+      {sandbox && sbTrain && (
+        <div className="sb-bar" role="toolbar" aria-label={t('sandbox.title')}>
+          {sandbox.barHead}
+          <span className="spacer" />
+          <SandboxTransport {...sbTrain} />
+          <span className="sb-bar-sep" aria-hidden="true" />
+          <button
+            className="btn btn-small sb-bar-btn"
+            aria-haspopup="dialog"
+            onClick={() => sandbox.openDialog('data')}
+          >
+            ▦ {t('sandbox.tab.data')}
+            <span className="tag">{sandbox.taskLabel}</span>
+          </button>
+          <button
+            className="btn btn-small sb-bar-btn"
+            aria-haspopup="dialog"
+            onClick={() => sandbox.openDialog('saves')}
+          >
+            ⛁ {t('sandbox.tab.saves')}
+          </button>
+        </div>
+      )}
+      {!sandbox && (
+        <div className="sb-bar lv-bar" role="toolbar" aria-label={t(level.titleKey)}>
+          <div className="sb-bar-head">
+            <button className="btn btn-small sb-bar-back" onClick={onExit} title={t('ui.levels')}>
+              ← {t('ui.back')}
             </button>
+            <span className="level-id lv-bar-code">{entry.code}</span>
+            <h1 className="lv-bar-title">{t(level.titleKey)}</h1>
+            {levelPassed && <span className="tag lv-bar-passed">✓ {t('ui.passed')}</span>}
+          </div>
+          <span className="spacer" />
+          {level.kind !== 'train' && (
+            <span className="label lv-bar-parts">
+              {t('ui.partCount', {
+                count: state.graph.nodes.filter((n) => !['input', 'output'].includes(n.component))
+                  .length,
+              })}
+            </span>
           )}
-          {(levelPapers[level.id] || levelLearningResources[level.id]) && (
-            <div className="further-reading">
-              {levelPapers[level.id] && (
-                <div className="papers">
-                  <h2 className="label">{t('ui.papers')}</h2>
-                  <ul>
-                    {levelPapers[level.id].map((paper) => (
-                      <li key={paper.url}>
-                        <a href={paper.url} target="_blank" rel="noreferrer">
-                          {paper.title}
-                        </a>
-                        <span className="paper-meta">
-                          {paper.authors} · {paper.year}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+
+          <div className="sb-bar-train">
+            <div
+              className="sb-transport lv-transport"
+              role="group"
+              aria-label={t(level.kind === 'train' ? 'ui.training' : 'ui.tests')}
+            >
+              {verify ? (
+                <button className="btn btn-primary sb-run" onClick={() => (skip.current = true)}>
+                  ⏭ {t('ui.skip')}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary sb-run ws-run"
+                  disabled={busy || running || !!inside.length}
+                  onClick={() => void run()}
+                >
+                  ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
+                </button>
               )}
-              {levelLearningResources[level.id] && (
-                <div className="learning-resources">
-                  <h2 className="label">{t('ui.learnMore')}</h2>
-                  <ul>
-                    {levelLearningResources[level.id].map((resource) => (
-                      <li key={resource.titleKey}>
-                        <a href={resource.url[locale]} target="_blank" rel="noreferrer">
-                          {t(resource.titleKey)}
-                        </a>
-                        <span className="paper-meta">{t(resource.descriptionKey)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              {level.kind === 'train' && !busy && (
+                <>
+                  <button
+                    className="btn"
+                    title={t('ui.stepHelp')}
+                    disabled={running || !!inside.length}
+                    onClick={() => void stepOnce()}
+                  >
+                    ⏯ {t('ui.stepOnce')}
+                  </button>
+                  {losses.length > 0 && (
+                    <button className="btn" onClick={resetSteps}>
+                      ↺ {t('ui.resetParams')}
+                    </button>
+                  )}
+                </>
+              )}
+              {busy && (
+                <>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const next = training === 'running' ? 'paused' : 'running';
+                      void (next === 'paused' ? client.current?.pause() : client.current?.resume())
+                        ?.then(() => setTraining(next))
+                        .catch(fail);
+                    }}
+                  >
+                    {t(training === 'running' ? 'ui.pause' : 'ui.resume')}
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() =>
+                      void client.current
+                        ?.stop()
+                        .then(() => setTraining('idle'))
+                        .catch(fail)
+                    }
+                  >
+                    {t('ui.stop')}
+                  </button>
+                </>
               )}
             </div>
+
+            {level.kind === 'train' && (
+              <div className="sb-progress" aria-hidden={!report}>
+                <div className="sb-progress-bar">
+                  <span
+                    style={{
+                      width: `${report ? Math.min(100, (100 * report.step) / (trainSteps ?? level.steps)) : 0}%`,
+                    }}
+                  />
+                </div>
+                <span className="sb-progress-text">
+                  {report
+                    ? t('sandbox.train.progress', {
+                        step: formatNumber(locale, report.step),
+                        total: formatNumber(locale, trainSteps ?? level.steps),
+                      })
+                    : t('sandbox.train.idle')}
+                </span>
+              </div>
+            )}
+          </div>
+          {levelPassed && onNext && (
+            <>
+              <span className="sb-bar-sep" aria-hidden="true" />
+              <button className="btn btn-small lv-next" onClick={onNext}>
+                {t('ui.nextLevel')} →
+              </button>
+            </>
           )}
         </div>
+      )}
+      <aside className="panel panel-left">
+        {sandbox ? null : (
+          <section className={`lv-task${taskOpen ? '' : ' is-closed'}`}>
+            <button
+              className="lv-task-head"
+              aria-expanded={taskOpen}
+              onClick={() => setTaskOpen((o) => !o)}
+            >
+              <span className="sb-strip-caret" aria-hidden="true">
+                {taskOpen ? '▾' : '▸'}
+              </span>
+              <span className="lv-task-title">{t('ui.task')}</span>
+              <span className="level-id">{`LEVEL ${entry.code}`}</span>
+            </button>
+            {taskOpen && (
+              <div className="section lv-task-body">
+                <div className="level-desc">
+                  <MathText text={t(level.descriptionKey)} />
+                </div>
+                <LevelFigure levelId={level.id} t={t} />
+                <TemporalBenchmarkEvidence levelId={level.id} locale={locale} t={t} />
+                {level.par !== undefined && <p className="hint">{t('ui.par', { n: level.par })}</p>}
+                {lossLandscape && (
+                  <LossLandscapePlot
+                    key={level.id}
+                    t={t}
+                    levelId={level.id}
+                    inputs={'invalid' in parsedInputs ? {} : parsedInputs}
+                    actual={outputActual}
+                    onPick={(changes) =>
+                      changeScalarInputs(
+                        Object.fromEntries(
+                          Object.entries(changes).map(([name, value]) => [name, String(value)]),
+                        ),
+                      )
+                    }
+                  />
+                )}
+                {plotInput && level.kind !== 'train' && (
+                  <FunctionPlot
+                    key={level.id}
+                    t={t}
+                    level={level}
+                    input={plotInput}
+                    x={'invalid' in parsedInputs ? undefined : parsedInputs[plotInput]?.[0]}
+                    inputs={'invalid' in parsedInputs ? {} : parsedInputs}
+                    actual={outputActual?.values[0]}
+                    onPick={(x) => changeScalarInput(plotInput, String(x))}
+                  />
+                )}
+                {surfaceInputs && level.kind !== 'train' && (
+                  <GradientSurfacePlot
+                    key={level.id}
+                    t={t}
+                    level={level}
+                    names={surfaceInputs}
+                    inputs={'invalid' in parsedInputs ? {} : parsedInputs}
+                    actual={outputActuals}
+                    onPick={(next) =>
+                      changeScalarInputs(
+                        Object.fromEntries(
+                          Object.entries(next).map(([name, value]) => [name, String(value)]),
+                        ),
+                      )
+                    }
+                  />
+                )}
+                {transformKind && transformInput && (
+                  <TensorTransformView
+                    kind={transformKind}
+                    values={transformInput}
+                    targets={transformTargets}
+                    shape={inputShapes[transformInputName] ?? []}
+                    t={t}
+                    format={(value) => compact(locale, value)}
+                  />
+                )}
+                {level.hintsKeys?.slice(0, hintsShown).map((key, i) => (
+                  <div className="hint hint-open" key={key}>
+                    <span className="hint-n">{i + 1}</span>
+                    <div className="hint-text">
+                      <MathText text={t(key)} />
+                    </div>
+                  </div>
+                ))}
+                {hintsShown < (level.hintsKeys?.length ?? 0) && (
+                  <button className="hint-toggle" onClick={() => setHintsShown((n) => n + 1)}>
+                    {t('ui.showHint', { n: hintsShown + 1 })}
+                  </button>
+                )}
+                {(levelPapers[level.id] || levelLearningResources[level.id]) && (
+                  <div className="further-reading">
+                    {levelPapers[level.id] && (
+                      <div className="papers">
+                        <h2 className="label">{t('ui.papers')}</h2>
+                        <ul>
+                          {levelPapers[level.id].map((paper) => (
+                            <li key={paper.url}>
+                              <a href={paper.url} target="_blank" rel="noreferrer">
+                                {paper.title}
+                              </a>
+                              <span className="paper-meta">
+                                {paper.authors} · {paper.year}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {levelLearningResources[level.id] && (
+                      <div className="learning-resources">
+                        <h2 className="label">{t('ui.learnMore')}</h2>
+                        <ul>
+                          {levelLearningResources[level.id].map((resource) => (
+                            <li key={resource.titleKey}>
+                              <a href={resource.url[locale]} target="_blank" rel="noreferrer">
+                                {t(resource.titleKey)}
+                              </a>
+                              <span className="paper-meta">{t(resource.descriptionKey)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
         <section className="section component-library">
           <h2 className="label">{t('ui.components')}</h2>
+          {sandbox && (
+            <MyComponents
+              t={t}
+              library={library}
+              disabled={!canEdit}
+              usage={(id) => componentUsage(progress, id)}
+              onPress={startPaletteDrag}
+              onActivate={activatePaletteComponent}
+              onRename={(id, name) =>
+                changeLibrary((p) => renameComponent(p, id, name, Date.now()))
+              }
+              onDelete={(id) => changeLibrary((p) => removeComponent(p, id))}
+              onExport={exportLibrary}
+              onImport={importLibrary}
+            />
+          )}
           <ComponentPalette
             entries={[
               ...primitives.map((name) => ({
@@ -1904,7 +2529,7 @@ function Editor({
             <p className="hint">{t('ui.expressionHelp')}</p>
           </form>
         )}
-        <p className="hint help">{t('ui.help')}</p>
+        <p className="hint help">{t(sandbox ? 'sandbox.help' : 'ui.help')}</p>
       </aside>
 
       <section className="canvas-wrap">
@@ -1917,6 +2542,7 @@ function Editor({
           }
           graph={display}
           selected={inside.length ? [] : state.selection}
+          marqueeOnDrag={!!sandbox && !inside.length}
           readonly={!canEdit}
           t={t}
           errors={inside.length ? [] : errors}
@@ -2048,6 +2674,63 @@ function Editor({
             </>
           )}
         </div>
+        {sandbox && canEdit && state.selection.length === 0 && (
+          <SelectHint t={t} quiet={selectHintSeen} />
+        )}
+        {sandbox && canEdit && state.selection.length > 0 && (
+          <div
+            className="canvas-actions"
+            role="toolbar"
+            aria-label={t('sandbox.components.actions')}
+          >
+            <span className="canvas-actions-count">
+              {t('sandbox.components.selected', {
+                count: state.selection.length,
+                n: state.selection.length,
+              })}
+            </span>
+            <span className="tool-sep" />
+            <button
+              className="tool-btn tool-wide tool-package"
+              title={
+                packable.length
+                  ? t('sandbox.components.packageHelp')
+                  : t('sandbox.select.packageIoOnly')
+              }
+              disabled={!packable.length}
+              onClick={startPackage}
+            >
+              ⊞ {t('sandbox.components.package')}
+            </button>
+            {selectedInstance && (
+              <>
+                <span className="tool-sep" />
+                <button
+                  className="tool-btn tool-wide"
+                  title={t('sandbox.components.openHelp')}
+                  onClick={() => inspect(selectedInstance)}
+                >
+                  {t('sandbox.components.open')}
+                </button>
+                <button
+                  className="tool-btn tool-wide"
+                  title={t('sandbox.components.ungroupHelp')}
+                  onClick={() => ungroup(selectedInstance.id)}
+                >
+                  ⇱ {t('sandbox.components.ungroup')}
+                </button>
+              </>
+            )}
+            <span className="tool-sep" />
+            <button
+              className="tool-btn tool-wide tool-clear"
+              title={t('sandbox.select.clearHelp')}
+              onClick={() => command({ type: 'select', ids: [], shift: false })}
+            >
+              {t('sandbox.select.clear')}
+            </button>
+          </div>
+        )}
         {inside.length > 0 && (
           <div className="canvas-crumb">
             <button className="btn" onClick={leaveInside}>
@@ -2071,560 +2754,745 @@ function Editor({
               }
             }}
           />
+        ) : sandbox ? (
+          bare &&
+          !inside.length &&
+          !busy && (
+            <div className="sb-canvas-empty" role="note">
+              <h2>{t('sandbox.canvas.title')}</h2>
+              <p>{t('sandbox.canvas.body')}</p>
+              <div className="btn-row">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    command({ type: 'replaceGraph', graph: sandbox.starter() });
+                    requestAnimationFrame(() => canvas.current?.fit());
+                  }}
+                >
+                  ✦ {t('sandbox.canvas.starter')}
+                </button>
+              </div>
+              <p className="hint">{t('sandbox.canvas.starterHint')}</p>
+            </div>
+          )
         ) : (
           untouched && !inside.length && <div className="canvas-hint">{t('ui.emptyCanvas')}</div>
         )}
+        {inspectorOpen && (
+          <FloatingInspector t={t} onClose={closeInspector}>
+            {inspector}
+          </FloatingInspector>
+        )}
       </section>
 
-      <aside className="panel panel-right">
-        {(error || state.error) && (
-          <p role="alert" className="status status-fail">
-            {graphDiagnostic(locale, state.graph, error ?? { key: state.error! }, registry)}
-          </p>
-        )}
-        {errors
-          .filter((e) => !e.node && !e.soft)
-          .map((e, i) => (
-            <p className="status status-fail" key={i}>
-              {e.message}
-            </p>
-          ))}
-        {selected && !inside.length && (
-          <SelectedNodeIO
-            t={t}
-            locale={locale}
-            node={selected}
-            ports={selectedPorts}
-            probes={selectedProbes}
-            errors={errors}
-          />
-        )}
-        {selected && canEdit && (
-          <Properties
-            key={selected.id}
-            node={selected}
-            connectedInputs={state.graph.edges
-              .filter((edge) => edge.to.node === selected.id)
-              .map((edge) => edge.to.port)}
-            wiredDimValues={reshapeWiredDimValues}
-            definition={registry.get(selected.component)}
-            t={t}
-            onChange={(attrs) =>
-              command({ type: 'setAttrs', id: selected.id, attrs, replace: true })
-            }
-          />
-        )}
-        {probing && (
-          <section className="section">
-            <h2 className="label">{t('ui.liveValues')}</h2>
-            {shapeGroups.length > 1 && (
-              <div className="case-switch">
-                <span className="label-inline">{t('ui.shapeGroup')}</span>
-                <div className="seg shape-switch" role="group" aria-label={t('ui.shapeGroup')}>
-                  {shapeGroups.map((g, i) => (
-                    <button
-                      key={i}
-                      className={`seg-btn${i === shapeGroup ? ' is-on' : ''}`}
-                      aria-pressed={i === shapeGroup}
-                      disabled={running || busy || !!verify}
-                      title={Object.entries(g.inputs)
-                        .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
-                        .join(', ')}
-                      onClick={() =>
-                        // The all-zero case says little about shapes; start on a lively one.
-                        selectCase(
-                          i,
-                          Math.max(
-                            0,
-                            g.cases.findIndex((c) =>
-                              Object.values(c.inputs).some((v) => v.some((x) => x !== 0)),
-                            ),
-                          ),
-                        )
-                      }
-                    >
-                      {Object.values(g.inputs)
-                        .map((shape) => (shape.length ? shape.join('×') : t('ui.scalar')))
-                        .join(' · ')}
-                    </button>
-                  ))}
-                </div>
+      {sbTrain && (
+        <section className={`sb-strip${sbChartsOpen ? '' : ' is-closed'}`}>
+          <button className="sb-strip-head" aria-expanded={sbChartsOpen} onClick={toggleCharts}>
+            <span className="sb-strip-caret" aria-hidden="true">
+              {sbChartsOpen ? '▾' : '▸'}
+            </span>
+            <span className="sb-strip-title">{t('sandbox.charts.title')}</span>
+            <span className="sb-strip-meta">
+              {t('ui.loss')} <b>{report ? compact(locale, report.loss) : '—'}</b>
+            </span>
+            {sbTrain.stepPhase && <span className="sb-strip-phase">{sbTrain.stepPhase}</span>}
+            <span className="spacer" />
+            <span className="sb-strip-toggle">
+              {t(sbChartsOpen ? 'sandbox.charts.collapse' : 'sandbox.charts.expand')}
+            </span>
+          </button>
+          {sbChartsOpen && (
+            <div className="sb-strip-body">
+              <SandboxCharts {...sbTrain} />
+              <div className="sb-card sb-card-settings">
+                <SandboxSettings {...sbTrain} />
               </div>
-            )}
-            {testCases.length > 0 && (
-              <div className="case-switch">
-                <span className="label-inline">{t('ui.inputCase')}</span>
-                {hasTensorInputs && (
-                  <button
-                    className="btn case-step"
-                    aria-label={t('ui.previousCase')}
-                    title={t('ui.previousCase')}
-                    disabled={running || busy || Number(inputCase) <= 0}
-                    onClick={() => selectInputCase(String(Number(inputCase) - 1))}
-                  >
-                    ‹
-                  </button>
-                )}
-                <select
-                  className="field"
-                  aria-label={t('ui.inputCase')}
-                  value={inputCase}
-                  disabled={running || busy}
-                  onChange={(e) => selectInputCase(e.target.value)}
-                >
-                  {!hasTensorInputs && <option value="">{t('ui.customInputs')}</option>}
-                  {testCases.map((c, i) => (
-                    <option key={`${i}:${c.id}`} value={i}>
-                      {t('ui.inputCaseNumber', { n: i + 1 })}
-                    </option>
-                  ))}
-                </select>
-                {hasTensorInputs && (
-                  <button
-                    className="btn case-step"
-                    aria-label={t('ui.nextCase')}
-                    title={t('ui.nextCase')}
-                    disabled={running || busy || Number(inputCase) >= testCases.length - 1}
-                    onClick={() => selectInputCase(String(Number(inputCase) + 1))}
-                  >
-                    ›
-                  </button>
-                )}
-              </div>
-            )}
-            {Object.entries(inputs).map(([name, value]) => (
-              <div
-                className={`probe-field${inputShapes[name].length > 0 ? ' is-tensor' : ''}`}
-                key={name}
-              >
-                <label htmlFor={`probe-${name}`} className="probe-name">
-                  {name} =
-                </label>
-                {inputShapes[name].length > 0 ? (
-                  <TensorGrid
-                    label={name}
-                    shape={inputShapes[name]}
-                    values={value.split(',').map(Number)}
-                    format={(n) => formatValue(locale, n)}
-                  />
-                ) : (
-                  <input
-                    id={`probe-${name}`}
-                    className="field"
-                    value={value}
-                    aria-invalid={'invalid' in parsedInputs && parsedInputs.invalid === name}
-                    spellCheck={false}
-                    disabled={!!verify}
-                    onChange={(e) => changeScalarInput(name, e.target.value)}
-                  />
-                )}
-                {inputShapes[name].length > 0 && (
-                  <span className="probe-shape">{shapeText(inputShapes[name], t)}</span>
-                )}
-                {inputShapes[name].length === 0 && (
-                  <input
-                    type="range"
-                    className="probe-slider"
-                    aria-label={name}
-                    min={-5}
-                    max={5}
-                    step={0.05}
-                    disabled={!!verify}
-                    value={Number(value) || 0}
-                    onChange={(e) => changeScalarInput(name, e.target.value)}
-                  />
-                )}
-              </div>
-            ))}
-            {Object.keys(levelOutputShapes(level)).map((name) => {
-              const outputValue = outputValues[name];
-              const actual = outputActuals[name];
-              const target = expected?.[name];
-              const displayName = translateValueName(t, name);
-              return (
-                <div className="probe-output-group" key={name}>
-                  <div className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}>
-                    <span className="probe-name">{displayName} =</span>
-                    {outputValue?.shape?.length ? (
-                      <TensorGrid
-                        label={displayName}
-                        shape={outputValue.shape}
-                        values={actual!.values}
-                        rows={name === level.interface.output ? outputAxes?.rows : undefined}
-                        cols={name === level.interface.output ? outputAxes?.cols : undefined}
-                        off={target && actual ? offIndices(level, actual, target) : undefined}
-                        format={(n) => formatValue(locale, n)}
-                      />
-                    ) : (
-                      <span className="mono">{outputValue?.text ?? '—'}</span>
-                    )}
-                  </div>
-                  {target && (
-                    <div
-                      className={`probe-out probe-expected${target.shape.length ? ' is-tensor' : ''}`}
-                    >
-                      <span className="probe-name">
-                        {t('ui.expected')} {displayName} =
-                      </span>
-                      {target.shape.length ? (
-                        <TensorGrid
-                          label={t('ui.expected')}
-                          shape={target.shape}
-                          values={target.values}
-                          rows={name === level.interface.output ? outputAxes?.rows : undefined}
-                          cols={name === level.interface.output ? outputAxes?.cols : undefined}
-                          format={(n) => formatValue(locale, n)}
-                        />
-                      ) : (
-                        <span className="mono" title={fullValues(target.values)}>
-                          {formatValue(locale, target.values[0])}
-                        </span>
-                      )}
-                      {actual && (
-                        <span
-                          className={`probe-verdict ${matchesExpected(level, actual, target) ? 'ok' : 'off'}`}
-                        >
-                          {matchesExpected(level, actual, target) ? '✓' : '≠'}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {level.outputNoteKey && (
-              <div className="probe-note">
-                <MathText text={t(level.outputNoteKey)} />
-              </div>
-            )}
-            <p className="hint">{t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}</p>
-          </section>
-        )}
-        <section className="section">
-          <div className="section-head">
-            <h2 className="label">{t(level.kind === 'train' ? 'ui.training' : 'ui.tests')}</h2>
-            {level.kind !== 'train' && (
-              <span className="label">
-                {t('ui.partCount', {
-                  count: state.graph.nodes.filter((n) => !['input', 'output'].includes(n.component))
-                    .length,
-                })}
-              </span>
-            )}
-          </div>
-          {level.kind === 'train' && (
-            <>
-              <TrainingLoop
-                t={t}
-                optimizer={optimizer ?? level.optimizer.kind}
-                learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
-                steps={formatNumber(locale, level.steps)}
-                resample={!!level.resample}
-                running={training === 'running'}
-              />
-              {level.data ? (
-                <DatasetCard t={t} data={level.data} inputs={level.interface.inputs} plot={plot} />
-              ) : (
-                plot && (
-                  <DataPlot
-                    data={plot}
-                    label={t(
-                      level.sequenceProbe ? `ui.probe.${level.sequenceProbe}.label` : 'ui.data',
-                    )}
-                    axisLabels={
-                      level.sequenceProbe
-                        ? {
-                            x: t(`ui.probe.${level.sequenceProbe}.x`),
-                            y: t(`ui.probe.${level.sequenceProbe}.y`),
-                          }
-                        : undefined
-                    }
-                  />
-                )
-              )}
-              {level.sequenceProbe && (
-                <>
-                  <p className="hint">{t(`ui.probe.${level.sequenceProbe}.help`)}</p>
-                  <SequenceTry
-                    key={level.id}
-                    t={t}
-                    kind={level.sequenceProbe}
-                    length={level.interface.inputs.x?.[1] ?? 1}
-                    refreshKey={[
-                      computationKey,
-                      report ? Math.floor(report.step / 25) : -1,
-                      training,
-                    ]}
-                    predict={(rows) => {
-                      const c = client.current;
-                      if (!c) return Promise.reject(new Error('no worker'));
-                      return c.predict(level.id, state.graph, rows);
-                    }}
-                  />
-                </>
-              )}
-              {optimizers && optimizers.length > 1 && (
-                <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
-                  <span className="label">{t('ui.optimizer')}</span>
-                  <div className="seg">
-                    {optimizers.map((kind) => (
-                      <button
-                        key={kind}
-                        role="radio"
-                        aria-checked={kind === optimizer}
-                        className={`seg-btn${kind === optimizer ? ' is-on' : ''}`}
-                        disabled={busy}
-                        onClick={() => setOptimizer(kind)}
-                      >
-                        {t(`ui.optimizer.${kind}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {tunable && learningRate !== undefined && (
-                <label className="lr-control">
-                  <span className="lr-control-head">
-                    <span className="label">{t('ui.learningRate')}</span>
-                    <output>η = {compact(locale, learningRate)}</output>
-                  </span>
-                  <input
-                    type="range"
-                    min={Math.log10(tunable.min)}
-                    max={Math.log10(tunable.max)}
-                    step={0.01}
-                    value={Math.log10(learningRate)}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setLearningRate(Number(Number(10 ** Number(e.target.value)).toPrecision(2)))
-                    }
-                  />
-                  <span className="lr-scale">
-                    <span>{compact(locale, tunable.min)}</span>
-                    <span>{compact(locale, tunable.max)}</span>
-                  </span>
-                </label>
-              )}
-              <LossChart
-                losses={losses}
-                threshold={threshold}
-                label={t('ui.loss')}
-                thresholdLabel={t('ui.threshold')}
-              />
-              <dl className="kv train-stats">
-                <dt>{t('ui.steps')}</dt>
-                <dd>{report ? formatNumber(locale, report.step) : '—'}</dd>
-                <dt>{t('ui.loss')}</dt>
-                <dd>{report ? compact(locale, report.loss) : '—'}</dd>
-                <dt>{t('ui.accuracy')}</dt>
-                <dd>
-                  {report?.accuracy !== undefined
-                    ? formatNumber(locale, report.accuracy, {
-                        style: 'percent',
-                        maximumFractionDigits: 1,
-                      })
-                    : '—'}
-                </dd>
-                <dt>{t('ui.backend')}</dt>
-                <dd>{t(`backend.${backend}`)}</dd>
-              </dl>
-              {level.generates && (
-                <div className="gen">
-                  <div className="gen-row">
-                    <label className="gen-prompt">
-                      <span className="label">{t('ui.prompt')}</span>
-                      <input
-                        className="field"
-                        value={gen.prompt}
-                        maxLength={40}
-                        spellCheck={false}
-                        onChange={(e) => setGen((g) => ({ ...g, prompt: e.target.value }))}
-                      />
-                    </label>
-                    <label className="gen-temp">
-                      <span className="label">
-                        {t('ui.temperature')} <output>{gen.temperature.toFixed(1)}</output>
-                      </span>
-                      <input
-                        type="range"
-                        min={0.2}
-                        max={2}
-                        step={0.1}
-                        value={gen.temperature}
-                        onChange={(e) =>
-                          setGen((g) => ({ ...g, temperature: Number(e.target.value) }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <button
-                    className="btn"
-                    disabled={busy || writing || !!inside.length}
-                    onClick={() => void write()}
-                  >
-                    ✎ {t('ui.generate')}
-                  </button>
-                  {gen.text !== undefined && (
-                    <pre className="gen-out" aria-live="polite">
-                      {/* Prompt echo stays tinted; the rest types out character by character. */}
-                      <span className="gen-out-prompt">
-                        {gen.text.slice(0, Math.min(gen.kept ?? 0, gen.visible ?? 0))}
-                      </span>
-                      {gen.text.slice(gen.kept ?? 0, gen.visible ?? 0)}
-                    </pre>
-                  )}
-                  <p className="hint">{t('ui.generateHelp')}</p>
-                </div>
-              )}
-              {stepFlow && (
-                <p className="step-phase">
-                  <span className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}>
-                    {t(`ui.stepPhase.${stepFlow.phase}`, {
-                      loss: compact(locale, stepFlow.trace.loss),
-                    })}
-                  </span>
-                </p>
-              )}
-            </>
+            </div>
           )}
-          <div className="btn-row">
-            {verify ? (
-              <button className="btn btn-primary" onClick={() => (skip.current = true)}>
-                ⏭ {t('ui.skip')}
-              </button>
+        </section>
+      )}
+      {!sandbox && (
+        <section
+          className={`sb-strip lv-strip${lvStripOpen ? '' : ' is-closed'}`}
+          style={
+            { '--lv-cols': level.kind === 'train' ? lvTrainCols : probing ? 2 : 1 } as CSSProperties
+          }
+        >
+          <button className="sb-strip-head" aria-expanded={lvStripOpen} onClick={toggleLevelStrip}>
+            <span className="sb-strip-caret" aria-hidden="true">
+              {lvStripOpen ? '▾' : '▸'}
+            </span>
+            <span className="sb-strip-title">
+              {t(
+                level.kind === 'train' ? 'ui.training' : probing ? 'ui.valuesAndTests' : 'ui.tests',
+              )}
+            </span>
+            {level.kind === 'train' ? (
+              <span className="sb-strip-meta">
+                {t('ui.loss')} <b>{report ? compact(locale, report.loss) : '—'}</b>
+              </span>
             ) : (
-              <button
-                className="btn btn-primary"
-                disabled={busy || running || !!inside.length}
-                onClick={() => void run()}
-              >
-                ▶ {t(level.kind === 'train' ? 'ui.start' : 'ui.runTests')}
-              </button>
-            )}
-            {level.kind === 'train' && !busy && (
-              <>
-                <button
-                  className="btn"
-                  title={t('ui.stepHelp')}
-                  disabled={running || !!inside.length}
-                  onClick={() => void stepOnce()}
-                >
-                  ⏯ {t('ui.stepOnce')}
-                </button>
-                {losses.length > 0 && (
-                  <button className="btn" onClick={resetSteps}>
-                    ↺ {t('ui.resetParams')}
-                  </button>
-                )}
-              </>
-            )}
-            {busy && (
-              <>
-                <button
-                  className="btn"
-                  onClick={() => {
-                    const next = training === 'running' ? 'paused' : 'running';
-                    void (next === 'paused' ? client.current?.pause() : client.current?.resume())
-                      ?.then(() => setTraining(next))
-                      .catch(fail);
-                  }}
-                >
-                  {t(training === 'running' ? 'ui.pause' : 'ui.resume')}
-                </button>
-                <button
-                  className="btn btn-danger"
-                  onClick={() =>
-                    void client.current
-                      ?.stop()
-                      .then(() => setTraining('idle'))
-                      .catch(fail)
-                  }
-                >
-                  {t('ui.stop')}
-                </button>
-              </>
-            )}
-          </div>
-          {shown && shownTests && (
-            <div className="results">
-              {verify ? (
-                <p className="status">
-                  {t('ui.verifying', { n: verify.index + 1, count: verify.result.tests.length })}
-                </p>
-              ) : shown.tests.length === 0 ? null : (
-                <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
+              shown &&
+              shown.tests.length > 0 &&
+              !verify && (
+                <span className={`sb-strip-meta ${shown.passed ? 'is-pass' : 'is-fail'}`}>
                   {shown.passed ? '✓ ' : '✗ '}
                   {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
                     passed: shown.tests.filter((r) => r.passed).length,
                     count: shown.tests.length,
                   })}
-                </p>
-              )}
-              {level.kind !== 'train' && (
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>{t('ui.expected')}</th>
-                        <th>{t('ui.actual')}</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shownTests.map((r, i) => (
-                        <tr
-                          // Fixed and generated cases can share an id; the row index keeps keys unique.
-                          key={`${i}:${r.id}`}
-                          className={
-                            verify && i === verify.index
-                              ? 'is-current'
-                              : !verify && testCaseLocation(shown.tests, i, shapeGroups)
-                                ? 'is-pickable'
+                </span>
+              )
+            )}
+            <span className="spacer" />
+            <span className="sb-strip-toggle">
+              {t(lvStripOpen ? 'sandbox.charts.collapse' : 'sandbox.charts.expand')}
+            </span>
+          </button>
+          {lvStripOpen && (
+            <div className="lv-strip-body">
+              {level.kind === 'train' ? (
+                <>
+                  {(level.data || plot || level.sequenceProbe) && (
+                    <div className="sb-card lv-card lv-card-data">
+                      {level.data ? (
+                        <DatasetCard
+                          t={t}
+                          data={level.data}
+                          inputs={level.interface.inputs}
+                          plot={plot}
+                        />
+                      ) : (
+                        plot && (
+                          <DataPlot
+                            data={plot}
+                            label={t(
+                              level.sequenceProbe
+                                ? `ui.probe.${level.sequenceProbe}.label`
+                                : 'ui.data',
+                            )}
+                            axisLabels={
+                              level.sequenceProbe
+                                ? {
+                                    x: t(`ui.probe.${level.sequenceProbe}.x`),
+                                    y: t(`ui.probe.${level.sequenceProbe}.y`),
+                                  }
                                 : undefined
-                          }
-                          title={
-                            !verify && testCaseLocation(shown.tests, i, shapeGroups)
-                              ? t('ui.showCase')
-                              : undefined
-                          }
-                          onClick={() => {
-                            const at = !verify && testCaseLocation(shown.tests, i, shapeGroups);
-                            if (at) selectCase(at.group, at.index);
-                          }}
+                            }
+                          />
+                        )
+                      )}
+                      {level.sequenceProbe && (
+                        <>
+                          <p className="hint">{t(`ui.probe.${level.sequenceProbe}.help`)}</p>
+                          <SequenceTry
+                            key={level.id}
+                            t={t}
+                            kind={level.sequenceProbe}
+                            length={level.interface.inputs.x?.[1] ?? 1}
+                            refreshKey={[
+                              computationKey,
+                              report ? Math.floor(report.step / 25) : -1,
+                              training,
+                            ]}
+                            predict={(rows) => {
+                              const c = client.current;
+                              if (!c) return Promise.reject(new Error('no worker'));
+                              return c.predict(level.id, state.graph, rows);
+                            }}
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <div className="sb-card lv-card lv-card-loss">
+                    <LossChart
+                      losses={losses}
+                      threshold={threshold}
+                      label={t('ui.loss')}
+                      thresholdLabel={t('ui.threshold')}
+                    />
+                    <dl className="kv train-stats">
+                      <dt>{t('ui.steps')}</dt>
+                      <dd>{report ? formatNumber(locale, report.step) : '—'}</dd>
+                      <dt>{t('ui.loss')}</dt>
+                      <dd>{report ? compact(locale, report.loss) : '—'}</dd>
+                      <dt>{t('ui.accuracy')}</dt>
+                      <dd>
+                        {report?.accuracy !== undefined
+                          ? formatNumber(locale, report.accuracy, {
+                              style: 'percent',
+                              maximumFractionDigits: 1,
+                            })
+                          : '—'}
+                      </dd>
+                      <dt>{t('ui.backend')}</dt>
+                      <dd>{t(`backend.${backend}`)}</dd>
+                    </dl>
+                    {stepFlow && (
+                      <p className="step-phase">
+                        <span
+                          className={`is-${stepFlow.phase === 'backward' ? 'backward' : 'forward'}`}
                         >
-                          <td>{i + 1}</td>
-                          <td title={fullValues(r.expected)}>{listText(locale, r.expected, 2)}</td>
-                          <td
-                            title={fullValues(r.actual)}
-                            className={r.errorKey ? 'cell-error' : undefined}
-                          >
-                            {r.errorKey
-                              ? graphDiagnostic(locale, state.graph, {
-                                  key: r.errorKey,
-                                  params: r.errorParams,
-                                })
-                              : listText(locale, r.actual, 2)}
-                          </td>
-                          <td className={r.passed ? 'ok' : 'err'}>
-                            {verify && i === verify.index && r.passed ? '·' : r.passed ? '✓' : '✗'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                          {t(`ui.stepPhase.${stepFlow.phase}`, {
+                            loss: compact(locale, stepFlow.trace.loss),
+                          })}
+                        </span>
+                      </p>
+                    )}
+                    {shown && shownTests && (
+                      <div className="results">
+                        {verify ? (
+                          <p className="status">
+                            {t('ui.verifying', {
+                              n: verify.index + 1,
+                              count: verify.result.tests.length,
+                            })}
+                          </p>
+                        ) : sandbox || shown.tests.length === 0 ? null : (
+                          <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
+                            {shown.passed ? '✓ ' : '✗ '}
+                            {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
+                              passed: shown.tests.filter((r) => r.passed).length,
+                              count: shown.tests.length,
+                            })}
+                          </p>
+                        )}
+                        {level.kind !== 'train' && (
+                          <div className="table-scroll">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>{t('ui.expected')}</th>
+                                  <th>{t('ui.actual')}</th>
+                                  <th />
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {shownTests.map((r, i) => (
+                                  <tr
+                                    // Fixed and generated cases can share an id; the row index keeps keys unique.
+                                    key={`${i}:${r.id}`}
+                                    className={
+                                      verify && i === verify.index
+                                        ? 'is-current'
+                                        : !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                          ? 'is-pickable'
+                                          : undefined
+                                    }
+                                    title={
+                                      !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                        ? t('ui.showCase')
+                                        : undefined
+                                    }
+                                    onClick={() => {
+                                      const at =
+                                        !verify && testCaseLocation(shown.tests, i, shapeGroups);
+                                      if (at) selectCase(at.group, at.index);
+                                    }}
+                                  >
+                                    <td>{i + 1}</td>
+                                    <td title={fullValues(r.expected)}>
+                                      {listText(locale, r.expected, 2)}
+                                    </td>
+                                    <td
+                                      title={fullValues(r.actual)}
+                                      className={r.errorKey ? 'cell-error' : undefined}
+                                    >
+                                      {r.errorKey
+                                        ? graphDiagnostic(locale, state.graph, {
+                                            key: r.errorKey,
+                                            params: r.errorParams,
+                                          })
+                                        : listText(locale, r.actual, 2)}
+                                    </td>
+                                    <td className={r.passed ? 'ok' : 'err'}>
+                                      {verify && i === verify.index && r.passed
+                                        ? '·'
+                                        : r.passed
+                                          ? '✓'
+                                          : '✗'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="sb-card lv-card lv-card-settings">
+                    {optimizers && optimizers.length > 1 && (
+                      <div className="opt-switch" role="radiogroup" aria-label={t('ui.optimizer')}>
+                        <span className="label">{t('ui.optimizer')}</span>
+                        <div className="seg">
+                          {optimizers.map((kind) => (
+                            <button
+                              key={kind}
+                              role="radio"
+                              aria-checked={kind === optimizer}
+                              className={`seg-btn${kind === optimizer ? ' is-on' : ''}`}
+                              disabled={busy}
+                              onClick={() => setOptimizer(kind)}
+                            >
+                              {t(`ui.optimizer.${kind}`)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {tunable && learningRate !== undefined && (
+                      <label className="lr-control">
+                        <span className="lr-control-head">
+                          <span className="label">{t('ui.learningRate')}</span>
+                          <output>η = {compact(locale, learningRate)}</output>
+                        </span>
+                        <input
+                          type="range"
+                          min={Math.log10(tunable.min)}
+                          max={Math.log10(tunable.max)}
+                          step={0.01}
+                          value={Math.log10(learningRate)}
+                          disabled={busy}
+                          onChange={(e) =>
+                            setLearningRate(
+                              Number(Number(10 ** Number(e.target.value)).toPrecision(2)),
+                            )
+                          }
+                        />
+                        <span className="lr-scale">
+                          <span>{compact(locale, tunable.min)}</span>
+                          <span>{compact(locale, tunable.max)}</span>
+                        </span>
+                      </label>
+                    )}
+                    {stepsTunable && trainSteps !== undefined && (
+                      <label className="steps-control">
+                        <span className="lr-control-head">
+                          <span className="label">{t('ui.trainSteps')}</span>
+                          <output>{formatNumber(locale, trainSteps)}</output>
+                        </span>
+                        <input
+                          className="field"
+                          type="number"
+                          min={stepsTunable.min}
+                          max={stepsTunable.max}
+                          step={1}
+                          value={trainSteps}
+                          disabled={busy}
+                          onChange={(e) => setTrainSteps(Number(e.target.value))}
+                        />
+                        <span className="lr-scale">
+                          <span>{formatNumber(locale, stepsTunable.min)}</span>
+                          <span>{formatNumber(locale, stepsTunable.max)}</span>
+                        </span>
+                      </label>
+                    )}
+                    <TrainingLoop
+                      t={t}
+                      optimizer={optimizer ?? level.optimizer.kind}
+                      learningRate={compact(locale, learningRate ?? level.optimizer.learningRate)}
+                      steps={formatNumber(locale, trainSteps ?? level.steps)}
+                      resample={!!level.resample}
+                      running={training === 'running'}
+                    />
+                  </div>
+                  {level.generates && (
+                    <div className="sb-card lv-card lv-card-gen">
+                      <div className="gen">
+                        <div className="gen-row">
+                          <label className="gen-prompt">
+                            <span className="label">{t('ui.prompt')}</span>
+                            <input
+                              className="field"
+                              value={gen.prompt}
+                              maxLength={40}
+                              spellCheck={false}
+                              onChange={(e) => setGen((g) => ({ ...g, prompt: e.target.value }))}
+                            />
+                          </label>
+                          <label className="gen-temp">
+                            <span className="label">
+                              {t('ui.temperature')} <output>{gen.temperature.toFixed(1)}</output>
+                            </span>
+                            <input
+                              type="range"
+                              min={0.2}
+                              max={2}
+                              step={0.1}
+                              value={gen.temperature}
+                              onChange={(e) =>
+                                setGen((g) => ({ ...g, temperature: Number(e.target.value) }))
+                              }
+                            />
+                          </label>
+                        </div>
+                        <button
+                          className="btn"
+                          disabled={busy || writing || !!inside.length}
+                          onClick={() => void write()}
+                        >
+                          ✎ {t('ui.generate')}
+                        </button>
+                        {gen.text !== undefined && (
+                          <pre className="gen-out" aria-live="polite">
+                            {/* Prompt echo stays tinted; the rest types out character by character. */}
+                            <span className="gen-out-prompt">
+                              {gen.text.slice(0, Math.min(gen.kept ?? 0, gen.visible ?? 0))}
+                            </span>
+                            {gen.text.slice(gen.kept ?? 0, gen.visible ?? 0)}
+                          </pre>
+                        )}
+                        <p className="hint">{t('ui.generateHelp')}</p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {probing && (
+                    <div className="sb-card lv-card lv-card-probe">
+                      {probing && (
+                        <section className="section">
+                          <h2 className="label">{t('ui.liveValues')}</h2>
+                          {shapeGroups.length > 1 && (
+                            <div className="case-switch">
+                              <span className="label-inline">{t('ui.shapeGroup')}</span>
+                              <div
+                                className="seg shape-switch"
+                                role="group"
+                                aria-label={t('ui.shapeGroup')}
+                              >
+                                {shapeGroups.map((g, i) => (
+                                  <button
+                                    key={i}
+                                    className={`seg-btn${i === shapeGroup ? ' is-on' : ''}`}
+                                    aria-pressed={i === shapeGroup}
+                                    disabled={running || busy || !!verify}
+                                    title={Object.entries(g.inputs)
+                                      .map(([name, shape]) => `${name} ${shapeText(shape, t)}`)
+                                      .join(', ')}
+                                    onClick={() =>
+                                      // The all-zero case says little about shapes; start on a lively one.
+                                      selectCase(
+                                        i,
+                                        Math.max(
+                                          0,
+                                          g.cases.findIndex((c) =>
+                                            Object.values(c.inputs).some((v) =>
+                                              v.some((x) => x !== 0),
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {Object.values(g.inputs)
+                                      .map((shape) =>
+                                        shape.length ? shape.join('×') : t('ui.scalar'),
+                                      )
+                                      .join(' · ')}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {testCases.length > 0 && (
+                            <div className="case-switch">
+                              <span className="label-inline">{t('ui.inputCase')}</span>
+                              {hasTensorInputs && (
+                                <button
+                                  className="btn case-step"
+                                  aria-label={t('ui.previousCase')}
+                                  title={t('ui.previousCase')}
+                                  disabled={running || busy || Number(inputCase) <= 0}
+                                  onClick={() => selectInputCase(String(Number(inputCase) - 1))}
+                                >
+                                  ‹
+                                </button>
+                              )}
+                              <select
+                                className="field"
+                                aria-label={t('ui.inputCase')}
+                                value={inputCase}
+                                disabled={running || busy}
+                                onChange={(e) => selectInputCase(e.target.value)}
+                              >
+                                {!hasTensorInputs && (
+                                  <option value="">{t('ui.customInputs')}</option>
+                                )}
+                                {testCases.map((c, i) => (
+                                  <option key={`${i}:${c.id}`} value={i}>
+                                    {t('ui.inputCaseNumber', { n: i + 1 })}
+                                  </option>
+                                ))}
+                              </select>
+                              {hasTensorInputs && (
+                                <button
+                                  className="btn case-step"
+                                  aria-label={t('ui.nextCase')}
+                                  title={t('ui.nextCase')}
+                                  disabled={
+                                    running || busy || Number(inputCase) >= testCases.length - 1
+                                  }
+                                  onClick={() => selectInputCase(String(Number(inputCase) + 1))}
+                                >
+                                  ›
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {Object.entries(inputs).map(([name, value]) => (
+                            <div
+                              className={`probe-field${inputShapes[name].length > 0 ? ' is-tensor' : ''}`}
+                              key={name}
+                            >
+                              <label htmlFor={`probe-${name}`} className="probe-name">
+                                {name} =
+                              </label>
+                              {inputShapes[name].length > 0 ? (
+                                <TensorGrid
+                                  label={name}
+                                  shape={inputShapes[name]}
+                                  values={value.split(',').map(Number)}
+                                  format={(n) => formatValue(locale, n)}
+                                />
+                              ) : (
+                                <input
+                                  id={`probe-${name}`}
+                                  className="field"
+                                  value={value}
+                                  aria-invalid={
+                                    'invalid' in parsedInputs && parsedInputs.invalid === name
+                                  }
+                                  spellCheck={false}
+                                  disabled={!!verify}
+                                  onChange={(e) => changeScalarInput(name, e.target.value)}
+                                />
+                              )}
+                              {inputShapes[name].length > 0 && (
+                                <span className="probe-shape">
+                                  {shapeText(inputShapes[name], t)}
+                                </span>
+                              )}
+                              {inputShapes[name].length === 0 && (
+                                <input
+                                  type="range"
+                                  className="probe-slider"
+                                  aria-label={name}
+                                  min={-5}
+                                  max={5}
+                                  step={0.05}
+                                  disabled={!!verify}
+                                  value={Number(value) || 0}
+                                  onChange={(e) => changeScalarInput(name, e.target.value)}
+                                />
+                              )}
+                            </div>
+                          ))}
+                          {Object.keys(levelOutputShapes(level)).map((name) => {
+                            const outputValue = outputValues[name];
+                            const actual = outputActuals[name];
+                            const target = expected?.[name];
+                            const displayName = translateValueName(t, name);
+                            return (
+                              <div className="probe-output-group" key={name}>
+                                <div
+                                  className={`probe-out${outputValue?.shape?.length ? ' is-tensor' : ''}`}
+                                >
+                                  <span className="probe-name">{displayName} =</span>
+                                  {outputValue?.shape?.length ? (
+                                    <TensorGrid
+                                      label={displayName}
+                                      shape={outputValue.shape}
+                                      values={actual!.values}
+                                      rows={
+                                        name === level.interface.output
+                                          ? outputAxes?.rows
+                                          : undefined
+                                      }
+                                      cols={
+                                        name === level.interface.output
+                                          ? outputAxes?.cols
+                                          : undefined
+                                      }
+                                      off={
+                                        target && actual
+                                          ? offIndices(level, actual, target)
+                                          : undefined
+                                      }
+                                      format={(n) => formatValue(locale, n)}
+                                    />
+                                  ) : (
+                                    <span className="mono">{outputValue?.text ?? '—'}</span>
+                                  )}
+                                </div>
+                                {target && (
+                                  <div
+                                    className={`probe-out probe-expected${target.shape.length ? ' is-tensor' : ''}`}
+                                  >
+                                    <span className="probe-name">
+                                      {t('ui.expected')} {displayName} =
+                                    </span>
+                                    {target.shape.length ? (
+                                      <TensorGrid
+                                        label={t('ui.expected')}
+                                        shape={target.shape}
+                                        values={target.values}
+                                        rows={
+                                          name === level.interface.output
+                                            ? outputAxes?.rows
+                                            : undefined
+                                        }
+                                        cols={
+                                          name === level.interface.output
+                                            ? outputAxes?.cols
+                                            : undefined
+                                        }
+                                        format={(n) => formatValue(locale, n)}
+                                      />
+                                    ) : (
+                                      <span className="mono" title={fullValues(target.values)}>
+                                        {formatValue(locale, target.values[0])}
+                                      </span>
+                                    )}
+                                    {actual && (
+                                      <span
+                                        className={`probe-verdict ${matchesExpected(level, actual, target) ? 'ok' : 'off'}`}
+                                      >
+                                        {matchesExpected(level, actual, target) ? '✓' : '≠'}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {level.outputNoteKey && (
+                            <div className="probe-note">
+                              <MathText text={t(level.outputNoteKey)} />
+                            </div>
+                          )}
+                          <p className="hint">
+                            {t(hasTensorInputs ? 'ui.tensorProbeHelp' : 'ui.probeHelp')}
+                          </p>
+                        </section>
+                      )}
+                    </div>
+                  )}
+                  <div className="sb-card lv-card lv-card-tests">
+                    <h2 className="label">{t('ui.tests')}</h2>
+                    {shown && shownTests ? (
+                      <div className="results">
+                        {verify ? (
+                          <p className="status">
+                            {t('ui.verifying', {
+                              n: verify.index + 1,
+                              count: verify.result.tests.length,
+                            })}
+                          </p>
+                        ) : sandbox || shown.tests.length === 0 ? null : (
+                          <p className={`status ${shown.passed ? 'status-pass' : 'status-fail'}`}>
+                            {shown.passed ? '✓ ' : '✗ '}
+                            {t(shown.passed ? 'ui.passedCount' : 'ui.failedCount', {
+                              passed: shown.tests.filter((r) => r.passed).length,
+                              count: shown.tests.length,
+                            })}
+                          </p>
+                        )}
+                        {
+                          <div className="table-scroll">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>{t('ui.expected')}</th>
+                                  <th>{t('ui.actual')}</th>
+                                  <th />
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {shownTests.map((r, i) => (
+                                  <tr
+                                    // Fixed and generated cases can share an id; the row index keeps keys unique.
+                                    key={`${i}:${r.id}`}
+                                    className={
+                                      verify && i === verify.index
+                                        ? 'is-current'
+                                        : !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                          ? 'is-pickable'
+                                          : undefined
+                                    }
+                                    title={
+                                      !verify && testCaseLocation(shown.tests, i, shapeGroups)
+                                        ? t('ui.showCase')
+                                        : undefined
+                                    }
+                                    onClick={() => {
+                                      const at =
+                                        !verify && testCaseLocation(shown.tests, i, shapeGroups);
+                                      if (at) selectCase(at.group, at.index);
+                                    }}
+                                  >
+                                    <td>{i + 1}</td>
+                                    <td title={fullValues(r.expected)}>
+                                      {listText(locale, r.expected, 2)}
+                                    </td>
+                                    <td
+                                      title={fullValues(r.actual)}
+                                      className={r.errorKey ? 'cell-error' : undefined}
+                                    >
+                                      {r.errorKey
+                                        ? graphDiagnostic(locale, state.graph, {
+                                            key: r.errorKey,
+                                            params: r.errorParams,
+                                          })
+                                        : listText(locale, r.actual, 2)}
+                                    </td>
+                                    <td className={r.passed ? 'ok' : 'err'}>
+                                      {verify && i === verify.index && r.passed
+                                        ? '·'
+                                        : r.passed
+                                          ? '✓'
+                                          : '✗'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                      </div>
+                    ) : (
+                      <p className="lv-empty">{t('ui.testsEmpty')}</p>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
         </section>
-      </aside>
+      )}
 
       {ghost && (
         <div className="palette-ghost" style={{ left: ghost.x, top: ghost.y }}>
-          <span className="sym">{SYMBOLS[ghost.component] ?? ''}</span>
+          <span className="sym">{symbolOf(ghost.component) ?? ''}</span>
           {t(`components.${ghost.component}`)}
         </div>
+      )}
+
+      {packaging && (
+        <PackageDialog
+          t={t}
+          graph={state.graph}
+          plan={packaging.plan}
+          defaultName={packaging.name}
+          shapeOf={portShape}
+          onCancel={() => setPackaging(undefined)}
+          onConfirm={confirmPackage}
+        />
       )}
 
       {modal && result && (

@@ -69,8 +69,8 @@ export const SYMBOLS: Readonly<Record<string, string>> = {
  * a circuit shows at a glance where the arithmetic, activations, tensor plumbing, derivatives,
  * learning parts and attention sit. Inputs, outputs and unknown names have no family.
  */
-export type Category = 'op' | 'act' | 'tensor' | 'grad' | 'learn' | 'attn';
-const FAMILIES: Record<Category, readonly string[]> = {
+export type Category = 'op' | 'act' | 'tensor' | 'grad' | 'learn' | 'attn' | 'custom';
+const FAMILIES: Record<Exclude<Category, 'custom'>, readonly string[]> = {
   op: [
     'const',
     'add',
@@ -126,7 +126,13 @@ const FAMILIES: Record<Category, readonly string[]> = {
 const CATEGORY = new Map(
   Object.entries(FAMILIES).flatMap(([cat, names]) => names.map((n) => [n, cat as Category])),
 );
-export const categoryOf = (component: string): Category | undefined => CATEGORY.get(component);
+/** Sandbox components (`my:<id>`) are their own family: the player's parts. */
+const CUSTOM_PREFIX = 'my:';
+export const categoryOf = (component: string): Category | undefined =>
+  CATEGORY.get(component) ?? (component.startsWith(CUSTOM_PREFIX) ? 'custom' : undefined);
+/** The glyph for a component; a packaged sandbox component draws as a framed group. */
+export const symbolOf = (component: string): string | undefined =>
+  SYMBOLS[component] ?? (component.startsWith(CUSTOM_PREFIX) ? '⊞' : undefined);
 
 /* Node geometry. Ports, wires and the CSS in theme.css all derive from these numbers. */
 export const NODE_W = 150;

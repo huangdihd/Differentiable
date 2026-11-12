@@ -58,13 +58,9 @@ export async function trainingPlot(
   const probes = new Map<string, Tensor>();
   const outputs = plan.execute(batch.inputs, probes);
   try {
-    const edge = regression
-      ? graph.edges.find(
-          (e) =>
-            e.to.port === 'p' && graph.nodes.find((n) => n.id === e.to.node)?.component === 'mse',
-        )
-      : undefined;
-    const prediction = regression ? edge && probes.get(edge.from.node) : outputs[output];
+    const prediction = regression
+      ? lossPortPrediction(graph, probes, 'mse')
+      : classPrediction(graph, outputs, probes, output);
     if (!prediction) return undefined;
     const xs = Array.from(await x.read());
     const ts = Array.from(await target.read());
@@ -88,7 +84,9 @@ export async function trainingPlot(
       xs[2 * i],
       xs[2 * i + 1],
     ]);
-    const field = await fieldGate(() => classField(plan, batch.inputs, x, points, output, c));
+    const field = await fieldGate(() =>
+      classField(graph, plan, batch.inputs, x, points, output, c),
+    );
     return {
       kind: 'classes',
       points,
@@ -112,12 +110,41 @@ function padded(values: number[]): [number, number] {
   return [lo - pad, hi + pad];
 }
 
+/** Tensor feeding a loss component's `p` port (mse / cross_entropy). */
+function lossPortPrediction(
+  graph: GraphJSON,
+  probes: Map<string, Tensor>,
+  component: string,
+): Tensor | undefined {
+  const edge = graph.edges.find(
+    (e) =>
+      e.to.port === 'p' && graph.nodes.find((n) => n.id === e.to.node)?.component === component,
+  );
+  return edge ? probes.get(edge.from.node) : undefined;
+}
+
+/**
+ * Class probabilities for the scatter plot: the named output when it is already [N,C]
+ * (curriculum classification), otherwise whatever feeds a cross_entropy `p` port (sandbox).
+ */
+function classPrediction(
+  graph: GraphJSON,
+  outputs: ReturnType<GraphPlan['execute']>,
+  probes: Map<string, Tensor>,
+  output: string,
+): Tensor | undefined {
+  const direct = outputs[output];
+  if (direct && direct.shape.length === 2) return direct;
+  return lossPortPrediction(graph, probes, 'cross_entropy');
+}
+
 /**
  * Evaluate the model over a grid of the plane. The plan was compiled for the dataset's batch
  * size, so the grid runs in chunks of exactly n rows (the last chunk padded); other inputs
- * (targets) are passed through unchanged and only the model output is read.
+ * (targets) are passed through unchanged and only the class probabilities are read.
  */
 async function classField(
+  graph: GraphJSON,
   plan: GraphPlan,
   inputs: Record<string, Tensor>,
   x: Tensor,
@@ -135,7 +162,11 @@ async function classField(
   ];
   // Launch every chunk first, then read them together: readbacks overlap instead of
   // each waiting for the GPU in turn.
-  const runs: { chunk: Tensor; outputs: ReturnType<GraphPlan['execute']> }[] = [];
+  const runs: {
+    chunk: Tensor;
+    outputs: ReturnType<GraphPlan['execute']>;
+    probes: Map<string, Tensor>;
+  }[] = [];
   const result: number[] = [],
     margin: number[] = [];
   try {
@@ -147,9 +178,10 @@ async function classField(
         data[2 * r + 1] = b;
       }
       const chunk = tensor(data, [n, 2], x.backend);
-      runs.push({ chunk, outputs: plan.execute({ ...inputs, x: chunk }, new Map()) });
+      const probes = new Map<string, Tensor>();
+      runs.push({ chunk, probes, outputs: plan.execute({ ...inputs, x: chunk }, probes) });
     }
-    const ys = runs.map((run) => run.outputs[output]);
+    const ys = runs.map((run) => classPrediction(graph, run.outputs, run.probes, output));
     if (ys.some((y) => !y || y.shape.length !== 2 || y.shape[0] !== n || y.shape[1] !== classes))
       return undefined;
     const all = await Promise.all(ys.map((y) => y!.read()));

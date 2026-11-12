@@ -6,6 +6,7 @@ import type { buildBackwardGraph, traceBackward } from '../engine/backward-graph
 import type { GraphEndpoint, GraphJSON, ShapePorts } from '../engine/graph';
 import type { GraphMetrics, LevelResult, Progress } from '../engine/levels';
 import type { OptimizerOptions, TrainingReport, TrainingSession } from '../engine/training';
+import type { SandboxDataset, WeightsFile } from '../sandbox/slots';
 
 export interface WorkerError {
   key: string;
@@ -17,6 +18,12 @@ export type BackendPreference = 'auto' | 'cpu' | 'webgpu';
 export type Command =
   | { type: 'init'; backend?: BackendPreference }
   | { type: 'syncProgress'; progress: Progress }
+  /** The open sandbox slot (or none): its data and any imported starting weights. */
+  | {
+      type: 'setSandbox';
+      sandbox: { slotId: string; dataset: SandboxDataset; weights?: WeightsFile } | null;
+    }
+  | { type: 'exportWeights'; levelId: string; graph: GraphJSON }
   | { type: 'compile'; levelId: string; graph: GraphJSON }
   | {
       type: 'probe';
@@ -41,6 +48,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'start';
@@ -48,6 +56,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'trainStep';
@@ -55,6 +64,7 @@ export type Command =
       graph: GraphJSON;
       learningRate?: number;
       optimizer?: OptimizerOptions['kind'];
+      steps?: number;
     }
   | {
       type: 'generate';
@@ -75,6 +85,11 @@ export type WorkerRequest = Command & { requestId: number; revision: number };
 export interface ReplyData {
   init: { backend: 'cpu' | 'webgpu'; fallback?: WorkerError };
   syncProgress: { state: 'synced' };
+  setSandbox: { state: 'synced' };
+  exportWeights: {
+    parameters: Record<string, { shape: number[]; values: number[] }>;
+    state: 'current' | 'trained';
+  };
   compile: { outputShapes: ShapePorts; metrics: GraphMetrics; diagnostics: WorkerError[] };
   probe: { shape: readonly number[]; values: number[] };
   backward: {

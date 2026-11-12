@@ -34,7 +34,10 @@ export default function LossChart({
       const mono = color('--mono');
       const pad = { l: 34, r: 8, t: 10, b: 18 };
       const values = losses.filter((v) => Number.isFinite(v) && v > 0);
-      const all = threshold ? [...values, threshold] : values;
+      // Sandbox (and any level without a pass line) may pass -Infinity; skip the dashed line.
+      const passLine =
+        threshold !== undefined && Number.isFinite(threshold) && threshold > 0 ? threshold : undefined;
+      const all = passLine !== undefined ? [...values, passLine] : values;
       const hi = Math.ceil(Math.log10(Math.max(...all, 1)));
       const lo = Math.floor(Math.log10(Math.min(...all, 0.1)));
       const sy = (v: number) =>
@@ -53,17 +56,17 @@ export default function LossChart({
         g.fillStyle = color('--faint');
         g.fillText(e === 0 ? '1' : `1e${e}`, 2, sy(10 ** e) + 3);
       }
-      if (threshold) {
+      if (passLine !== undefined) {
         g.setLineDash([4, 4]);
         g.strokeStyle = color('--good');
         g.beginPath();
-        g.moveTo(pad.l, sy(threshold));
-        g.lineTo(w - pad.r, sy(threshold));
+        g.moveTo(pad.l, sy(passLine));
+        g.lineTo(w - pad.r, sy(passLine));
         g.stroke();
         g.setLineDash([]);
         g.fillStyle = color('--good');
         g.textAlign = 'right';
-        g.fillText(thresholdLabel, w - pad.r, sy(threshold) - 4);
+        g.fillText(thresholdLabel, w - pad.r, sy(passLine) - 4);
         g.textAlign = 'left';
       }
       if (!values.length) return;

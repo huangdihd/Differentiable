@@ -15,7 +15,9 @@ import { xorLevel, xorSolution } from './examples';
 import { referenceRegistry } from './level-helpers';
 
 /** The road from a + b through time-series prediction and Attention to GPT. */
-export const CHAPTERS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+export const CHAPTERS = [0, 1, 2, 3, 4, 5, 6, 7, 8] as const;
+/** Final road chapter: sandbox mode (not a playable level catalog entry). */
+export const SANDBOX_CHAPTER = 8;
 
 export interface CatalogEntry {
   level: Level;

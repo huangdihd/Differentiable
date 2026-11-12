@@ -3,6 +3,10 @@
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 import { defineConfig, configDefaults } from 'vitest/config';
 export default defineConfig({
+  server: {
+    // Tailscale Serve hostname used for HTTPS preview on the box.
+    allowedHosts: ['grokbot-differentiable.tailff86f.ts.net', '.ts.net'],
+  },
   test: {
     pool: 'threads',
     fileParallelism: false,

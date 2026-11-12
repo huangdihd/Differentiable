@@ -28,6 +28,7 @@ import {
   type Level,
   type LevelResult,
   type TrainLevel,
+  trainingSteps,
 } from '../engine/levels';
 import { Random } from '../engine/random';
 import { TrainingPlotRefresh, sequencePlot, trainingPlot } from './training-plot';
@@ -45,6 +46,8 @@ import { VOCAB, encode, decode } from '../levels/corpus';
 import { availableComponents, buildPlayerRegistry } from '../levels/registry';
 import type { WorkerError, WorkerRequest, WorkerResponse, ReplyData } from './protocol';
 import { workerError } from './error';
+import { buildSandboxLevel } from '../sandbox/level';
+import type { WeightsFile } from '../sandbox/slots';
 
 export { workerError } from './error';
 
@@ -76,6 +79,43 @@ export class WorkerRuntime {
   private queue: Promise<void> = Promise.resolve();
   private run?: Run;
   private stepRun?: StepRun;
+  /** The open sandbox slot as a level, plus the weights its training starts from. */
+  private sandbox?: { level: TrainLevel; weights?: WeightsFile };
+  /** Fresh tensors each compile: a plan takes ownership of its parameter map's contents. */
+  private sandboxParameters(level: TrainLevel): Map<string, T.Tensor> | undefined {
+    const weights = level.sandbox ? this.sandbox?.weights : undefined;
+    if (!weights) return undefined;
+    return new Map(
+      Object.entries(weights.parameters).map(([id, p]) => [id, T.tensor(p.values, p.shape)]),
+    );
+  }
+  /**
+   * What a sandbox node preview should run with: the live (paused) run, else the last trained
+   * snapshot (continuous run or single steps), else the slot's imported weights. Undefined means
+   * the seeded initialisation training would start from. Fresh tensors the caller must dispose.
+   */
+  private async previewParameters(
+    level: TrainLevel,
+    graph: GraphJSON,
+  ): Promise<Map<string, T.Tensor> | undefined> {
+    if (!level.sandbox) return undefined;
+    const key = this.generationKey(level.id, graph);
+    const run = this.run;
+    if (run && this.generationKey(run.level.id, run.request.graph) === key) {
+      const live = new Map<string, T.Tensor>();
+      for (const [id, value] of run.plan.parameters)
+        live.set(id, T.tensor(new Float32Array(await value.read()), [...value.shape]));
+      return live;
+    }
+    if (this.generationParameters?.key === key)
+      return new Map(
+        [...this.generationParameters.values].map(([id, p]) => [
+          id,
+          T.tensor(new Float32Array(p.data), [...p.shape]),
+        ]),
+      );
+    return this.sandboxParameters(level);
+  }
   // A single CPU snapshot: latest successful continuous completion/stop or step wins.
   // Never borrow tensors owned by a training plan, which release() will dispose.
   private generationParameters?: {
@@ -88,7 +128,13 @@ export class WorkerRuntime {
     return JSON.stringify([levelId, computationIdentity(graph)]);
   }
   private async retainParameters(level: TrainLevel, graph: GraphJSON, plan: GraphPlan) {
-    if (!level.generates && !level.sequenceProbe && level.chapter !== '3' && level.id !== 'xor')
+    if (
+      !level.generates &&
+      !level.sequenceProbe &&
+      !level.sandbox &&
+      level.chapter !== '3' &&
+      level.id !== 'xor'
+    )
       return;
     const values = new Map<string, { shape: number[]; data: Float32Array }>();
     for (const [id, value] of plan.parameters) {
@@ -326,6 +372,8 @@ export class WorkerRuntime {
     if (!run || run.paused) return;
     try {
       const checkDiverged = (report: TrainingReport) => {
+        // Sandbox: keep going even if loss blows up; the player chose free training.
+        if (run.level.sandbox) return;
         if (
           run.level.tunable &&
           (!Number.isFinite(report.loss) || report.loss > run.initialLoss * 1000)
@@ -401,6 +449,17 @@ export class WorkerRuntime {
   }
   private finish(run: Run, report: TrainingReport, completed: boolean) {
     const { threshold } = run.level;
+    // Sandbox has no pass line: keep the training report, never grade a win/fail.
+    if (run.level.sandbox) {
+      Object.assign(run.result, { training: report, passed: false, tests: [] });
+      this.emit({
+        type: 'result',
+        requestId: run.request.requestId,
+        revision: run.request.revision,
+        result: run.result,
+      });
+      return;
+    }
     const passed =
       completed &&
       report.loss < threshold.loss &&
@@ -498,6 +557,20 @@ export class WorkerRuntime {
         this.reply(request, { state: 'synced' });
         return;
       }
+      if (request.type === 'setSandbox') {
+        this.release();
+        this.releaseStep();
+        this.generationParameters = undefined;
+        const spec = request.sandbox;
+        this.sandbox = spec
+          ? {
+              level: buildSandboxLevel(spec.slotId, spec.dataset),
+              ...(spec.weights ? { weights: structuredClone(spec.weights) } : {}),
+            }
+          : undefined;
+        this.reply(request, { state: 'synced' });
+        return;
+      }
       if (request.type === 'pause' || request.type === 'resume' || request.type === 'stop') {
         const run = this.run;
         if (!run) throw new Error('worker.no_training');
@@ -524,10 +597,31 @@ export class WorkerRuntime {
         }
         return;
       }
-      const sourceLevel = this.levels.find((l) => l.id === request.levelId);
+      const sourceLevel =
+        this.sandbox && request.levelId === this.sandbox.level.id
+          ? this.sandbox.level
+          : this.levels.find((l) => l.id === request.levelId);
       if (!sourceLevel) throw new Error('worker.unknown_level');
       if (sourceLevel.kind === 'observation') throw new Error('worker.invalid_request');
       const level = { ...sourceLevel, available: availableComponents(sourceLevel, this.progress) };
+      if (request.type === 'exportWeights') {
+        if (level.kind !== 'train' || !level.sandbox) throw new Error('worker.invalid_request');
+        const key = this.generationKey(level.id, request.graph);
+        const parameters: Record<string, { shape: number[]; values: number[] }> = {};
+        const run = this.run;
+        let state: 'current' | 'trained';
+        if (run && this.generationKey(run.level.id, run.request.graph) === key) {
+          for (const [id, value] of run.plan.parameters)
+            parameters[id] = { shape: [...value.shape], values: Array.from(await value.read()) };
+          state = 'current';
+        } else if (this.generationParameters?.key === key) {
+          for (const [id, value] of this.generationParameters.values)
+            parameters[id] = { shape: [...value.shape], values: Array.from(value.data) };
+          state = 'trained';
+        } else throw new Error('sandbox.weights.error.untrained');
+        this.reply(request, { parameters, state });
+        return;
+      }
       if (request.type === 'predict') {
         if (level.kind !== 'train') throw new Error('worker.predict_unavailable');
         await this.predict(request, level);
@@ -545,6 +639,7 @@ export class WorkerRuntime {
           registry: this.registry,
           learningRate: request.learningRate,
           optimizer: request.optimizer,
+          steps: request.steps,
         });
         if (result.error)
           result.error = workerError(
@@ -609,12 +704,16 @@ export class WorkerRuntime {
             inputShapes: level.interface.inputs,
             availableComponents: level.available,
             random: new Random(level.seed),
+            parameters: this.sandboxParameters(level),
           });
           let batch: TrainingBatchSource | undefined;
           try {
+            const lossShape = plan.outputShapes[level.interface.output];
             if (
-              JSON.stringify(plan.outputShapes[level.interface.output]) !==
-              JSON.stringify(level.interface.outputShape)
+              level.sandbox
+                ? // The sandbox takes any one-element loss: mean gives [], mse gives [1].
+                  !lossShape || lossShape.reduce((n, d) => n * d, 1) !== 1
+                : JSON.stringify(lossShape) !== JSON.stringify(level.interface.outputShape)
             )
               throw new Error('levels.output_shape');
             const dependency = trainDependencyError(level, request.graph, this.registry);
@@ -683,6 +782,15 @@ export class WorkerRuntime {
           ? groups.find((g) => JSON.stringify(g) === JSON.stringify(request.shapes))
           : level.interface.inputs;
       if (!shapes) throw new Error('worker.invalid_request');
+      // Sandbox previews show the model as trained so far, not a fresh initialisation.
+      let previewParameters =
+        request.type === 'probe' && level.kind === 'train'
+          ? await this.previewParameters(level, request.graph)
+          : undefined;
+      const disposePreview = () => {
+        previewParameters?.forEach((t) => t.dispose());
+        previewParameters = undefined;
+      };
       let plan: GraphPlan;
       try {
         plan = compileGraph(graph, {
@@ -690,6 +798,10 @@ export class WorkerRuntime {
           inputShapes: shapes,
           availableComponents: level.available,
           random: new Random(level.kind === 'train' ? level.seed : 1),
+          parameters:
+            request.type === 'start' && level.kind === 'train'
+              ? this.sandboxParameters(level)
+              : previewParameters,
         });
         if (
           request.type !== 'probe' &&
@@ -711,6 +823,7 @@ export class WorkerRuntime {
           throw new Error(dependency);
         }
       } catch (error) {
+        disposePreview();
         if (request.type !== 'compile') throw error;
         this.reply(request, {
           outputShapes: {},
@@ -735,7 +848,25 @@ export class WorkerRuntime {
               if (!request.inputs[name]) throw new Error('worker.missing_input');
               inputs[name] = T.tensor(request.inputs[name], shape);
             }
-            outputs = plan.execute(inputs);
+            try {
+              outputs = plan.execute(inputs);
+            } catch (error) {
+              // Imported weights that no longer fit the graph: preview the seeded model instead.
+              if (
+                !previewParameters ||
+                (error as { key?: string })?.key !== 'parameter_shape_mismatch'
+              )
+                throw error;
+              plan.dispose();
+              disposePreview();
+              plan = compileGraph(graph, {
+                registry: this.registry,
+                inputShapes: shapes,
+                availableComponents: level.available,
+                random: new Random(level.kind === 'train' ? level.seed : 1),
+              });
+              outputs = plan.execute(inputs);
+            }
             const value = outputs[probeName];
             this.reply(request, { shape: value.shape, values: Array.from(await value.read()) });
           } finally {
@@ -744,40 +875,45 @@ export class WorkerRuntime {
           }
         } else if (request.type === 'start') {
           if (level.kind !== 'train') throw new Error('worker.not_training_level');
-          if (!Number.isSafeInteger(level.steps) || level.steps < 1)
-            throw new Error('training.steps');
+          const steps = trainingSteps(level, request.steps);
+          if (!Number.isSafeInteger(steps) || steps < 1) throw new Error('training.steps');
           const learningRate = trainingLearningRate(level, request.learningRate);
           const kind = trainingOptimizer(level, request.optimizer);
+          const runLevel = { ...level, steps };
           this.release();
           const metrics = graphMetrics(graph, this.registry);
           const batches: TrainingBatch[] = [];
           try {
-            const batch = trainingBatchSource(level);
+            const batch = trainingBatchSource(runLevel);
             if (typeof batch !== 'function') batches.push(batch);
-            const evaluationBatch = level.evaluationDataset?.(new Random(level.seed + 1));
+            const evaluationBatch = runLevel.evaluationDataset?.(new Random(runLevel.seed + 1));
             if (evaluationBatch) batches.push(evaluationBatch);
             const session = new TrainingSession(
               plan,
               batch,
               crossEntropy,
-              { ...level.optimizer, kind, learningRate },
-              level.interface.output,
+              { ...runLevel.optimizer, kind, learningRate },
+              runLevel.interface.output,
               {
                 evaluationBatch,
                 evaluationModel:
-                  level.resample && evaluationBatch
-                    ? trainingEvaluationModel(level, graph, plan, evaluationBatch, this.registry)
+                  runLevel.resample && evaluationBatch
+                    ? trainingEvaluationModel(runLevel, graph, plan, evaluationBatch, this.registry)
                     : undefined,
-                evaluationReports: level.resample,
-                lossOutput: level.lossOutput,
-                accuracy: level.threshold.accuracy !== undefined,
+                evaluationReports: runLevel.resample,
+                lossOutput: runLevel.lossOutput,
+                accuracy: runLevel.threshold.accuracy !== undefined,
               },
             );
             let initialLoss: number;
             try {
-              initialLoss = level.tunable ? (await session.evaluate()).loss : Infinity;
+              initialLoss = runLevel.tunable ? (await session.evaluate()).loss : Infinity;
             } catch (error) {
-              if (level.tunable && error instanceof Error && error.message === 'training.nonfinite')
+              if (
+                runLevel.tunable &&
+                error instanceof Error &&
+                error.message === 'training.nonfinite'
+              )
                 initialLoss = Infinity;
               else {
                 session.dispose();
@@ -788,13 +924,13 @@ export class WorkerRuntime {
               plotRefresh: new TrainingPlotRefresh(),
               initialLoss,
               request,
-              level,
+              level: runLevel,
               plan,
               session,
               batches,
               paused: false,
               result: {
-                levelId: level.id,
+                levelId: runLevel.id,
                 passed: false,
                 tests: [],
                 metrics,
@@ -814,6 +950,7 @@ export class WorkerRuntime {
         throw plan.diagnose(error, graph);
       } finally {
         if (!retained) plan.dispose();
+        disposePreview();
       }
     } catch (error) {
       this.emit({
