@@ -340,6 +340,7 @@ function supportedEnvelopeVersion(version: unknown): boolean {
     version === 7 ||
     version === 8 ||
     version === 9 ||
+    version === 10 ||
     version === STORAGE_VERSION
   );
 }
