@@ -155,10 +155,37 @@ textarea {
   font-family: var(--mono);
   font-weight: 600;
 }
+/* The level card the player just came back from: a brief accent flash. */
+.level-card.is-returned {
+  animation: level-card-returned 1.6s ease-out;
+}
+@keyframes level-card-returned {
+  0%,
+  35% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .level-card.is-returned {
+    animation: none;
+  }
+}
 .crumb {
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
+  /* Long level titles give way first; the back button and controls keep their size. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-back {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.topbar > :not(.crumb):not(.spacer) {
+  flex-shrink: 0;
 }
 .crumb b {
   color: var(--text);
@@ -2733,6 +2760,36 @@ input[type='range'] {
 }
 .plot-touch {
   fill: var(--ink);
+}
+/* calc-numeric secant: run (h) and rise between the two draggable points */
+.secant-rise-run line {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.secant-handle {
+  cursor: grab;
+  stroke: var(--on-accent);
+  stroke-width: 1.5;
+}
+.secant-handle.is-a {
+  fill: var(--accent);
+}
+.secant-handle.is-b {
+  fill: var(--grad);
+}
+.secant-lens-frame {
+  fill: var(--panel);
+  stroke: var(--line-strong);
+}
+.secant-lens .secant-handle {
+  pointer-events: none;
+}
+.secant-lens-zoom {
+  fill: var(--muted);
+}
+.secant-shrink {
+  margin-top: var(--s2);
 }
 .plot-target {
   fill: none;

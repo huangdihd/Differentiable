@@ -731,10 +731,44 @@ function gradientLessonUnlocks(progress: Progress, levels: readonly Level[]): st
     : [];
 }
 
-/** The tensor chapter predates the axes lesson; restore access, never completion. */
+const calculusPrimer = ['calc-slope', 'calc-nudge', 'calc-numeric', 'calc-gears'];
+const linearPrimer = ['la-score', 'la-similar', 'la-batch'];
+
+// A later legacy milestone is not proof that the player completed a newly inserted lesson.
+const explicitLegacyCreditOnly = new Set([
+  'square',
+  '1-10',
+  '1-11',
+  'axes',
+  'reshape',
+  'loss-intro',
+  'learning-rate',
+  'neuron',
+  'layer',
+  ...calculusPrimer,
+  ...linearPrimer,
+]);
+
+/** Sparse saves need not contain the milestone itself: any later catalog entry proves access. */
+function primerUnlocks(unlocked: readonly string[], levels: readonly Level[]): string[] {
+  const reached = new Set(unlocked);
+  const restoreAtOrAfter = (milestone: string, primer: readonly string[]) => {
+    const start = levels.findIndex((level) => level.id === milestone);
+    if (start < 0 || !levels.slice(start).some((level) => reached.has(level.id))) return [];
+    return primer.filter((id) => levels.some((level) => level.id === id));
+  };
+  return [
+    ...restoreAtOrAfter('1-1', calculusPrimer),
+    ...restoreAtOrAfter('axes', linearPrimer),
+    ...restoreAtOrAfter('learning-rate', ['learning-rate']),
+  ];
+}
+
+/** Old graduates went directly to axes; new graduates with la-score must finish the primer. */
 function axesUnlocks(progress: Progress, levels: readonly Level[]): string[] {
   return levels.some((level) => level.id === 'axes') &&
-    (progress.unlocked.includes('2-1') || progress.passed.includes('1-11'))
+    (progress.unlocked.includes('2-1') ||
+      (progress.passed.includes('1-11') && !progress.unlocked.includes('la-score')))
     ? ['axes']
     : [];
 }
@@ -1057,6 +1091,7 @@ export async function loadProgressWithMigration(
       progress = removeRetiredLevels(progress);
       // New catalog successors must also unlock for players who already passed a lesson.
       const passedLevels = levels.filter((level) => progress.passed.includes(level.id));
+      const restoredAxes = axesUnlocks(progress, levels);
       const restored = {
         ...progress,
         unlocked: [
@@ -1066,8 +1101,9 @@ export async function loadProgressWithMigration(
             ...gradientLessonUnlocks(progress, levels),
             ...lossIntroUnlocks(progress, levels),
             ...constructionUnlocks(progress, levels),
-            ...axesUnlocks(progress, levels),
+            ...restoredAxes,
             ...reshapeUnlocks(progress, levels),
+            ...primerUnlocks([...progress.unlocked, ...restoredAxes], levels),
           ]),
         ],
         unlockedComponents: [
@@ -1121,16 +1157,19 @@ async function migrateLegacyProgress(
     levels,
   );
   const known = new Set(levels.map((level) => level.id));
+  const legacyUnlocked = legacy.unlocked.map(mapId).filter((id) => known.has(id));
+  const restoredAxes = axesUnlocks(legacy, levels);
   let progress = createInitialProgress();
   progress.unlocked = [
     ...new Set([
       ...progress.unlocked,
-      ...legacy.unlocked.map(mapId).filter((id) => known.has(id)),
+      ...legacyUnlocked,
       ...gradientLessonUnlocks(legacy, levels),
       ...lossIntroUnlocks(legacy, levels),
       ...constructionUnlocks(legacy, levels),
-      ...axesUnlocks(legacy, levels),
+      ...restoredAxes,
       ...reshapeUnlocks(legacy, levels),
+      ...primerUnlocks([...legacyUnlocked, ...restoredAxes], levels),
     ]),
   ];
   for (const [id, graph] of Object.entries(legacy.savedGraphs)) {
@@ -1152,14 +1191,7 @@ async function migrateLegacyProgress(
       if (passed.has(level.id)) progress = acknowledgeObservation(progress, level);
       continue;
     }
-    // New lessons must not become completed merely because a legacy milestone follows them.
-    if (
-      ['square', '1-10', '1-11', 'axes', 'reshape', 'loss-intro', 'neuron', 'layer'].includes(
-        level.id,
-      ) &&
-      !passed.has(level.id)
-    )
-      continue;
+    if (explicitLegacyCreditOnly.has(level.id) && !passed.has(level.id)) continue;
     const saved = progress.savedGraphs[level.id];
     // A previously completed changed-contract circuit must be repaired by the player.
     const revalidate = level.revalidateOnLoad && passed.has(level.id) && saved;

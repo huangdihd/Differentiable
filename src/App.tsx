@@ -1,7 +1,7 @@
 // Copyright (C) 2026 huangdihd
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   computationIdentity,
   expandComponentSubgraph,
@@ -69,6 +69,7 @@ import { diagnosticNode, graphDiagnostic } from './ui/diagnostic';
 import { formatValue } from './ui/format-value';
 import TensorGrid from './ui/TensorGrid';
 import { FixedWindowLimitLesson } from './ui/FixedWindowLimitLesson';
+import { PrimerLesson, isPrimerLesson } from './ui/primer/PrimerLesson';
 import { PlayerRnnComparison } from './ui/PlayerRnnComparison';
 import GradientView from './ui/GradientView';
 import type { BackwardGraph, BackwardTrace } from './engine/backward-graph';
@@ -79,6 +80,7 @@ import {
   type ExpectedValue,
 } from './ui/expected-output';
 import FunctionPlot from './ui/FunctionPlot';
+import SecantPlot from './ui/SecantPlot';
 import GradientSurfacePlot from './ui/GradientSurfacePlot';
 import LossLandscapePlot from './ui/LossLandscapePlot';
 import SelectedNodeIO, { selectedNodePorts, type SelectedPortProbe } from './ui/SelectedNodeIO';
@@ -164,6 +166,10 @@ import {
 import { isSandboxUnlocked, sandboxSlots } from './sandbox/slots';
 
 type T = ReturnType<typeof createTranslator>;
+type HomeReturn = { chapter: number; levelId?: string };
+
+// Dev server only: the condition is a build-time constant, so production drops the import.
+const DevMenu = import.meta.env.DEV ? lazy(() => import('./dev/DevMenu')) : undefined;
 
 export default function App() {
   const [save, setSave] = useState(() => ({
@@ -186,7 +192,13 @@ export default function App() {
   const [level, setLevel] = useState<Level>();
   const [showPlayerComparison, setShowPlayerComparison] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
+  /** Where the player was when they last left for the level list, so Home reopens there. */
+  const [returnTo, setReturnTo] = useState<HomeReturn>();
   const openLevel = (next?: Level) => {
+    if (!next) {
+      if (sandboxOpen) setReturnTo({ chapter: SANDBOX_CHAPTER });
+      else if (level) setReturnTo({ chapter: entryFor(level).chapter, levelId: level.id });
+    }
     setShowPlayerComparison(false);
     setSandboxOpen(false);
     setLevel(next);
@@ -199,6 +211,11 @@ export default function App() {
   const [fallbackDialog, setFallbackDialog] = useState(false);
   const [revoked, setRevoked] = useState<string[]>([]);
   const client = useRef<WorkerClient>(null);
+  /** Back to the level list from anywhere; leaving the sandbox also clears its worker state. */
+  const goHome = () => {
+    if (sandboxOpen) void client.current?.setSandbox(null).catch(() => undefined);
+    openLevel();
+  };
   const revision = useRef(0);
   const t = createTranslator(save.settings.language);
   useEffect(() => {
@@ -291,13 +308,23 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => openLevel()}>
+        <button className="brand" onClick={goHome}>
           <span className="brand-mark">∂</span>
           {t('app.title')}
         </button>
         <span className="tag demo-tag" title={t('home.demoNote')}>
           DEMO
         </span>
+        {(level || sandboxOpen) && (
+          <button
+            type="button"
+            className="btn btn-small topbar-back"
+            onClick={goHome}
+            title={t('ui.levels')}
+          >
+            ← {t('ui.back')}
+          </button>
+        )}
         <span className="crumb">
           {sandboxOpen ? (
             <b>{t('sandbox.title')}</b>
@@ -403,6 +430,21 @@ export default function App() {
           onBack={() => setShowPlayerComparison(false)}
           onContinue={() => openLevel(nextOf(level))}
         />
+      ) : level?.kind === 'observation' && isPrimerLesson(level.id) ? (
+        <PrimerLesson
+          levelId={level.id}
+          code={entry!.code}
+          t={t}
+          onContinue={() => {
+            sfx.play('pass');
+            setSave((current) => ({
+              ...current,
+              progress: acknowledgeObservation(current.progress, level),
+            }));
+            const next = nextOf(level);
+            if (next) openLevel(next);
+          }}
+        />
       ) : level?.kind === 'observation' ? (
         <FixedWindowLimitLesson
           code={entry!.code}
@@ -481,7 +523,20 @@ export default function App() {
           }}
           revoked={revoked}
           onDismissRevoked={() => setRevoked([])}
+          returnTo={returnTo}
         />
+      )}
+      {DevMenu && loaded && (
+        <Suspense fallback={null}>
+          <DevMenu
+            entries={catalog}
+            progress={save.progress}
+            level={level}
+            translate={t}
+            onProgress={(progress) => setSave((current) => ({ ...current, progress }))}
+            onOpen={openLevel}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -521,6 +576,7 @@ function Home({
   onOpenSandbox,
   revoked,
   onDismissRevoked,
+  returnTo,
 }: {
   t: T;
   progress: Progress;
@@ -529,6 +585,8 @@ function Home({
   onOpenSandbox: () => void;
   revoked: string[];
   onDismissRevoked: () => void;
+  /** The chapter (and level) the player just came back from. */
+  returnTo?: HomeReturn;
 }) {
   const fresh = progress.passed.length === 0;
   // Where the player left off: the first unlocked, unpassed level in road order.
@@ -539,9 +597,19 @@ function Home({
   );
   const sandboxCount = sandboxSlots(progress).length;
   // All-clear lands on the sandbox chapter; otherwise resume or the last story chapter.
+  // Coming back from a level reopens its chapter; otherwise resume, or the sandbox after an
+  // all-clear, or the last story chapter.
   const [chapter, setChapter] = useState<number>(
-    next?.chapter ?? (sandboxUnlocked ? SANDBOX_CHAPTER : catalog.at(-1)!.chapter),
+    returnTo?.chapter ??
+      next?.chapter ??
+      (sandboxUnlocked ? SANDBOX_CHAPTER : catalog.at(-1)!.chapter),
   );
+  const returnCard = useRef<HTMLButtonElement>(null);
+  // Bring the card the player came back from into view once, without stealing a later scroll.
+  useEffect(() => {
+    returnCard.current?.scrollIntoView({ block: 'center' });
+    returnCard.current?.focus({ preventScroll: true });
+  }, []);
   const entries = catalog.filter((e) => e.chapter === chapter);
   return (
     <main className="home blueprint-bg">
@@ -610,7 +678,7 @@ function Home({
               : levels!.filter((e) => progress.passed.includes(e.level.id)).length;
             const total = isSandbox ? 0 : levels!.length;
             const open = isSandbox
-              ? true
+              ? sandboxUnlocked
               : levels!.some((e) => progress.unlocked.includes(e.level.id));
             return (
               <li key={n}>
@@ -642,6 +710,7 @@ function Home({
           {chapter === SANDBOX_CHAPTER ? (
             <div className="chapter-levels">
               <button
+                ref={returnTo?.chapter === SANDBOX_CHAPTER ? returnCard : undefined}
                 className={`level-card${sandboxUnlocked ? ' is-playable' : ''}`}
                 disabled={!ready || !sandboxUnlocked}
                 onClick={onOpenSandbox}
@@ -668,7 +737,8 @@ function Home({
                 return (
                   <button
                     key={level.id}
-                    className={`level-card ${passed ? 'is-passed' : unlocked ? 'is-playable' : ''}`}
+                    ref={level.id === returnTo?.levelId ? returnCard : undefined}
+                    className={`level-card ${passed ? 'is-passed' : unlocked ? 'is-playable' : ''}${level.id === returnTo?.levelId ? ' is-returned' : ''}`}
                     disabled={!ready || !unlocked}
                     onClick={() => onOpen(level)}
                   >
@@ -1336,7 +1406,9 @@ function Editor({
       ? parsedInputs.t
       : undefined;
   const lossLandscape = level.kind !== 'train' && ['loss-intro', '3-1'].includes(level.id);
+  const secantPlot = level.id === 'calc-numeric';
   const visualPlot =
+    secantPlot ||
     plotInput !== undefined ||
     surfaceInputs !== undefined ||
     transformKind !== undefined ||
@@ -2218,9 +2290,6 @@ function Editor({
       {!sandbox && (
         <div className="sb-bar lv-bar" role="toolbar" aria-label={t(level.titleKey)}>
           <div className="sb-bar-head">
-            <button className="btn btn-small sb-bar-back" onClick={onExit} title={t('ui.levels')}>
-              ← {t('ui.back')}
-            </button>
             <span className="level-id lv-bar-code">{entry.code}</span>
             <h1 className="lv-bar-title">{t(level.titleKey)}</h1>
             {levelPassed && <span className="tag lv-bar-passed">✓ {t('ui.passed')}</span>}
@@ -2377,6 +2446,22 @@ function Editor({
                     inputs={'invalid' in parsedInputs ? {} : parsedInputs}
                     actual={outputActual?.values[0]}
                     onPick={(x) => changeScalarInput(plotInput, String(x))}
+                  />
+                )}
+                {secantPlot && !('invalid' in parsedInputs) && (
+                  <SecantPlot
+                    key={level.id}
+                    t={t}
+                    x={parsedInputs.x?.[0]}
+                    h={parsedInputs.h?.[0]}
+                    actual={outputActual?.values[0]}
+                    onChange={(changes) =>
+                      changeScalarInputs(
+                        Object.fromEntries(
+                          Object.entries(changes).map(([name, value]) => [name, String(value)]),
+                        ),
+                      )
+                    }
                   />
                 )}
                 {surfaceInputs && level.kind !== 'train' && (

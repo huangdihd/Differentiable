@@ -4,7 +4,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDefaultRegistry } from './engine/graph';
 import { exampleLevels } from './levels/examples';
-import { gameLevels } from './levels/catalog';
+import { featureKeys, games, people, batchPeople } from './levels/primer-linear';
+import { gearTrains } from './levels/primer-calculus';
+import { catalog, gameLevels } from './levels/catalog';
 import {
   createTranslator,
   diagnosticKey,
@@ -18,7 +20,18 @@ import {
   translateValueName,
 } from './i18n';
 
+const displayCode = (id: string) => catalog.find((entry) => entry.level.id === id)!.code;
+
 describe('i18n', () => {
+  it('translates every feature, game, taste and labelled gear used in the primer', () => {
+    const keys = [
+      ...featureKeys,
+      ...[...games, ...people, ...batchPeople].map((item) => item.nameKey),
+      ...gearTrains.flatMap((train) => train.stages.flatMap((stage) => stage.labelKey ?? [])),
+    ];
+    for (const dictionary of Object.values(locales))
+      for (const key of keys) expect(dictionary).toHaveProperty(key);
+  });
   it('never exposes rank-zero empty brackets in translated player-facing copy', () => {
     for (const [locale, dictionary] of Object.entries(locales)) {
       for (const [key, message] of Object.entries(dictionary)) {
@@ -194,7 +207,7 @@ describe('i18n', () => {
       expect(loss).not.toMatch(/∂L\/∂w|w′|η/);
       expect(descent).toMatch(/上一关|previous level/i);
       expect(descent).toMatch(/最简单的预测器|simplest predictor/);
-      expect(descent).toContain('1-11');
+      expect(descent).toContain(displayCode('1-11'));
       expect(descent).toMatch(/上游梯度|upstream gradient/i);
       expect(descent).toContain('$g=∂L/∂p$');
       expect(descent).toContain('$∂L/∂w=(∂L/∂p)·x$');
@@ -237,8 +250,8 @@ describe('i18n', () => {
       );
       expect(gradient).toMatch(/偏置固定为 0|bias is fixed at 0/i);
       expect(gradient).toContain('$p=w·x$');
-      expect(gradient).toContain('1-10');
-      expect(gradient).toContain('1-11');
+      expect(gradient).toContain(displayCode('1-10'));
+      expect(gradient).toContain(displayCode('1-11'));
       expect(gradient).toContain('$g=∂L/∂p$');
       expect(gradient).toContain('$∂L/∂w=g·x$');
       expect(`${gradient} ${hints}`).toMatch(/上游梯度|upstream gradient/i);
@@ -398,7 +411,7 @@ describe('i18n', () => {
       const description = locales[locale]['levels.3-3.description'];
       const visual = locales[locale]['visual.mse.help'];
       expect(description).toMatch(/显示 3-1|Display 3-1/i);
-      expect(description).toMatch(/显示 2-4|Display 2-4/i);
+      expect(description).toContain(displayCode('2-3'));
       expect(`${description} ${visual}`).toMatch(/平方损失|squared loss/i);
       expect(`${description} ${visual}`).toMatch(/平均值|Mean/);
       for (const key of [

@@ -194,7 +194,7 @@ Object.assign(backpropLevel, {
     outputShape: [],
     outputs: { '∂f/∂w': [], '∂f/∂x': [], '∂f/∂b': [] },
   },
-  unlock: ['axes'],
+  unlock: ['la-score'],
   referenceGraph: backpropGraph,
   referenceOutputs: (values: Record<string, T.Tensor>) => ({
     '∂f/∂w': T.mul(values[upstream], values.x),

@@ -1,6 +1,7 @@
 // Copyright (C) 2026 huangdihd
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Part of Differentiable. Full terms in LICENSE at the repository root.
+import { learningRateLevel } from './learning-rate';
 import { mseLock } from './level-helpers';
 import { noisyLine, noisyLineBatch, rings, smallAndLarge, trainOn, twoBlobs } from '../datasets';
 import { Random } from '../engine/random';
@@ -151,7 +152,7 @@ chapter3ForwardLevels.push(
   withPar<ForwardLevel>(
     {
       ...metadata(1),
-      unlock: ['neuron'],
+      unlock: [learningRateLevel.id],
       kind: 'forward',
       interface: {
         inputs: { w: [], x: [], [lossGradient]: [] },
@@ -533,6 +534,7 @@ export const chapter3ClassificationLevels: TrainLevel[] = [6, 8, 9].map((index) 
 });
 export const chapter3Levels = [
   ...chapter3ForwardLevels.slice(0, 2),
+  learningRateLevel,
   affineLevels[0],
   chapter3ForwardLevels[2],
   affineLevels[1],

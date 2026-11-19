@@ -9,25 +9,13 @@ import { catalog, gameLevels } from './catalog';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
-import { chapter3ForwardLevels } from './chapter3';
-import { chapter4ForwardLevels } from './chapter4';
-import { temporalForwardLevels } from './chapter-temporal';
-import { chapter5ForwardLevels } from './chapter5';
-import { chapter6ForwardLevels } from './chapter6';
 import { formulaGraph, formulaOutputsGraph, referenceRegistry } from './level-helpers';
 import en from '../locales/en.json';
 import zh from '../locales/zh-CN.json';
 
-const registry = referenceRegistry([
-  ...chapter0Levels,
-  ...chapter1Levels,
-  ...chapter2Levels,
-  ...chapter3ForwardLevels,
-  ...chapter4ForwardLevels,
-  ...temporalForwardLevels,
-  ...chapter5ForwardLevels,
-  ...chapter6ForwardLevels,
-]);
+const registry = referenceRegistry(
+  gameLevels.filter((level) => level.kind !== 'observation' && level.kind !== 'train'),
+);
 const formalLevels = [...chapter0Levels, ...chapter1Levels];
 const chapter1LevelById = (id: string) => {
   const level = chapter1Levels.find((candidate) => candidate.id === id);
@@ -53,11 +41,19 @@ describe('formal chapter catalog', () => {
       '0-2',
       'square',
       ...Array.from({ length: 5 }, (_, i) => `0-${i + 4}`),
+      'calc-slope',
+      'calc-nudge',
+      'calc-numeric',
+      'calc-gears',
       ...Array.from({ length: 11 }, (_, i) => `1-${i + 1}`),
+      'la-score',
+      'la-similar',
+      'la-batch',
       'axes',
       ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
       'loss-intro',
       '3-1',
+      'learning-rate',
       'neuron',
       '3-2',
       'layer',

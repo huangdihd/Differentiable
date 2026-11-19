@@ -45,15 +45,25 @@ describe('tensor curriculum', () => {
     expect(level.available).toEqual(chapter2LevelById('2-1').available);
     expect(level.unlockComponents).toBeUndefined();
     expect(level.fixed[0].inputs.x).toEqual([1, 2, 3, 10, 20, 30]);
-    expect(chapter1LevelById('1-11').unlock).toEqual(['axes']);
+    expect(chapter1LevelById('1-11').unlock).toEqual(['la-score']);
     expect(level.unlock).toEqual(['2-1']);
     expect(
       catalog.filter((entry) => entry.chapter === 2).map(({ level, code }) => [level.id, code]),
     ).toEqual(
-      ['axes', '2-1', '2-2', '2-3', '2-4', '2-5', '2-6', '2-7', '2-8'].map((id, i) => [
-        id,
-        `2-${i + 1}`,
-      ]),
+      [
+        'la-score',
+        'la-similar',
+        'la-batch',
+        'axes',
+        '2-1',
+        '2-2',
+        '2-3',
+        '2-4',
+        '2-5',
+        '2-6',
+        '2-7',
+        '2-8',
+      ].map((id, i) => [id, `2-${i + 1}`]),
     );
   });
   it('uses one Sum node to compute one total per row for every test shape', async () => {

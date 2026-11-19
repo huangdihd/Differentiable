@@ -1,0 +1,76 @@
+/* Copyright (C) 2026 huangdihd
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Part of Differentiable. Full terms in LICENSE at the repository root.
+ */
+/* Developer menu (dev server only). Colours come only from theme.css tokens. */
+
+.dev-menu-toggle {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--accent);
+  background: var(--panel);
+  border: 1px dashed var(--accent);
+  opacity: 0.7;
+}
+.dev-menu-toggle,
+.dev-menu {
+  position: fixed;
+  right: calc(var(--s3) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--s3) + env(safe-area-inset-bottom, 0px));
+  z-index: 1000;
+}
+.dev-menu-toggle:hover,
+.dev-menu-toggle:focus-visible {
+  opacity: 1;
+}
+.dev-menu {
+  width: min(360px, calc(100vw - 2 * var(--s3)));
+  max-height: calc(100vh - 2 * var(--s3));
+  overflow: auto;
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3);
+  background: var(--panel);
+  border: 1px dashed var(--accent);
+  box-shadow: 0 8px 24px var(--overlay);
+  font-size: var(--fs-sm);
+}
+.dev-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.dev-menu-meta {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.dev-menu-section {
+  display: grid;
+  gap: var(--s2);
+}
+.dev-menu-section .label {
+  margin: 0;
+}
+.dev-menu select.field {
+  color: var(--text);
+}
+.dev-menu .btn {
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+}
+.dev-menu-danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.dev-menu-notice {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--good);
+}

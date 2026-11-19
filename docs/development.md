@@ -20,6 +20,14 @@ npm run format
 
 Tests use worker threads, not subprocess forks. `npm test` is non-watch. The GPT calibration test takes roughly 67 seconds on the development machine (reference plus control), with a 360-second timeout.
 
+### Developer menu
+
+Under `npm run dev` only, a wrench button in the bottom-right corner (or Ctrl/⌘ + Shift + D) opens a
+developer menu: pass the current level, jump to any level (optionally passing everything before it
+with reference solutions), unlock or pass everything, or reset progress. It is loaded behind
+`import.meta.env.DEV`, so production builds contain none of it. Shortcuts live in
+`src/dev/dev-progress.ts`.
+
 ## Demo deployment
 
 The repository is public, so the `LICENSE` file and this source tree are the corresponding source

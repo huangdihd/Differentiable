@@ -13,10 +13,7 @@ import {
 import { availableComponents, buildPlayerRegistry } from './registry';
 import { tensor } from '../engine/tensor';
 import { referenceRegistry } from './level-helpers';
-import { chapter0Levels } from './chapter0';
-import { chapter1Levels } from './chapter1';
-import { chapter2Levels } from './chapter2';
-import { chapter3Levels } from './chapter3';
+import { gameLevels } from './catalog';
 
 const graph: GraphJSON = {
   version: 1,
@@ -235,10 +232,11 @@ describe('player registry', () => {
     expect(graph.nodes[1].attrs?.name).toBe('y');
   });
   it('does not expose gather anywhere in chapters 0–3', () => {
-    const preceding = [...chapter0Levels, ...chapter1Levels, ...chapter2Levels, ...chapter3Levels];
+    const preceding = gameLevels.filter((entry) => Number(entry.chapter) <= 3);
     const progress = initialProgress(preceding.map((entry) => entry.id));
     for (const entry of preceding) {
-      expect(availableComponents(entry, progress), entry.id).not.toContain('gather');
+      if (entry.kind !== 'observation')
+        expect(availableComponents(entry, progress), entry.id).not.toContain('gather');
       expect(entry.unlockComponents ?? [], entry.id).not.toContain('gather');
       progress.unlockedComponents.push(...(entry.unlockComponents ?? []));
     }

@@ -107,7 +107,7 @@ for (const [position, definition] of live.entries()) {
           output: 'y',
           outputShape: [],
         },
-        unlock: [next ? idOf(next) : '1-1'],
+        unlock: [next ? idOf(next) : 'calc-slope'],
         unlockComponents: [definition.name],
         referenceGraph: graph,
         ...(definition.nonzeroInputs ? { revalidateOnLoad: true } : {}),

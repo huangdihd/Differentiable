@@ -1,0 +1,1068 @@
+/* Copyright (C) 2026 huangdihd
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Part of Differentiable. Full terms in LICENSE at the repository root.
+ */
+/* Math primer lessons (chapter 1 and 2 openers). Colours come only from theme.css tokens. */
+
+.primer-body {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+}
+.primer-split {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: var(--s5);
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .primer-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.primer-body > .btn,
+.primer-controls > .btn {
+  justify-self: start;
+  min-width: 140px;
+}
+.primer-controls {
+  display: grid;
+  gap: var(--s4);
+  align-content: start;
+}
+.primer-instruction {
+  color: var(--muted);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+.primer-slider {
+  display: grid;
+  gap: var(--s1);
+}
+.primer-slider .label b {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+/* feedback */
+.primer-feedback {
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--line-strong);
+}
+.primer-feedback.is-good {
+  color: var(--good);
+  border-color: var(--good);
+}
+.primer-feedback.is-bad {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+/* answer box */
+.primer-answer .btn {
+  height: 36px;
+}
+.primer-answer {
+  display: flex;
+  align-items: end;
+  gap: var(--s2);
+}
+.primer-answer label {
+  display: grid;
+  flex: 1;
+  max-width: 220px;
+}
+.primer-answer .field {
+  height: 36px;
+  font-size: var(--fs-lg);
+  color: var(--text);
+}
+.primer-answer .field[aria-invalid='true'] {
+  animation: node-shake 0.32s;
+}
+
+/* plots */
+.primer-plot {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.primer-plot.is-wide {
+  aspect-ratio: 560 / 300;
+  max-width: 640px;
+  justify-self: center;
+}
+.primer-plot.is-aimable {
+  cursor: crosshair;
+  touch-action: none;
+}
+.primer-gridline {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.primer-axis {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.primer-curve {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.primer-curve.is-felt {
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.primer-ruler {
+  stroke: var(--grad);
+  stroke-width: 2;
+}
+.primer-tangent {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.primer-point {
+  fill: var(--accent);
+  stroke: var(--on-accent);
+  stroke-width: 2;
+}
+.primer-point.is-moved {
+  fill: var(--grad);
+}
+.primer-run {
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+.primer-delta {
+  stroke: var(--pos);
+  stroke-width: 3;
+}
+.primer-meter {
+  height: 8px;
+  background: var(--line);
+}
+.primer-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease-out;
+}
+.primer-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--s2);
+  margin: 0;
+}
+.primer-facts > div {
+  border: 1px solid var(--line);
+  padding: var(--s2) var(--s3);
+}
+.primer-facts dt {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.primer-facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+}
+
+/* gears */
+.primer-gears {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.primer-gear-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+.primer-gear {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--s1);
+  min-width: 96px;
+}
+.primer-gear svg {
+  width: 80px;
+  height: 80px;
+  overflow: visible;
+}
+.primer-gear figcaption {
+  display: grid;
+  justify-items: center;
+}
+.primer-gear figcaption .label {
+  margin: 0;
+}
+.primer-gear figcaption b {
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  color: var(--accent);
+}
+.primer-gear-body polygon {
+  fill: var(--panel-3);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.primer-gear-body line {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.primer-gear-body circle {
+  fill: var(--ink);
+}
+.primer-gear-body {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.primer-gear-body.is-spinning {
+  animation-name: primer-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes primer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.primer-gear.is-pending {
+  opacity: 0.45;
+}
+.primer-gear.is-current .primer-gear-body polygon {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.primer-gear.is-current figcaption b {
+  color: var(--accent);
+}
+.primer-inline-answer {
+  display: flex;
+  gap: var(--s1);
+}
+.primer-inline-answer .field {
+  width: 64px;
+  height: 30px;
+  text-align: center;
+  font-size: var(--fs-lg);
+  color: var(--accent);
+}
+.primer-inline-answer .field[aria-invalid='true'] {
+  animation: node-shake 0.32s;
+}
+.primer-inline-answer .btn {
+  height: 30px;
+  padding: 0 10px;
+}
+.primer-gearbox.is-current {
+  border-color: var(--accent);
+  border-style: solid;
+}
+.primer-gearbox {
+  margin-top: 18px;
+  display: grid;
+  justify-items: center;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border: 1px dashed var(--line-strong);
+  font-family: var(--mono);
+  min-width: 72px;
+}
+.primer-gearbox b {
+  color: var(--text);
+}
+.primer-gearbox-fn {
+  font-family: var(--math);
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+
+/* learning-rate experiment (chapter 3) */
+.primer-walker {
+  fill: var(--accent);
+  stroke: var(--on-accent);
+  stroke-width: 2;
+  transition:
+    cx 0.3s ease-out,
+    cy 0.3s ease-out;
+}
+.primer-walker.is-escaped {
+  fill: var(--bad);
+}
+.primer-trail {
+  fill: var(--faint);
+}
+.primer-valley-path {
+  fill: none;
+  stroke: var(--grad);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.primer-valley-goal {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.primer-escaped {
+  fill: var(--bad);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+}
+.primer-loss {
+  display: grid;
+  gap: var(--s1);
+}
+.primer-loss .label {
+  margin: 0;
+}
+.primer-loss-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 70px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.primer-loss-bar {
+  flex: 1;
+  max-width: 28px;
+  background: var(--good);
+  transition: height 0.3s ease-out;
+}
+.primer-loss-bar.is-up {
+  background: var(--bad);
+}
+.primer-rate-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--s4);
+}
+.primer-rate {
+  flex: 1;
+  min-width: 220px;
+}
+.primer-rate .label b {
+  font-size: var(--fs-lg);
+}
+/* .label upper-cases its text, which would turn η into H. */
+.primer-rate-value,
+.primer-rate-lock {
+  text-transform: none;
+}
+.primer-rate-lock {
+  margin-left: var(--s2);
+  font-style: normal;
+  color: var(--faint);
+  letter-spacing: 0;
+}
+.primer-rule {
+  color: var(--text);
+}
+
+/* la-score */
+.primer-equation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.primer-equation-op {
+  font-family: var(--mono);
+  font-size: var(--fs-xl);
+  color: var(--muted);
+}
+.primer-term {
+  display: grid;
+  justify-items: center;
+  gap: var(--s1);
+  /* Wide enough for the inline answer box, so filling in a term never shifts the row. */
+  min-width: 140px;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.primer-term .label {
+  margin: 0;
+}
+.primer-term.is-current {
+  border-color: var(--accent);
+}
+.primer-term.is-total {
+  border-style: dashed;
+}
+.primer-term-math {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  color: var(--muted);
+}
+.primer-term-result {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 30px;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  color: var(--muted);
+}
+.primer-term-result b {
+  color: var(--faint);
+}
+.primer-term-result .primer-term-value {
+  color: var(--accent);
+}
+.primer-term-rating {
+  color: var(--text);
+}
+.primer-term-weight {
+  color: var(--grad);
+}
+.primer-legend {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.primer-sheet {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+}
+.primer-sheet th,
+.primer-sheet td {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+.primer-sheet th[scope='row'] {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 500;
+}
+.primer-sheet thead th {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-weight: 500;
+}
+.primer-sheet .is-weights td {
+  color: var(--grad);
+}
+.primer-sheet .is-products td {
+  color: var(--accent);
+}
+.primer-weight-dials {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+}
+.primer-weight-dial {
+  display: grid;
+  justify-items: center;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.primer-weight-dial .label {
+  margin: 0;
+}
+.primer-weight-dial-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.primer-weight-dial-row .btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: var(--fs-lg);
+}
+.primer-weight-dial-row b {
+  min-width: 3ch;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--fs-xl);
+}
+
+/* the ranking goal, stated big, with live progress */
+.primer-goal {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  padding: var(--s4);
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+.primer-goal.is-met {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, var(--panel));
+}
+.primer-goal-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  font-size: 24px;
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.primer-goal.is-met .primer-goal-mark {
+  background: var(--good);
+}
+.primer-goal-body {
+  display: grid;
+  gap: var(--s2);
+}
+.primer-goal-text {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.primer-goal-text b {
+  color: var(--accent);
+}
+.primer-goal-text b.is-bottom {
+  color: var(--neg);
+}
+.primer-goal-status {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.primer-goal-status li.is-there {
+  color: var(--good);
+}
+.primer-goal-status li.is-there::before {
+  content: '✓ ';
+}
+.primer-goal-status li.is-tied {
+  color: var(--warn);
+}
+
+/* live leaderboard: rows slide to their rank */
+.primer-board {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.primer-board-row {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 64px;
+  display: grid;
+  grid-template-columns: 28px minmax(120px, 180px) minmax(0, 1fr) minmax(60px, 160px) 48px;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  transition:
+    transform 0.35s ease-out,
+    border-color 0.2s;
+}
+.primer-board-row.is-goal {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+.primer-board-row.is-met {
+  border-color: var(--good);
+  border-style: solid;
+  background: color-mix(in srgb, var(--good) 10%, var(--panel-2));
+}
+.primer-board-rank {
+  display: grid;
+  justify-items: center;
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  line-height: 1.1;
+  color: var(--accent);
+}
+.primer-board-rank small {
+  font-size: 10px;
+  color: var(--warn);
+}
+.primer-board-name {
+  display: grid;
+  font-weight: 600;
+}
+.primer-board-name em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+}
+.primer-board-math {
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The game's own ratings carry the row; the weights stay small beside them. */
+.primer-board-math .primer-term-rating {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.primer-board-bar {
+  height: 8px;
+  background: var(--line);
+}
+.primer-board-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--pos);
+  transition: width 0.3s ease-out;
+}
+.primer-board-bar > span.is-neg {
+  background: var(--neg);
+}
+.primer-board-score {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  text-align: right;
+}
+@media (max-width: 720px) {
+  .primer-weight-dials {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .primer-board-row {
+    grid-template-columns: 24px minmax(0, 1fr) 60px 40px;
+  }
+  .primer-board-math {
+    display: none;
+  }
+}
+
+/* la-similar: the compass. Arrow colour = sign of its dot product with yours. */
+.primer-compass {
+  cursor: crosshair;
+  touch-action: none;
+}
+.primer-compass:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.primer-compass-axis {
+  font-size: 11px;
+  fill: var(--muted);
+}
+.primer-compass-person line {
+  stroke-width: 2.5;
+}
+.primer-compass-person text {
+  font-size: 13px;
+  font-weight: 600;
+}
+.primer-compass-person.is-agree line {
+  stroke: var(--good);
+}
+.primer-compass-person.is-agree text {
+  fill: var(--good);
+}
+.primer-compass-person.is-clash line {
+  stroke: var(--bad);
+}
+.primer-compass-person.is-clash text {
+  fill: var(--bad);
+}
+.primer-compass-person.is-none line {
+  stroke: var(--faint);
+}
+.primer-compass-person.is-none text {
+  fill: var(--muted);
+}
+.primer-compass-person.is-goal text {
+  font-size: 15px;
+}
+.primer-compass-head.is-agree {
+  fill: var(--good);
+}
+.primer-compass-head.is-clash {
+  fill: var(--bad);
+}
+.primer-compass-head.is-none {
+  fill: var(--faint);
+}
+.primer-compass-head.is-you {
+  fill: var(--accent);
+}
+.primer-compass-you {
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+.primer-compass-handle {
+  fill: var(--accent);
+  stroke: var(--on-accent);
+  stroke-width: 2;
+  cursor: grab;
+}
+.primer-compass-you-label {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--accent);
+}
+.primer-compass-drop {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.primer-compass-cast {
+  stroke-width: 7;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+.primer-compass-shadow.is-agree .primer-compass-cast {
+  stroke: var(--good);
+}
+.primer-compass-shadow.is-clash .primer-compass-cast {
+  stroke: var(--bad);
+}
+.primer-compass-shadow.is-none .primer-compass-cast {
+  stroke: transparent;
+}
+.primer-compass-split {
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+}
+.primer-compass-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+}
+.primer-compass-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'who score'
+    'math word';
+  gap: 2px var(--s3);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  background: var(--panel-2);
+}
+.primer-compass-list li.is-agree {
+  border-left-color: var(--good);
+}
+.primer-compass-list li.is-clash {
+  border-left-color: var(--bad);
+}
+.primer-compass-list li.is-none {
+  border-left-color: var(--faint);
+}
+.primer-compass-list li.is-goal {
+  border-top-style: dashed;
+  border-right-style: dashed;
+  border-bottom-style: dashed;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.primer-compass-list li.is-met {
+  border-top-style: solid;
+  border-right-style: solid;
+  border-bottom-style: solid;
+  border-top-color: var(--good);
+  border-right-color: var(--good);
+  border-bottom-color: var(--good);
+}
+.primer-compass-who {
+  grid-area: who;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-weight: 600;
+}
+.primer-compass-who em {
+  font-style: normal;
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+}
+.primer-compass-math {
+  grid-area: math;
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+.primer-compass-list b {
+  grid-area: score;
+  justify-self: end;
+  font-family: var(--mono);
+  font-size: var(--fs-xl);
+}
+.primer-compass-list li.is-agree b,
+.primer-compass-list li.is-agree small {
+  color: var(--good);
+}
+.primer-compass-list li.is-clash b,
+.primer-compass-list li.is-clash small {
+  color: var(--bad);
+}
+.primer-compass-list small {
+  grid-area: word;
+  justify-self: end;
+  color: var(--muted);
+}
+.primer-match-key {
+  padding: 1px var(--s2);
+  border: 1px solid currentColor;
+}
+.primer-match-key.is-agree {
+  color: var(--good);
+}
+.primer-match-key.is-clash {
+  color: var(--bad);
+}
+.primer-match-key.is-none {
+  color: var(--muted);
+}
+/* la-batch: one table — rows are people's weights, columns are games' ratings */
+.primer-matmul-scroll {
+  overflow-x: auto;
+}
+.primer-matmul {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: var(--fs-md);
+}
+.primer-matmul th,
+.primer-matmul td {
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  text-align: center;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.primer-matmul thead th {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  vertical-align: bottom;
+}
+.primer-matmul thead th.primer-matmul-corner {
+  text-align: left;
+  vertical-align: bottom;
+}
+.primer-matmul-corner {
+  position: relative;
+}
+.primer-matmul-corner-key {
+  position: absolute;
+  left: var(--s2);
+  bottom: var(--s2);
+  display: grid;
+}
+.primer-matmul-col-names {
+  justify-items: end;
+  font-weight: 400;
+  font-family: var(--font);
+  color: var(--muted);
+}
+.primer-matmul-features th {
+  border-top: none;
+}
+.primer-matmul th[scope='row'] {
+  text-align: left;
+  color: var(--text);
+  font-family: var(--font);
+}
+.primer-matmul-col {
+  display: grid;
+  gap: 2px;
+  margin-top: var(--s1);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.primer-matmul td.is-weight {
+  color: var(--grad);
+  font-weight: 600;
+}
+/* the row and column feeding the focused (or hovered) cell */
+.primer-matmul tr.is-lit > th,
+.primer-matmul tr.is-lit > td.is-weight,
+.primer-matmul thead th.is-lit {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.primer-matmul thead th.is-lit {
+  color: var(--accent);
+}
+.primer-matmul-cell {
+  min-width: 132px;
+  height: 44px;
+  font-size: var(--fs-lg);
+  color: var(--faint);
+}
+.primer-matmul-cell button {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+.primer-matmul-cell button:focus-visible {
+  outline: 2px solid var(--accent);
+}
+.primer-matmul-cell.is-filled {
+  color: var(--text);
+  animation: primer-fill 0.35s ease-out;
+}
+.primer-matmul-cell.is-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.primer-matmul-cell .primer-inline-answer {
+  justify-content: center;
+}
+.primer-matmul-cell.is-right {
+  color: var(--good);
+  outline: 2px solid var(--good);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+}
+.primer-matmul-cell.is-wrong {
+  color: var(--bad);
+  outline: 2px solid var(--bad);
+  outline-offset: -2px;
+  animation: node-shake 0.32s;
+}
+@keyframes primer-fill {
+  from {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+}
+
+/* shape puzzles: matrices as blocks of squares */
+.primer-shape-eq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s4);
+  min-height: 120px;
+}
+.primer-block {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: var(--s2);
+}
+.primer-block-grid {
+  display: grid;
+  gap: 3px;
+}
+.primer-block-grid > span {
+  width: 12px;
+  height: 12px;
+  background: var(--panel-3);
+  border: 1px solid var(--line-strong);
+}
+.primer-block figcaption {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+}
+.primer-block .is-cols {
+  color: var(--accent);
+}
+.primer-block .is-rows {
+  color: var(--grad);
+}
+.primer-block.is-left .is-rows {
+  color: var(--text);
+}
+.primer-block.is-left .primer-block-grid > span {
+  border-color: var(--accent);
+}
+.primer-block.is-placed .primer-block-grid > span {
+  border-color: var(--grad);
+  animation: primer-fill 0.35s ease-out;
+}
+.primer-block.is-result .primer-block-grid > span {
+  background: color-mix(in srgb, var(--good) 30%, var(--panel-3));
+  border-color: var(--good);
+}
+.primer-block.is-result figcaption {
+  color: var(--good);
+}
+.primer-block-socket {
+  display: grid;
+  place-items: center;
+  min-width: 96px;
+  min-height: 72px;
+  padding: var(--s2);
+  border: 2px dashed var(--line-strong);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  text-align: center;
+}
+.primer-block-socket.is-result {
+  min-width: 72px;
+  font-size: var(--fs-xl);
+}
+.primer-block-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+.primer-block-pick {
+  all: unset;
+  cursor: pointer;
+  padding: var(--s3);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+}
+.primer-block-pick:hover,
+.primer-block-pick:focus-visible {
+  border-color: var(--accent);
+}
+.primer-block-pick:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.primer-block-pick.is-wrong {
+  border-color: var(--bad);
+  animation: node-shake 0.32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primer-gear-body.is-spinning,
+  .primer-matmul-cell.is-filled,
+  .primer-matmul-cell.is-wrong,
+  .primer-block-pick.is-wrong,
+  .primer-block.is-placed .primer-block-grid > span,
+  .primer-answer .field[aria-invalid='true'],
+  .primer-inline-answer .field[aria-invalid='true'] {
+    animation: none;
+  }
+  .primer-walker,
+  .primer-loss-bar,
+  .primer-meter > span,
+  .primer-board-row,
+  .primer-board-bar > span {
+    transition: none;
+  }
+}

@@ -3,7 +3,14 @@
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 import { describe, expect, it } from 'vitest';
 import type { GraphJSON } from '../engine/graph';
-import { applyResult, evaluateLevel, graphMetrics, initialProgress } from '../engine/levels';
+import {
+  type CircuitLevel,
+  acknowledgeObservation,
+  applyResult,
+  evaluateLevel,
+  graphMetrics,
+  initialProgress,
+} from '../engine/levels';
 import * as T from '../engine/tensor';
 import { gameLevels, catalog } from './catalog';
 import { chapter0Levels } from './chapter0';
@@ -16,7 +23,7 @@ import { availableComponents, buildPlayerRegistry } from './registry';
 const circuitLevels = gameLevels.filter((level) => level.kind !== 'observation');
 const preceding = [...chapter0Levels, ...chapter1Levels, ...chapter2Levels];
 const registry = referenceRegistry([...preceding, ...chapter3ForwardLevels]);
-const playable = (level: (typeof chapter3Levels)[number]) => ({
+const playable = (level: CircuitLevel) => ({
   ...level,
   available: [
     ...level.available,
@@ -30,6 +37,7 @@ describe('gradient descent curriculum', () => {
     expect(chapter2Levels.at(-1)!.unlock).toEqual(['loss-intro']);
     expect(chapter3Levels.map((l) => l.unlock)).toEqual([
       ['3-1'],
+      ['learning-rate'],
       ['neuron'],
       ['3-2'],
       ['layer'],
@@ -47,24 +55,26 @@ describe('gradient descent curriculum', () => {
     ).toEqual([
       ['loss-intro', '3-1'],
       ['3-1', '3-2'],
-      ['neuron', '3-3'],
-      ['3-2', '3-4'],
-      ['layer', '3-5'],
-      ['3-3', '3-6'],
-      ['3-4', '3-7'],
-      ['3-5', '3-8'],
-      ['3-6', '3-9'],
-      ['3-7', '3-10'],
-      ['3-8', '3-11'],
-      ['3-9', '3-12'],
-      ['xor', '3-13'],
+      ['learning-rate', '3-3'],
+      ['neuron', '3-4'],
+      ['3-2', '3-5'],
+      ['layer', '3-6'],
+      ['3-3', '3-7'],
+      ['3-4', '3-8'],
+      ['3-5', '3-9'],
+      ['3-6', '3-10'],
+      ['3-7', '3-11'],
+      ['3-8', '3-12'],
+      ['3-9', '3-13'],
+      ['xor', '3-14'],
     ]);
     expect(
       ['loss-intro', '3-1', '3-2', '3-3', '3-4'].map(
-        (id) => chapter3Levels.find((l) => l.id === id)!.par,
+        (id) => circuitLevels.find((l) => l.id === id)!.par,
       ),
     ).toEqual([2, 3, 1, 6, 8]);
     for (const level of chapter3Levels) {
+      if (level.kind === 'observation') continue;
       expect(level.hintsKeys).toHaveLength(2);
       expect(level.par).toBe(graphMetrics(level.referenceGraph!, registry).expandedPrimitives);
     }
@@ -193,7 +203,12 @@ describe('gradient descent curriculum', () => {
 
   it('earns mse as the player subgraph with p/t ports and no native kernel', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of [...preceding, ...chapter3Levels.slice(0, 6)]) {
+    for (const level of gameLevels) {
+      if (level.id === '3-4') break;
+      if (level.kind === 'observation') {
+        progress = acknowledgeObservation(progress, level);
+        continue;
+      }
       const result = await evaluateLevel(
         { ...level, available: availableComponents(level, progress) },
         level.referenceGraph!,
@@ -212,7 +227,11 @@ describe('gradient descent curriculum', () => {
 
   it('earns linear before losses without giving construction lessons future components', async () => {
     let progress = initialProgress(['0-1']);
-    for (const level of circuitLevels) {
+    for (const level of gameLevels) {
+      if (level.kind === 'observation') {
+        progress = acknowledgeObservation(progress, level);
+        continue;
+      }
       if (level.id === '3-3') {
         for (const id of ['3-3', '3-4', '3-5', '3-6']) {
           expect(

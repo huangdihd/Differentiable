@@ -6,6 +6,8 @@ import { graphMetrics } from '../engine/levels';
 import { chapter0Levels } from './chapter0';
 import { chapter1Levels } from './chapter1';
 import { chapter2Levels } from './chapter2';
+import { calculusPrimerLevels } from './primer-calculus';
+import { linearPrimerLevels } from './primer-linear';
 import { chapter3Levels, chapter3ForwardLevels } from './chapter3';
 import { chapter4Levels } from './chapter4';
 import { attentionIntroLevels, temporalLevels } from './chapter-temporal';
@@ -26,10 +28,16 @@ export interface CatalogEntry {
   code: string;
 }
 
-export const gameLevels: Level[] = [
+const foundationLevels = [
   ...chapter0Levels,
+  ...calculusPrimerLevels,
   ...chapter1Levels,
+  ...linearPrimerLevels,
   ...chapter2Levels,
+];
+
+export const gameLevels: Level[] = [
+  ...foundationLevels,
   ...chapter3Levels,
   {
     ...xorLevel,
@@ -54,9 +62,7 @@ export const gameLevels: Level[] = [
     par: graphMetrics(
       xorSolution,
       referenceRegistry([
-        ...chapter0Levels,
-        ...chapter1Levels,
-        ...chapter2Levels,
+        ...foundationLevels.filter((level) => level.kind !== 'observation'),
         ...chapter3ForwardLevels,
       ]),
     ).expandedPrimitives,
