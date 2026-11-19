@@ -237,7 +237,7 @@ describe('i18n', () => {
       const neuron = locales[locale]['levels.neuron.description'];
       const gradient = locales[locale]['levels.3-2.description'];
       const hints = `${locales[locale]['levels.3-2.hint1']} ${locales[locale]['levels.3-2.hint2']}`;
-      expect(neuron).toMatch(/显示 3-2|display 3-2/i);
+      expect(neuron).toContain(displayCode('3-1'));
       expect(neuron).toMatch(/神经元|neuron/i);
       expect(neuron).toMatch(/预测|prediction/i);
       expect(neuron).toContain('$$\np=w_{1}x_{1}+w_{2}x_{2}+b\n$$');
@@ -479,7 +479,7 @@ describe('i18n', () => {
         locales[locale]['levels.3-8.hint1'],
         locales[locale]['levels.3-8.hint2'],
       ].join(' ');
-      expect(text).toContain('3-10');
+      expect(text).toContain(displayCode('3-7'));
       expect(locales[locale]['loop.update.sgd']).toMatch(
         /SGD.*(?:普通梯度下降|plain gradient descent)/is,
       );
@@ -492,7 +492,9 @@ describe('i18n', () => {
       expect(text).not.toMatch(
         /一阶矩|二阶矩|平方梯度|first moment|second moment|squared gradients?|√v|bias corrections?/i,
       );
-      expect(locales[locale]['loop.update.adam']).toMatch(/3-11.*3-12/);
+      expect(locales[locale]['loop.update.adam']).toMatch(
+        new RegExp(`${displayCode('3-8')}.*${displayCode('3-9')}`),
+      );
     }
   });
   it('teaches configuring learned modules instead of manually wiring Parameters', () => {
@@ -691,6 +693,63 @@ describe('i18n', () => {
       expect(spy).toHaveBeenCalledTimes(3);
     } finally {
       spy.mockRestore();
+    }
+  });
+  it('cites the displayed number of the lesson each sentence describes', () => {
+    const refs = (text: string) =>
+      [...text.matchAll(/(?<!\d)(\d+-\d+)(?!\d)/g)].map((hit) => hit[1]);
+    // Stable ids. The printed number is whatever the catalog currently shows for that lesson.
+    const shared: Record<string, readonly string[]> = {
+      'gradView.intro': ['1-11'],
+      'levels.1-10.hint1': ['1-8'],
+      'levels.3-1.description': ['1-11'],
+      'levels.3-1.hint1': ['1-11'],
+      'levels.3-2.description': ['1-11', '1-10'],
+      'levels.3-2.hint1': ['1-11'],
+      'levels.3-3.description': ['loss-intro', '2-3'],
+      'levels.3-4.description': ['layer'],
+      'levels.neuron.description': ['3-1'],
+      'levels.3-8.description': ['3-7'],
+      'levels.4-5.description': ['4-3'],
+      'levels.5-4.description': ['5-1'],
+      'loop.data.fixed': ['3-4'],
+      'loop.loss.note': ['3-3', '3-5'],
+      'loop.backward.note': ['1-11', '3-1', '3-2'],
+      'loop.update.sgd': ['3-1'],
+      'loop.update.adam': ['3-8', '3-9'],
+      'visual.mse.help': ['loss-intro', '2-3'],
+      'levels.time-window-limit.description': ['4-5'],
+      'levels.time-window-limit.referenceModel': ['4-5'],
+      'levels.time-rnn-window.description': ['time-rnn', 'time-rnn'],
+      'levels.time-player-comparison.fixedFromLesson': ['time-window-limit'],
+    };
+    const description: Record<'en' | 'zh-CN', readonly string[]> = {
+      en: [],
+      'zh-CN': ['1-8'],
+    };
+    const message = (locale: 'en' | 'zh-CN', key: string) => {
+      const value = (locales[locale] as Record<string, unknown>)[key];
+      if (typeof value !== 'string') throw new Error(`${locale} ${key}`);
+      return value;
+    };
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(refs(message(locale, 'levels.1-10.description')), locale).toEqual(
+        description[locale].map((id) => displayCode(id)),
+      );
+      for (const [key, stableIds] of Object.entries(shared))
+        expect(refs(message(locale, key)), `${locale} ${key}`).toEqual(
+          stableIds.map((id) => displayCode(id)),
+        );
+      const loss = message(locale, 'loop.loss.note');
+      expect(loss).toContain(`${displayCode('3-3')} ${locale === 'zh-CN' ? '均方误差' : 'MSE'}`);
+      expect(loss).toContain(
+        `${displayCode('3-5')} ${locale === 'zh-CN' ? '交叉熵' : 'cross entropy'}`,
+      );
+      expect(message(locale, 'levels.1-10.hint1')).toContain('∂f/∂a=b+e');
+      expect(message(locale, 'levels.3-4.description')).toMatch(/线性层|Linear/);
+      expect(message(locale, 'levels.3-8.description')).toMatch(
+        /记住过去的方向|remember past directions/,
+      );
     }
   });
   it('maps raw and namespaced diagnostics without exposing raw exceptions', () => {
