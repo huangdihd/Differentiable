@@ -521,7 +521,7 @@ export const temporalTrainLevel = withPar<TrainLevel>(
         bias: true,
       },
     },
-    unlock: ['5-1'],
+    unlock: ['la-similar'],
     referenceGraph: forecastAnswer(),
     interface: { inputs: { x: [16, windowLength], t: [16] }, output: 'loss', outputShape: [1] },
     seed: 7606,

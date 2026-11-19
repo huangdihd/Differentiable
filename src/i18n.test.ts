@@ -406,12 +406,17 @@ describe('i18n', () => {
       expect(hints).toMatch(/最后一轴.*求和|Sum along the last axis/i);
     }
   });
+  it('points the positional embedding lesson back to the displayed attention lesson', () => {
+    for (const dictionary of Object.values(locales))
+      expect(dictionary['levels.5-4.description']).toContain(displayCode('5-1'));
+  });
   it('connects MSE visually to squared loss and chapter 2 Mean', () => {
     for (const locale of ['en', 'zh-CN'] as const) {
       const description = locales[locale]['levels.3-3.description'];
       const visual = locales[locale]['visual.mse.help'];
       expect(description).toMatch(/显示 3-1|Display 3-1/i);
       expect(description).toContain(displayCode('2-3'));
+      expect(visual).toContain(displayCode('2-3'));
       expect(`${description} ${visual}`).toMatch(/平方损失|squared loss/i);
       expect(`${description} ${visual}`).toMatch(/平均值|Mean/);
       for (const key of [

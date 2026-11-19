@@ -97,11 +97,11 @@ it('reveals Linear followed by Sigmoid as a first-order engine backward pass', a
   expect(trace.gradient.b.values[0]).toBeCloseTo(g, 6);
 });
 
-it('orders the gradient lessons before backpropagation and then the linear algebra primer', () => {
+it('orders the gradient lessons before backpropagation and then the axes lesson', () => {
   for (const [id, successor] of [
     ['1-9', '1-10'],
     ['1-10', '1-11'],
-    ['1-11', 'la-score'],
+    ['1-11', 'axes'],
   ]) {
     expect(levelById(id).unlock).toEqual([successor]);
   }

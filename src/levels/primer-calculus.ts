@@ -118,7 +118,7 @@ export const numericLevel = withPar<ForwardLevel>(
     hintsKeys: ['levels.calc-numeric.hint1', 'levels.calc-numeric.hint2'],
     available: [...scalarPrimitives, 'max'],
     interface: { inputs: { x: [], h: [] }, output: 'slope', outputShape: [] },
-    unlock: ['calc-gears'],
+    unlock: ['1-1'],
     referenceGraph: formulaGraph('div(sub(square(x + h), square(x)), h)', ['x', 'h'], 'slope'),
     // (x+h)² − x² cancels catastrophically in float32: the reference wiring loses 4.7e-5 at
     // x=1, h=0.001, and equivalent wirings (e.g. dividing each square by h first) lose a few
@@ -146,5 +146,5 @@ export const calculusPrimerLevels = [
   observation('calc-slope', 'calc-nudge'),
   observation('calc-nudge', 'calc-numeric'),
   numericLevel,
-  observation('calc-gears', '1-1'),
+  observation('calc-gears', '1-3'),
 ] as const;

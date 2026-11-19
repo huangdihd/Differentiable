@@ -32,8 +32,8 @@ import { chapter1Levels } from './levels/chapter1';
 import { derivativeSolution } from './levels/examples';
 
 const calculusPrimerIds = ['calc-slope', 'calc-nudge', 'calc-numeric', 'calc-gears'];
-const linearPrimerIds = ['la-score', 'la-similar', 'la-batch'];
-const primerIds = [...calculusPrimerIds, ...linearPrimerIds];
+const foundationPrimerIds = [...calculusPrimerIds, 'la-score', 'la-batch'];
+const insertedIds = [...foundationPrimerIds, 'learning-rate', 'la-similar'];
 
 function memory() {
   const data = new Map<string, string>();
@@ -171,7 +171,13 @@ describe('storage', () => {
     };
     expect(saveProgress(progress, source)).toBe(true);
     const restored = await loadProgressWithMigration(gameLevels, source);
-    expect(restored.unlocked).toEqual(['xor', '4-1', 'loss-intro', ...primerIds, 'learning-rate']);
+    expect(restored.unlocked).toEqual([
+      'xor',
+      '4-1',
+      'loss-intro',
+      ...foundationPrimerIds,
+      'learning-rate',
+    ]);
     expect(restored.passedSolutions).toEqual(progress.passedSolutions);
     expect(restored.savedGraphs).toEqual(progress.savedGraphs);
     expect(saveProgress(restored, source)).toBe(true);
@@ -386,7 +392,7 @@ describe('storage', () => {
     };
     expect(saveProgress(progress, source)).toBe(true);
     const restored = await loadProgressWithMigration(gameLevels, source);
-    expect(restored.unlocked).toEqual(['5-5', '6-1', 'loss-intro', ...primerIds, 'learning-rate']);
+    expect(restored.unlocked).toEqual(['5-5', '6-1', 'loss-intro', ...insertedIds]);
     expect(restored.passed).toEqual(progress.passed);
     expect(restored.passedSolutions).toEqual(progress.passedSolutions);
     expect(restored.savedGraphs).toEqual(progress.savedGraphs);
@@ -1211,7 +1217,7 @@ describe('storage', () => {
     prediction.attrs = { ...prediction.attrs, in_features: 1, out_features: 1 };
     expect(restored).toEqual({
       ...progress,
-      unlocked: [...progress.unlocked, ...primerIds, 'learning-rate'],
+      unlocked: [...progress.unlocked, ...foundationPrimerIds, 'learning-rate'],
       savedGraphs: { '3-4': migrated },
     });
     expect(
@@ -1522,7 +1528,7 @@ describe('storage', () => {
       'learning-rate',
       'loss-intro',
       'neuron',
-      ...primerIds,
+      ...foundationPrimerIds,
     ]);
     expect(restored.passed).toEqual(['3-1']);
     for (const migrated of [restored.savedGraphs['3-1'], restored.passedSolutions['3-1']]) {
@@ -1556,10 +1562,8 @@ describe('storage', () => {
         },
       }),
     );
-    const progress = await loadProgressWithMigration(
-      [...chapter0Levels, ...chapter1Levels],
-      source,
-    );
+    const { gameLevels } = await import('./levels/catalog');
+    const progress = await loadProgressWithMigration(gameLevels, source);
     // The square lesson was added later: it opens up but is never marked complete for the player.
     expect(progress.passed).toEqual(
       [...chapter0Levels, ...chapter1Levels.slice(0, 2)]
@@ -1574,7 +1578,8 @@ describe('storage', () => {
     expect(derivativeSolution.nodes.find((node) => node.component === 'output')?.attrs).toEqual({
       name: 'y',
     });
-    expect(progress.unlocked).toContain('1-3');
+    expect(progress.unlocked).toEqual(expect.arrayContaining(calculusPrimerIds));
+    expect(progress.unlocked).not.toContain('1-3');
     expect(progress.unlockedComponents).toContain('sigmoid');
   });
   it('keeps legacy language preferences during the version upgrade', () => {
@@ -2015,28 +2020,27 @@ describe('primer progression', () => {
     'restores access without credit in v%s sparse saves',
     async (version) => {
       const { gameLevels } = await import('./levels/catalog');
-      const levels = gameLevels.filter(({ id }) =>
-        [...calculusPrimerIds, '1-1', ...linearPrimerIds, 'axes', '2-1'].includes(id),
-      );
-      for (const milestone of ['1-1', '2-1']) {
-        for (const passed of [[], [milestone]]) {
-          const { data, source } = memory();
-          data.set(
-            STORAGE_KEY,
-            JSON.stringify({
-              version,
-              progress: { ...createInitialProgress(), unlocked: [milestone], passed },
-            }),
-          );
-          const restored = await loadProgressWithMigration(levels, source);
-          expect(restored.unlocked).toEqual(
-            expect.arrayContaining([milestone, ...calculusPrimerIds]),
-          );
-          expect(linearPrimerIds.filter((id) => restored.unlocked.includes(id))).toEqual(
-            milestone === '2-1' ? linearPrimerIds : [],
-          );
-          expect(restored.passed.filter((id) => primerIds.includes(id))).toEqual([]);
-        }
+      for (const [milestone, expected] of [
+        ['1-2', calculusPrimerIds.slice(0, 3)],
+        ['1-3', calculusPrimerIds],
+        ['2-1', [...calculusPrimerIds, 'la-score']],
+        ['2-5', foundationPrimerIds],
+        ['5-1', insertedIds],
+      ] as const) {
+        const { data, source } = memory();
+        // v1 called today's matmul (2-5) 2-4.
+        const savedId = version === 1 && milestone === '2-5' ? '2-4' : milestone;
+        data.set(
+          STORAGE_KEY,
+          JSON.stringify({
+            version,
+            progress: { ...createInitialProgress(), unlocked: [savedId] },
+          }),
+        );
+        const restored = await loadProgressWithMigration(gameLevels, source);
+        expect(restored.unlocked).toContain(milestone);
+        expect(insertedIds.filter((id) => restored.unlocked.includes(id))).toEqual(expected);
+        expect(restored.passed).toEqual([]);
       }
     },
   );
@@ -2051,7 +2055,7 @@ describe('primer progression', () => {
     });
   }
 
-  it('opens 1-1 only after acknowledging calc-gears', async () => {
+  it('opens 1-3 only after acknowledging calc-gears', async () => {
     const { gameLevels } = await import('./levels/catalog');
     const { source } = memory();
     let progress = await loadProgressWithMigration(gameLevels, source);
@@ -2064,7 +2068,7 @@ describe('primer progression', () => {
       progress = await loadProgressWithMigration(gameLevels, source);
       if (level.id === 'calc-gears') break;
     }
-    expect(progress.unlocked).toContain('1-1');
+    expect(progress.unlocked).toContain('1-3');
   });
 
   it('requires a fresh player to pass 3-1 and acknowledge learning-rate before neuron', async () => {

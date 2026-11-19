@@ -219,7 +219,7 @@ export const chapter2Levels: ForwardLevel[] = [
       hintsKeys: ['levels.axes.hint1', 'levels.axes.hint2'],
       available: [...scalarPrimitives, 'max', 'sum', 'unsqueeze', 'reduce_max'],
       interface: { inputs: axesShapes[0], output: outputNames.axes, outputShape: [2] },
-      unlock: ['2-1'],
+      unlock: ['la-score'],
       referenceGraph: answer('axes'),
       ...axesCases,
       fixed: [{ id: 'rows', inputs: { x: [1, 2, 3, 10, 20, 30] } }, ...axesCases.fixed],
@@ -236,6 +236,7 @@ export const chapter2Levels: ForwardLevel[] = [
 ];
 for (const [index, definition] of definitions.entries()) {
   const id = `2-${index + 1}`;
+  const next = index === definitions.length - 1 ? 'loss-intro' : `2-${index + 2}`;
   chapter2Levels.push(
     withPar(
       {
@@ -261,7 +262,7 @@ for (const [index, definition] of definitions.entries()) {
           output: outputNames[definition.name],
           outputShape: definition.output,
         },
-        unlock: [index === definitions.length - 1 ? 'loss-intro' : `2-${index + 2}`],
+        unlock: [id === '2-4' ? 'la-batch' : next],
         ...(definition.producesComponent === false ? {} : { unlockComponents: [definition.name] }),
         ...(['outer', 'matmul', 'matmul_transposed'].includes(definition.name) && {
           outputNoteKey: `levels.${id}.expectedNote`,

@@ -731,8 +731,16 @@ function gradientLessonUnlocks(progress: Progress, levels: readonly Level[]): st
     : [];
 }
 
-const calculusPrimer = ['calc-slope', 'calc-nudge', 'calc-numeric', 'calc-gears'];
-const linearPrimer = ['la-score', 'la-similar', 'la-batch'];
+const insertedLessons = new Set([
+  'calc-slope',
+  'calc-nudge',
+  'calc-numeric',
+  'calc-gears',
+  'la-score',
+  'la-batch',
+  'la-similar',
+  'learning-rate',
+]);
 
 // A later legacy milestone is not proof that the player completed a newly inserted lesson.
 const explicitLegacyCreditOnly = new Set([
@@ -742,33 +750,28 @@ const explicitLegacyCreditOnly = new Set([
   'axes',
   'reshape',
   'loss-intro',
-  'learning-rate',
   'neuron',
   'layer',
-  ...calculusPrimer,
-  ...linearPrimer,
+  ...insertedLessons,
 ]);
 
-/** Sparse saves need not contain the milestone itself: any later catalog entry proves access. */
-function primerUnlocks(unlocked: readonly string[], levels: readonly Level[]): string[] {
+/** Restore only insertions strictly before the furthest unlocked level in this catalog. */
+function insertedLessonUnlocks(unlocked: readonly string[], levels: readonly Level[]): string[] {
   const reached = new Set(unlocked);
-  const restoreAtOrAfter = (milestone: string, primer: readonly string[]) => {
-    const start = levels.findIndex((level) => level.id === milestone);
-    if (start < 0 || !levels.slice(start).some((level) => reached.has(level.id))) return [];
-    return primer.filter((id) => levels.some((level) => level.id === id));
-  };
-  return [
-    ...restoreAtOrAfter('1-1', calculusPrimer),
-    ...restoreAtOrAfter('axes', linearPrimer),
-    ...restoreAtOrAfter('learning-rate', ['learning-rate']),
-  ];
+  const furthest = levels.reduce(
+    (last, level, index) => (reached.has(level.id) ? index : last),
+    -1,
+  );
+  if (furthest < 1) return [];
+  return levels
+    .slice(0, furthest)
+    .map((level) => level.id)
+    .filter((id) => insertedLessons.has(id));
 }
 
-/** Old graduates went directly to axes; new graduates with la-score must finish the primer. */
 function axesUnlocks(progress: Progress, levels: readonly Level[]): string[] {
   return levels.some((level) => level.id === 'axes') &&
-    (progress.unlocked.includes('2-1') ||
-      (progress.passed.includes('1-11') && !progress.unlocked.includes('la-score')))
+    (progress.unlocked.includes('2-1') || progress.passed.includes('1-11'))
     ? ['axes']
     : [];
 }
@@ -1103,7 +1106,7 @@ export async function loadProgressWithMigration(
             ...constructionUnlocks(progress, levels),
             ...restoredAxes,
             ...reshapeUnlocks(progress, levels),
-            ...primerUnlocks([...progress.unlocked, ...restoredAxes], levels),
+            ...insertedLessonUnlocks([...progress.unlocked, ...restoredAxes], levels),
           ]),
         ],
         unlockedComponents: [
@@ -1169,7 +1172,7 @@ async function migrateLegacyProgress(
       ...constructionUnlocks(legacy, levels),
       ...restoredAxes,
       ...reshapeUnlocks(legacy, levels),
-      ...primerUnlocks([...legacyUnlocked, ...restoredAxes], levels),
+      ...insertedLessonUnlocks([...legacyUnlocked, ...restoredAxes], levels),
     ]),
   ];
   for (const [id, graph] of Object.entries(legacy.savedGraphs)) {

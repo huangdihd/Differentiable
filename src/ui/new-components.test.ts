@@ -26,8 +26,8 @@ describe('new component badges', () => {
   });
 
   it.each([
-    ['1-11', []],
-    ['la-batch', ['sum', 'unsqueeze', 'reduce_max']],
+    ['1-11', ['sum', 'unsqueeze', 'reduce_max']],
+    ['la-batch', []],
     ['2-2', ['size']],
     ['2-5', ['transpose']],
     ['3-3', ['param']],

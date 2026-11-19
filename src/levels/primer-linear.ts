@@ -233,12 +233,12 @@ export function productShape(left: Shape, right: Shape): [number, number] {
 }
 
 export const linearPrimerLevels: ObservationLevel[] = [
-  ['la-score', 'la-similar'],
-  ['la-similar', 'la-batch'],
-  ['la-batch', 'axes'],
-].map(([id, next]) => ({
+  ['la-score', '2', '2-1'],
+  ['la-batch', '2', '2-5'],
+  ['la-similar', '6', '5-1'],
+].map(([id, chapter, next]) => ({
   id,
-  chapter: '2',
+  chapter,
   kind: 'observation',
   titleKey: `levels.${id}.title`,
   descriptionKey: `levels.${id}.description`,

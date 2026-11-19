@@ -28,12 +28,27 @@ export interface CatalogEntry {
   code: string;
 }
 
+// Insert backwards so a primer can itself be the successor of an earlier primer.
+function withPrimers<Base extends Level, Primer extends Level>(
+  levels: readonly Base[],
+  primers: readonly Primer[],
+): (Base | Primer)[] {
+  const road: (Base | Primer)[] = [...levels];
+  for (const primer of [...primers].reverse()) {
+    const successor = road.findIndex((level) => level.id === primer.unlock[0]);
+    if (successor < 0) throw new Error(`Missing successor for ${primer.id}`);
+    road.splice(successor, 0, primer);
+  }
+  return road;
+}
+
 const foundationLevels = [
   ...chapter0Levels,
-  ...calculusPrimerLevels,
-  ...chapter1Levels,
-  ...linearPrimerLevels,
-  ...chapter2Levels,
+  ...withPrimers(chapter1Levels, calculusPrimerLevels),
+  ...withPrimers(
+    chapter2Levels,
+    linearPrimerLevels.filter((level) => level.chapter === '2'),
+  ),
 ];
 
 export const gameLevels: Level[] = [
@@ -70,7 +85,10 @@ export const gameLevels: Level[] = [
   ...chapter4Levels,
   ...temporalLevels,
   ...attentionIntroLevels,
-  ...chapter5Levels,
+  ...withPrimers(
+    chapter5Levels,
+    linearPrimerLevels.filter((level) => level.chapter === '6'),
+  ),
   ...chapter6Levels,
 ];
 

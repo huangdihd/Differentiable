@@ -3,13 +3,8 @@
 // Part of Differentiable. Full terms in LICENSE at the repository root.
 import { describe, expect, it } from 'vitest';
 import { compileGraph, createDefaultRegistry, type GraphJSON } from '../engine/graph';
-import {
-  acknowledgeObservation,
-  applyResult,
-  evaluateLevel,
-  graphMetrics,
-  initialProgress,
-} from '../engine/levels';
+import { acknowledgeObservation, applyResult, evaluateLevel, graphMetrics } from '../engine/levels';
+import { createInitialProgress } from '../storage';
 import { Random } from '../engine/random';
 import * as T from '../engine/tensor';
 import { catalog, gameLevels } from './catalog';
@@ -45,25 +40,14 @@ describe('tensor curriculum', () => {
     expect(level.available).toEqual(chapter2LevelById('2-1').available);
     expect(level.unlockComponents).toBeUndefined();
     expect(level.fixed[0].inputs.x).toEqual([1, 2, 3, 10, 20, 30]);
-    expect(chapter1LevelById('1-11').unlock).toEqual(['la-score']);
-    expect(level.unlock).toEqual(['2-1']);
+    expect(chapter1LevelById('1-11').unlock).toEqual(['axes']);
+    expect(level.unlock).toEqual(['la-score']);
     expect(
       catalog.filter((entry) => entry.chapter === 2).map(({ level, code }) => [level.id, code]),
     ).toEqual(
-      [
-        'la-score',
-        'la-similar',
-        'la-batch',
-        'axes',
-        '2-1',
-        '2-2',
-        '2-3',
-        '2-4',
-        '2-5',
-        '2-6',
-        '2-7',
-        '2-8',
-      ].map((id, i) => [id, `2-${i + 1}`]),
+      ['axes', 'la-score', '2-1', '2-2', '2-3', '2-4', 'la-batch', '2-5', '2-6', '2-7', '2-8'].map(
+        (id, i) => [id, `2-${i + 1}`],
+      ),
     );
   });
   it('uses one Sum node to compute one total per row for every test shape', async () => {
@@ -350,13 +334,13 @@ describe('tensor curriculum', () => {
   }
 
   it('unlocks the linear route and uses passed graphs for earned components', async () => {
-    let progress = initialProgress(['0-1']);
+    let progress = createInitialProgress();
     expect(buildPlayerRegistry(gameLevels, progress).get('matmul')?.native).toBe(
       createDefaultRegistry().get('matmul')!.native,
     );
     // Exercise prerequisite transitions without repeating dedicated training tests.
     for (const level of gameLevels) {
-      expect(progress.unlocked).toContain(level.id);
+      expect(progress.unlocked.filter((id) => !progress.passed.includes(id))).toEqual([level.id]);
       if (level.kind === 'observation') {
         progress = acknowledgeObservation(progress, level);
         continue;
@@ -374,7 +358,7 @@ describe('tensor curriculum', () => {
         level.referenceGraph!,
       );
     }
-    expect(progress.unlocked).toContain('3-4');
+    expect(progress.passed).toEqual(gameLevels.map((level) => level.id));
     expect(
       availableComponents(
         gameLevels

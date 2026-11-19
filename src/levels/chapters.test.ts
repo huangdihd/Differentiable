@@ -44,13 +44,15 @@ describe('formal chapter catalog', () => {
       'calc-slope',
       'calc-nudge',
       'calc-numeric',
+      '1-1',
+      '1-2',
       'calc-gears',
-      ...Array.from({ length: 11 }, (_, i) => `1-${i + 1}`),
-      'la-score',
-      'la-similar',
-      'la-batch',
+      ...Array.from({ length: 9 }, (_, i) => `1-${i + 3}`),
       'axes',
-      ...Array.from({ length: 8 }, (_, i) => `2-${i + 1}`),
+      'la-score',
+      ...Array.from({ length: 4 }, (_, i) => `2-${i + 1}`),
+      'la-batch',
+      ...Array.from({ length: 4 }, (_, i) => `2-${i + 5}`),
       'loss-intro',
       '3-1',
       'learning-rate',
@@ -68,6 +70,7 @@ describe('formal chapter catalog', () => {
       'time-rnn-delay',
       'time-attention',
       'time-forecast',
+      'la-similar',
       ...Array.from({ length: 5 }, (_, i) => `5-${i + 1}`),
       ...Array.from({ length: 4 }, (_, i) => `6-${i + 1}`),
     ]);
@@ -95,7 +98,8 @@ describe('formal chapter catalog', () => {
     ).toEqual([
       ['time-attention', '6-1'],
       ['time-forecast', '6-2'],
-      ...Array.from({ length: 5 }, (_, i) => [`5-${i + 1}`, `6-${i + 3}`]),
+      ['la-similar', '6-3'],
+      ...Array.from({ length: 5 }, (_, i) => [`5-${i + 1}`, `6-${i + 4}`]),
     ]);
     expect(
       catalog.filter((entry) => entry.chapter === 7).map(({ level, code }) => [level.id, code]),

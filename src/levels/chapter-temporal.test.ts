@@ -79,7 +79,10 @@ it('keeps the four-level RNN causal order and exact unlock chain', () => {
     'time-forecast',
   ]);
   expect(attentionIntroLevels.map((level) => level.chapter)).toEqual(['6', '6']);
-  expect(attentionIntroLevels.map((level) => level.unlock)).toEqual([['time-forecast'], ['5-1']]);
+  expect(attentionIntroLevels.map((level) => level.unlock)).toEqual([
+    ['time-forecast'],
+    ['la-similar'],
+  ]);
   expect(temporalForwardLevels.flatMap((level) => level.unlockComponents ?? [])).toEqual([
     'rnn_cell',
     'rnn_window',

@@ -81,7 +81,7 @@ for (const [index, definition] of definitions.entries()) {
         output,
         outputShape: [],
       },
-      unlock: [index === definitions.length - 1 ? '1-10' : `1-${index + 2}`],
+      unlock: [id === '1-2' ? 'calc-gears' : `1-${index + 2}`],
       unlockFeatures:
         index === definitions.length - 1
           ? ['levels.features.autodiff', 'levels.features.expression']
@@ -194,7 +194,7 @@ Object.assign(backpropLevel, {
     outputShape: [],
     outputs: { '∂f/∂w': [], '∂f/∂x': [], '∂f/∂b': [] },
   },
-  unlock: ['la-score'],
+  unlock: ['axes'],
   referenceGraph: backpropGraph,
   referenceOutputs: (values: Record<string, T.Tensor>) => ({
     '∂f/∂w': T.mul(values[upstream], values.x),

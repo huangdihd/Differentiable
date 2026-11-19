@@ -6,26 +6,27 @@ them. Engine internals are covered in [`architecture.md`](architecture.md).
 
 ## Editor shell
 
-Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, fifteen calculus and derivative lessons, twelve linear algebra and tensor lessons and thirteen learning lessons unlock sequentially, followed by the XOR challenge (3-14, stable ID `xor`), six sequence lessons (4-1–4-6), seven time-series lessons (5-1–5-7), five Attention lessons (6-1–6-5), and four GPT lessons (7-1–7-4). Attention retains stable IDs `5-*` and GPT retains stable IDs `6-*` so existing saves remain compatible. Derivative lesson 1-14 (stable ID `1-10`) builds a gradient by wiring the named `∂a` and `∂b` outputs. Lesson 1-15 (stable ID `1-11`) uses the forward context `z=w·x+b`, `f=σ(z)`: the player receives `w`, `x`, and the upstream gradient `∂f/∂z`, then backpropagates only through the multiply-and-add calculation `z=w·x+b` to output `∂f/∂w`, `∂f/∂x`, and `∂f/∂b`. The value of `b` is not needed because `∂z/∂b=1`. Passing reveals an engine-generated first-order backward graph for the independent full `z=w·x+b → f=σ(z)` calculation and unlocks the existing autodiff and expression tools; the player's backward circuit is never differentiated. Chapter 2 follows with its primer, then shapes and axes at 2-4 (stable ID `axes`), broadcasting at 2-6 and rank-relative transpose at 2-10; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Lesson outputs with domain meaning use semantic interface names such as `probabilities`, `loss`, and `attentionScores`; player-facing labels are localized while graph keys remain stable identifiers. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](../src/ui/README.md) and [Worker protocol](../src/worker/README.md).
+Run `npm run dev` for chapter selection, graph editing, probes, tests and resumable training. Eight scalar lessons, fifteen calculus and derivative lessons, eleven linear algebra and tensor lessons and thirteen learning lessons unlock sequentially, followed by the XOR challenge (3-14, stable ID `xor`), six sequence lessons (4-1–4-6), four time-series lessons (5-1–5-4), eight Attention lessons (6-1–6-8), and four GPT lessons (7-1–7-4). Attention retains stable IDs `5-*` and GPT retains stable IDs `6-*` so existing saves remain compatible. Derivative lesson 1-14 (stable ID `1-10`) builds a gradient by wiring the named `∂a` and `∂b` outputs. Lesson 1-15 (stable ID `1-11`) uses the forward context `z=w·x+b`, `f=σ(z)`: the player receives `w`, `x`, and the upstream gradient `∂f/∂z`, then backpropagates only through the multiply-and-add calculation `z=w·x+b` to output `∂f/∂w`, `∂f/∂x`, and `∂f/∂b`. The value of `b` is not needed because `∂z/∂b=1`. Passing reveals an engine-generated first-order backward graph for the independent full `z=w·x+b → f=σ(z)` calculation and unlocks the existing autodiff and expression tools; the player's backward circuit is never differentiated. Chapter 2 starts with shapes and axes at 2-1 (stable ID `axes`), broadcasting at 2-4 and rank-relative transpose at 2-9; these practice lessons do not award components. Passing a component-building lesson saves the player's circuit as its reusable component; later circuits resolve nested components against the latest passed implementations. Lesson outputs with domain meaning use semantic interface names such as `probabilities`, `loss`, and `attentionScores`; player-facing labels are localized while graph keys remain stable identifiers. Chinese/English localization and versioned auto-saves are enabled. See [editor controls and architecture](../src/ui/README.md) and [Worker protocol](../src/worker/README.md).
 
 ### Math primer
 
-The following stable IDs are in mandatory road order. Chapter 1 starts after `0-8` and leads into `1-1` (square derivative); chapter 2 starts after `1-11` and leads into `axes`. All are observations except `calc-numeric`, a forward circuit. The interactive observations live in `src/ui/primer/`, their pure rules in `src/levels/primer-*.ts`. Acknowledge each finished observation to unlock its successor.
+The following stable IDs are in mandatory road order. In chapter 1, `0-8` → `calc-slope` → `calc-nudge` → `calc-numeric` → `1-1` (square derivative); later, `1-2` → `calc-gears` → `1-3`. Chapter 2 starts with `1-11` → `axes` → `la-score` → `2-1`, then inserts `la-batch` between `2-4` and `2-5`. Chapter 6 places `la-similar` between `time-forecast` and `5-1`. All are observations except `calc-numeric`, a forward circuit. The interactive observations live in `src/ui/primer/`, their pure rules in `src/levels/primer-*.ts`. Acknowledge each finished observation to unlock its successor.
 
-| Stable ID                                                                                                                                                                                                                                 | What the player does to pass                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `calc-slope`                                                                                                                                                                                                                              | Align the ruler with the tangent in all three `slopeRounds`; each `slopeScore` must reach `SLOPE_PASS_SCORE` (0.8).                                                                                                                                                                                       |
-| `calc-nudge`                                                                                                                                                                                                                              | Predict the output change after a small input step. `nudgePassed` requires three answers, at least two within 15% or 0.002 absolute.                                                                                                                                                                      |
-| `calc-numeric`                                                                                                                                                                                                                            | Wire `((x+h)² − x²) / h` and pass fixed and generated circuit cases. The finite-step answer is `2x+h`, not `2x`. The task panel's `SecantPlot` draws the circuit's slope as a line through `(x, x²)` (green once it passes `(x+h, (x+h)²)`), with draggable points, a magnifier and an `h → 0` animation. |
-| `calc-gears`                                                                                                                                                                                                                              | Fill in each gear's speed left to right in all three `gearTrains`: speed = previous speed × stage rate (`gearSpeeds`, judged by `gearSpeedCorrect`, 1%). The last train's gearboxes are functions whose hidden rate is their derivative at the marked point (the chain rule).                             |
-| `la-score`                                                                                                                                                                                                                                | Fill both `scoreRounds` as an equation, term by term then the total; then reach each `rankingGoals` entry by tuning the three weights (`WEIGHT_RANGE`) until `rankingGoalMet` holds (strict: ties never win).                                                                                             |
-| `la-similar`                                                                                                                                                                                                                              | A 2-D compass: drag your taste arrow (`COMPASS_RANGE`, keyboard too) until each `compassGoals` entry holds (`compassGoalMet`): a strict closest/furthest person by dot product, or exactly zero (perpendicular).                                                                                          |
-| `la-batch`                                                                                                                                                                                                                                | Fill the first row of `scoreTable()` in place (`BATCH_HAND_CELLS`), sweep the rest as one matrix multiply, answer both `batchQuestions` by clicking the cell from `batchAnswer`, then plug a block with matching inner dimension into each `shapePuzzles` socket.                                         |
-| Loading a save that reached `1-1`, `axes`, or any later milestone preserves existing access and unlocks every primer lesson before that milestone. Migration never awards primer pass credit, including when replaying legacy milestones. |
+| Stable ID      | What the player does to pass                                                                                                                                                                                                                                                                              |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `calc-slope`   | Align the ruler with the tangent in all three `slopeRounds`; each `slopeScore` must reach `SLOPE_PASS_SCORE` (0.8).                                                                                                                                                                                       |
+| `calc-nudge`   | Predict the output change after a small input step. `nudgePassed` requires three answers, at least two within 15% or 0.002 absolute.                                                                                                                                                                      |
+| `calc-numeric` | Wire `((x+h)² − x²) / h` and pass fixed and generated circuit cases. The finite-step answer is `2x+h`, not `2x`. The task panel's `SecantPlot` draws the circuit's slope as a line through `(x, x²)` (green once it passes `(x+h, (x+h)²)`), with draggable points, a magnifier and an `h → 0` animation. |
+| `calc-gears`   | Fill in each gear's speed left to right in all three `gearTrains`: speed = previous speed × stage rate (`gearSpeeds`, judged by `gearSpeedCorrect`, 1%). The last train's gearboxes are functions whose hidden rate is their derivative at the marked point (the chain rule).                             |
+| `la-score`     | Fill both `scoreRounds` as an equation, term by term then the total; then reach each `rankingGoals` entry by tuning the three weights (`WEIGHT_RANGE`) until `rankingGoalMet` holds (strict: ties never win).                                                                                             |
+| `la-batch`     | Fill the first row of `scoreTable()` in place (`BATCH_HAND_CELLS`), sweep the rest as one matrix multiply, answer both `batchQuestions` by clicking the cell from `batchAnswer`, then plug a block with matching inner dimension into each `shapePuzzles` socket.                                         |
+| `la-similar`   | A 2-D compass: drag your taste arrow (`COMPASS_RANGE`, keyboard too) until each `compassGoals` entry holds (`compassGoalMet`): a strict closest/furthest person by dot product, or exactly zero (perpendicular).                                                                                          |
+
+Loading a save preserves existing access. For each lesson in the table and `learning-rate`, any unlocked level **later in catalog order** restores access to that inserted lesson. This never grants pass credit, even when replaying legacy milestones. If only the predecessor is unlocked, pass it to unlock the inserted lesson normally.
 
 ### Gradient-descent lessons and saves
 
-The route after 2-12 starts with 3-1 (squared-loss bowl, stable ID `loss-intro`) →
+The route after 2-11 starts with 3-1 (squared-loss bowl, stable ID `loss-intro`) →
 3-2 (one gradient-descent step, stable ID `3-1`) → 3-3 (learning-rate experiment, stable ID `learning-rate`) →
 3-4 (`neuron`, one neuron) → 3-5 (vector gradient, stable ID `3-2`) → 3-6 (`layer`, a layer) → 3-7 (MSE, stable ID `3-3`) →
 3-8 (regression, stable ID `3-4`) → 3-9 (cross entropy, stable ID `3-5`) →
@@ -60,7 +61,7 @@ stage trace shows `p`, `ln(p)`, one-hot `t`, `t·ln(p)`, the per-row negative su
 batch mean.
 MSE is the player's saved subgraph, not a native kernel. Its row-selectable stage trace shows
 `p`, `t`, `p−t`, `(p−t)²`, and the last-axis Mean, explicitly joining display 3-1's squared loss to
-display 2-7's Mean for vector and `[2,4]` fixtures. Lesson 3-8 (stable ID `3-4`) predicts
+display 2-5's Mean for vector and `[2,4]` fixtures. Lesson 3-8 (stable ID `3-4`) predicts
 `w*x+b` and uses the graph's `loss` output (shape `[1]`); a freshly placed Linear defaults to
 one input and one output feature in this lesson, so `[16]` is treated as 16 scalar samples and can
 feed MSE directly. Old drafts whose automatic Linear directly connects `x` to MSE are migrated from
@@ -79,7 +80,7 @@ loss with respect to node outputs, including `y`.
 Save v3 optionally includes `trainingSettings: Record<levelId, { learningRate: number;
 optimizer?: 'sgd' | 'adam' }>`.
 Rates must be finite and positive; optimizer, if present, must be `sgd` or `adam`. Older saves remain valid; loading unions new
-successors with existing unlocks, so completing 2-12 (stable ID `2-8`) unlocks 3-1 without removing
+successors with existing unlocks, so completing 2-11 (stable ID `2-8`) unlocks 3-1 without removing
 an already-unlocked XOR. UI code should persist its chosen rate in this field and
 pass it to worker training requests; no learning-rate UI is added in this step.
 
@@ -134,11 +135,10 @@ Both models support the worker `generate` API documented in
 ### Time-series forecasting lessons (chapter 5)
 
 The route continues 4-6 (stable ID `4-5`) → `time-window-limit` → `time-rnn` →
-`time-rnn-window` → `time-rnn-delay` → `time-recall-bottleneck` →
-`time-attention` → `time-forecast`, then enters Attention at stable ID `5-1`
-(displayed 6-1). Existing saves that already contain stable Attention or GPT IDs
+`time-rnn-window` → `time-rnn-delay`, then enters Attention: `time-attention` → `time-forecast` →
+`la-similar` → stable ID `5-1` (displayed 6-4). Existing saves that already contain stable Attention or GPT IDs
 keep that access unchanged; loading a save that passed `4-5` adds
-`time-window-limit` without deleting later unlocks. Save version remains **10**.
+`time-window-limit` without deleting later unlocks. This reorder does not change the save version.
 Loading also repairs current-version saves: it removes only this observation's old
 `savedGraphs`, `bestScores` and `passedSolutions` entries while preserving its
 completed/read status, later unlocks and other lessons' data.
@@ -212,8 +212,7 @@ weights. Back returns to `time-rnn`; Continue after the comparison opens
 and `b`. The unlocked native `rnn_window` performs the same recurrence for dynamic
 sequence lengths and emits the complete `[B,T,H]` state history. `time-rnn-delay`
 trains that RNN on a six-step delayed-copy task and grades a separately seeded
-batch. `time-recall-bottleneck` then gives two different histories with one
-identical final state, making the final-state information bottleneck concrete.
+batch.
 `time-attention` adds an explicit `[B,H]` query over the retained history; no causal
 mask is needed because every entry is already observed.
 
@@ -250,9 +249,8 @@ event also makes this a retrieval probe, not an arbitrary unmarked sequence task
 
 ### Attention lessons (displayed chapter 6; stable IDs `5-*`)
 
-The displayed route continues 5-7 → 6-1 → 6-2 → 6-3 → 6-4 → 6-5. The lessons
-retain internal IDs `5-1` through `5-5`; old saves keep those IDs rather than being
-rewritten. A new player reaches stable `5-1` by completing `time-forecast`.
+After 5-4, `time-attention` (6-1) → `time-forecast` (6-2) → `la-similar` (6-3) opens
+`5-1` (6-4). The remaining lessons run through 6-8, retaining stable IDs `5-2` through `5-5`.
 Forward lessons award `attn_scores(q,k)`, `causal_mask(scores)`,
 `attention(q,k,v)` and `embed_pos(idx,tokens,positions)`. Each checks two additional
 shapes, including a batch axis; sequence lengths and vector widths vary. `size`
@@ -277,7 +275,7 @@ support; ordinary tensor autodiff and training work without that inspector.
 
 ### GPT lessons (displayed chapter 7; calibrated word coverage)
 
-The displayed route is 6-5 → 7-1 → 7-2 → 7-3 → 7-4. Its preserved internal IDs are
+The displayed route is 6-8 → 7-1 → 7-2 → 7-3 → 7-4. Its preserved internal IDs are
 5-5 → 6-1 (`multi_head`, q/k/v) → 6-2 (`feed_forward`, x/w1/b1/w2/b2) →
 6-3 (`transformer_block`) → 6-4. The block has x plus eight weight/bias ports:
 wq, wk, wv, wo, w1, b1, w2, b2. It uses two pre-LN residual branches without

@@ -214,16 +214,20 @@ describe('linear primer', () => {
       }
     }
   });
-  it('chains three hint-free chapter 2 observations into axes', () => {
-    const chain = ['la-score', 'la-similar', 'la-batch', 'axes'];
+  it('places each hint-free observation before its corresponding circuit', () => {
+    const placements = [
+      ['la-score', '2', '2-1'],
+      ['la-batch', '2', '2-5'],
+      ['la-similar', '6', '5-1'],
+    ];
     expect(linearPrimerLevels).toEqual(
-      chain.slice(0, -1).map((id, index) => ({
+      placements.map(([id, chapter, successor]) => ({
         id,
-        chapter: '2',
+        chapter,
         kind: 'observation',
         titleKey: `levels.${id}.title`,
         descriptionKey: `levels.${id}.description`,
-        unlock: [chain[index + 1]],
+        unlock: [successor],
       })),
     );
   });
